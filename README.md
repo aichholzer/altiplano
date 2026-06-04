@@ -10,6 +10,9 @@ Filtering and sorting are passed straight to the Vikunja API (server-side), so t
 
 Projects:
 - `list_projects` (includes `parent_project_id`, shows sub-project nesting)
+- `list_project_views` (project_id) — includes view ids, view kinds, and Kanban bucket settings
+- `list_kanban_buckets` (project_id, view_id?) — lists Kanban stages/buckets; auto-detects the Kanban view when omitted
+- `list_kanban` (project_id, view_id?, filter?, page, per_page) — lists Kanban stages with their tasks; defaults to open tasks
 - `create_project` (title, parent_project_id?, description?) — pass `parent_project_id` for a sub-project
 
 Tasks:

@@ -74,6 +74,58 @@ def _task_summary(t: dict) -> dict:
     }
 
 
+def _project_view_summary(v: dict) -> dict:
+    return {
+        "id": v.get("id"),
+        "title": v.get("title"),
+        "view_kind": v.get("view_kind"),
+        "project_id": v.get("project_id"),
+        "bucket_configuration_mode": v.get("bucket_configuration_mode"),
+        "default_bucket_id": v.get("default_bucket_id"),
+        "done_bucket_id": v.get("done_bucket_id"),
+        "position": v.get("position"),
+    }
+
+
+def _label_titles(t: dict) -> list[str]:
+    return [label.get("title") for label in (t.get("labels") or []) if label.get("title")]
+
+
+def _kanban_task_summary(t: dict) -> dict:
+    summary = _task_summary(t)
+    summary.update(
+        {
+            "bucket_id": t.get("bucket_id"),
+            "position": t.get("position"),
+            "labels": _label_titles(t),
+        }
+    )
+    return summary
+
+
+def _bucket_summary(b: dict, include_tasks: bool = True) -> dict:
+    summary = {
+        "id": b.get("id"),
+        "title": b.get("title"),
+        "position": b.get("position"),
+        "count": b.get("count"),
+        "limit": b.get("limit"),
+    }
+    if include_tasks:
+        summary["tasks"] = [_kanban_task_summary(t) for t in (b.get("tasks") or [])]
+    return summary
+
+
+async def _kanban_view_id(project_id: int, view_id: int | None = None) -> int:
+    if view_id is not None:
+        return view_id
+    views = await _request("GET", f"/projects/{project_id}/views")
+    for view in views or []:
+        if view.get("view_kind") == "kanban":
+            return view["id"]
+    raise ValueError(f"Project {project_id} has no kanban view")
+
+
 # --- projects ---------------------------------------------------------------
 ##
 @mcp.tool()
@@ -104,6 +156,45 @@ async def create_project(
     if description is not None:
         payload["description"] = description
     return await _request("PUT", "/projects", json=payload)
+
+
+@mcp.tool()
+async def list_project_views(project_id: int) -> list[dict]:
+    """List the views for a project, including the Kanban view id and bucket settings."""
+    data = await _request("GET", f"/projects/{project_id}/views")
+    return [_project_view_summary(v) for v in (data or [])]
+
+
+@mcp.tool()
+async def list_kanban_buckets(project_id: int, view_id: int | None = None) -> list[dict]:
+    """List the Kanban buckets/stages for a project.
+
+    If `view_id` is omitted, the first Kanban view for the project is used.
+    """
+    resolved_view_id = await _kanban_view_id(project_id, view_id)
+    data = await _request("GET", f"/projects/{project_id}/views/{resolved_view_id}/buckets")
+    return [_bucket_summary(b, include_tasks=False) for b in (data or [])]
+
+
+@mcp.tool()
+async def list_kanban(
+    project_id: int,
+    view_id: int | None = None,
+    filter: str | None = "done = false",
+    page: int = 1,
+    per_page: int = 100,
+) -> list[dict]:
+    """List a project's Kanban stages with their tasks.
+
+    If `view_id` is omitted, the first Kanban view for the project is used.
+    By default only open tasks are returned. Pass `filter=None` to include completed tasks.
+    """
+    resolved_view_id = await _kanban_view_id(project_id, view_id)
+    params: dict[str, Any] = {"page": page, "per_page": per_page}
+    if filter:
+        params["filter"] = filter
+    data = await _request("GET", f"/projects/{project_id}/views/{resolved_view_id}/tasks", params=params)
+    return [_bucket_summary(b) for b in (data or [])]
 
 
 # --- tasks ------------------------------------------------------------------
