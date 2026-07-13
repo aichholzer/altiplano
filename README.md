@@ -15,9 +15,15 @@ Projects:
 Tasks:
 - `list_tasks` (project_id, filter, sort_by, page, per_page)
 - `get_task` (task_id)
-- `create_task` (project_id, title, description?, priority?, due_date?, start_date?, end_date?)
-- `update_task` (task_id, title?, description?, done?, priority?, start_date?, end_date?)
+- `create_task` (project_id, title, description?, priority?, due_date?, start_date?, end_date?, percent_done?, is_favorite?, repeat_after?, repeat_mode?)
+- `update_task` (task_id, title?, description?, done?, priority?, start_date?, end_date?, percent_done?, is_favorite?, repeat_after?, repeat_mode?)
 - `set_reminders` (task_id, reminders) — replaces the task's reminders with the given ISO 8601 datetimes; empty list clears
+
+Kanban:
+- `list_buckets` (project_id) — lists the columns of a project's kanban view, flagging the default and done buckets
+- `list_bucket_tasks` (project_id) — tasks grouped by kanban bucket
+- `get_task_bucket` (task_id) — the bucket a task currently sits in
+- `move_task_to_bucket` (project_id, task_id, bucket_id) — moves a task into a bucket; moving into the done bucket sets `done=true`, moving out clears it
 
 Labels:
 - `list_labels`
@@ -80,6 +86,8 @@ uvx altiplano                           # from PyPI
 - Dates are ISO 8601 datetimes. `start_date`/`end_date` mark the window you plan to work on a task (start work / finish work); `due_date` is the deadline.
 - The UI shows tasks by their project-local `identifier` (e.g. `#50`), which is not the global `id` the API uses.
 - Endpoint shapes (create via `PUT /projects/{id}/tasks`, update via `POST /tasks/{id}`) follow current Vikunja; adjust if your instance differs.
+- `percent_done` is 0.0–1.0. `repeat_mode` is 0 (repeat `repeat_after` seconds from the due date), 1 (monthly), or 2 (repeat `repeat_after` seconds from the current date).
+- Kanban buckets belong to a project's *view* (`view_kind == "kanban"`), not the project directly; kanban tools resolve that view automatically from `project_id`. A task's bucket is not present on `get_task` — use `get_task_bucket`. Moving a task into the view's done bucket sets `done=true`; moving it out clears `done`.
 
 ## Licence
 

@@ -74,6 +74,15 @@ def _task_summary(t: dict) -> dict:
     }
 
 
+async def _kanban_view(project_id: int) -> dict:
+    """Resolve the project's kanban view. Raises if the project has none."""
+    views = await _request("GET", f"/projects/{project_id}/views")
+    for v in views or []:
+        if v.get("view_kind") == "kanban":
+            return v
+    raise ValueError(f"Project {project_id} has no kanban view")
+
+
 # --- projects ---------------------------------------------------------------
 ##
 @mcp.tool()
@@ -146,12 +155,20 @@ async def create_task(
     due_date: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
+    percent_done: float | None = None,
+    is_favorite: bool | None = None,
+    repeat_after: int | None = None,
+    repeat_mode: int | None = None,
 ) -> dict:
     """Create a task in a project.
 
     `start_date` and `end_date` are ISO 8601 datetimes marking the window you
     plan to work on the task (start work / finish work), distinct from
     `due_date` (the deadline).
+
+    `percent_done` is 0.0-1.0. `repeat_after` is a number of seconds; `repeat_mode`
+    is 0 (repeat after `repeat_after` from the due date), 1 (monthly), or 2 (repeat
+    after `repeat_after` from the current date).
     """
     payload: dict[str, Any] = {"title": title}
     if description is not None:
@@ -164,6 +181,14 @@ async def create_task(
         payload["start_date"] = start_date
     if end_date is not None:
         payload["end_date"] = end_date
+    if percent_done is not None:
+        payload["percent_done"] = percent_done
+    if is_favorite is not None:
+        payload["is_favorite"] = is_favorite
+    if repeat_after is not None:
+        payload["repeat_after"] = repeat_after
+    if repeat_mode is not None:
+        payload["repeat_mode"] = repeat_mode
     return await _request("PUT", f"/projects/{project_id}/tasks", json=payload)
 
 
@@ -176,11 +201,19 @@ async def update_task(
     priority: int | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
+    percent_done: float | None = None,
+    is_favorite: bool | None = None,
+    repeat_after: int | None = None,
+    repeat_mode: int | None = None,
 ) -> dict:
     """Update a task. Only the fields you pass are changed. Use `done` to open/close it.
 
     `start_date` and `end_date` are ISO 8601 datetimes marking the window you
     plan to work on the task (start work / finish work).
+
+    `percent_done` is 0.0-1.0. `repeat_after` is a number of seconds; `repeat_mode`
+    is 0 (repeat after `repeat_after` from the due date), 1 (monthly), or 2 (repeat
+    after `repeat_after` from the current date).
     """
     payload: dict[str, Any] = {}
     if title is not None:
@@ -195,6 +228,14 @@ async def update_task(
         payload["start_date"] = start_date
     if end_date is not None:
         payload["end_date"] = end_date
+    if percent_done is not None:
+        payload["percent_done"] = percent_done
+    if is_favorite is not None:
+        payload["is_favorite"] = is_favorite
+    if repeat_after is not None:
+        payload["repeat_after"] = repeat_after
+    if repeat_mode is not None:
+        payload["repeat_mode"] = repeat_mode
     if not payload:
         raise ValueError("No fields to update")
     return await _request("POST", f"/tasks/{task_id}", json=payload)
@@ -205,6 +246,74 @@ async def set_reminders(task_id: int, reminders: list[str]) -> dict:
     """Replace a task's reminders with the given ISO 8601 datetimes. Empty list clears them."""
     payload = {"reminders": [{"reminder": r} for r in reminders]}
     return await _request("POST", f"/tasks/{task_id}", json=payload)
+
+
+# --- kanban -------------------------------------------------------------
+##
+@mcp.tool()
+async def list_buckets(project_id: int) -> list[dict]:
+    """List the kanban columns (buckets) of a project's kanban view."""
+    view = await _kanban_view(project_id)
+    buckets = await _request("GET", f"/projects/{project_id}/views/{view['id']}/buckets")
+    return [
+        {
+            "id": b["id"],
+            "title": b["title"],
+            "position": b.get("position"),
+            "count": b.get("count"),
+            "is_default_bucket": b["id"] == view.get("default_bucket_id"),
+            "is_done_bucket": b["id"] == view.get("done_bucket_id"),
+        }
+        for b in (buckets or [])
+    ]
+
+
+@mcp.tool()
+async def list_bucket_tasks(project_id: int) -> list[dict]:
+    """List tasks grouped by kanban bucket for a project's kanban view."""
+    view = await _kanban_view(project_id)
+    data = await _request("GET", f"/projects/{project_id}/views/{view['id']}/tasks")
+    return [
+        {
+            "id": b["id"],
+            "title": b["title"],
+            "tasks": [_task_summary(t) for t in (b.get("tasks") or [])],
+        }
+        for b in (data or [])
+    ]
+
+
+@mcp.tool()
+async def get_task_bucket(task_id: int) -> dict:
+    """Report the kanban bucket a task currently sits in."""
+    task = await _request("GET", f"/tasks/{task_id}")
+    project_id = task["project_id"]
+    view = await _kanban_view(project_id)
+    data = await _request("GET", f"/projects/{project_id}/views/{view['id']}/tasks")
+    for b in data or []:
+        for t in b.get("tasks") or []:
+            if t.get("id") == task_id:
+                return {
+                    "bucket_id": b["id"],
+                    "bucket_title": b["title"],
+                    "project_view_id": view["id"],
+                }
+    raise ValueError(f"Task {task_id} was not found on project {project_id}'s kanban board")
+
+
+@mcp.tool()
+async def move_task_to_bucket(project_id: int, task_id: int, bucket_id: int) -> dict:
+    """Move a task into a kanban bucket.
+
+    Moving a task into the view's done bucket marks it `done=true`; moving it
+    out of the done bucket clears `done`.
+    """
+    view = await _kanban_view(project_id)
+    return await _request(
+        "POST",
+        f"/projects/{project_id}/views/{view['id']}/buckets/{bucket_id}/tasks",
+        json={"task_id": task_id},
+    )
 
 
 # --- labels -----------------------------------------------------------------
