@@ -14,9 +14,9 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
-mcp = FastMCP("altiplano")
+mcp = MCPServer("altiplano")
 
 _CONFIG_FILE = Path(
     os.environ.get("ALTIPLANO_CONFIG", Path.home() / ".config" / "altiplano" / "env")
