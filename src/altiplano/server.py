@@ -74,9 +74,33 @@ def _task_summary(t: dict) -> dict:
     }
 
 
-async def _kanban_view(project_id: int) -> dict:
-    """Resolve the project's kanban view. Raises if the project has none."""
+async def _patch_task(task_id: int, changes: dict[str, Any]) -> dict:
+    """Apply `changes` to a task, preserving every other field.
+
+    Vikunja's `POST /tasks/{id}` replaces the whole task rather than merging,
+    so sending only the changed keys silently resets every field omitted from
+    the payload (e.g. priority drops to 0 if you only pass `description`).
+    Fetching the current task first and posting it back with `changes`
+    applied avoids that.
+    """
+    task = await _request("GET", f"/tasks/{task_id}")
+    task.update(changes)
+    return await _request("POST", f"/tasks/{task_id}", json=task)
+
+
+async def _kanban_view(project_id: int, view_id: int | None = None) -> dict:
+    """Resolve a project's kanban view.
+
+    Defaults to the first kanban view. Pass `view_id` (from
+    `list_kanban_views`) to target a specific one when a project has several.
+    Raises if the project has no kanban view, or no view matching `view_id`.
+    """
     views = await _request("GET", f"/projects/{project_id}/views")
+    if view_id is not None:
+        for v in views or []:
+            if v.get("id") == view_id:
+                return v
+        raise ValueError(f"Project {project_id} has no view {view_id}")
     for v in views or []:
         if v.get("view_kind") == "kanban":
             return v
@@ -251,32 +275,86 @@ async def set_reminders(task_id: int, reminders: list[str]) -> dict:
 # --- kanban -------------------------------------------------------------
 ##
 @mcp.tool()
-async def list_buckets(project_id: int) -> list[dict]:
-    """List the kanban columns (buckets) of a project's kanban view."""
-    view = await _kanban_view(project_id)
+async def list_kanban_views(project_id: int) -> list[dict]:
+    """List a project's kanban views. Most projects have exactly one.
+
+    When there's more than one, pass a view's `id` as `view_id` to
+    `list_buckets`, `list_bucket_tasks`, or `move_task_to_bucket` to target it.
+    """
+    views = await _request("GET", f"/projects/{project_id}/views")
+    return [
+        {"id": v["id"], "title": v.get("title")}
+        for v in (views or [])
+        if v.get("view_kind") == "kanban"
+    ]
+
+
+@mcp.tool()
+async def list_buckets(project_id: int, view_id: int | None = None) -> list[dict]:
+    """List the kanban columns (buckets) of a project's kanban view.
+
+    If the project has multiple kanban views, pass `view_id` (from
+    `list_kanban_views`) to target a specific one; defaults to the first.
+    """
+    view = await _kanban_view(project_id, view_id)
     buckets = await _request("GET", f"/projects/{project_id}/views/{view['id']}/buckets")
+    # The plain buckets endpoint never populates `count`; task counts are only
+    # filled in by the view tasks endpoint, so fetch that (1 task/bucket is
+    # enough) purely to read counts.
+    counted = await _request(
+        "GET",
+        f"/projects/{project_id}/views/{view['id']}/tasks",
+        params={"per_page": 1},
+    )
+    counts = {b["id"]: b.get("count") for b in (counted or [])}
+    buckets = buckets or []
+    default_bucket_id = view.get("default_bucket_id")
+    if not default_bucket_id and buckets:
+        # 0/unset means "leftmost bucket" rather than "no default".
+        default_bucket_id = min(buckets, key=lambda b: b.get("position", 0))["id"]
     return [
         {
             "id": b["id"],
             "title": b["title"],
             "position": b.get("position"),
-            "count": b.get("count"),
-            "is_default_bucket": b["id"] == view.get("default_bucket_id"),
+            "count": counts.get(b["id"]),
+            "is_default_bucket": b["id"] == default_bucket_id,
             "is_done_bucket": b["id"] == view.get("done_bucket_id"),
         }
-        for b in (buckets or [])
+        for b in buckets
     ]
 
 
 @mcp.tool()
-async def list_bucket_tasks(project_id: int) -> list[dict]:
-    """List tasks grouped by kanban bucket for a project's kanban view."""
-    view = await _kanban_view(project_id)
-    data = await _request("GET", f"/projects/{project_id}/views/{view['id']}/tasks")
+async def list_bucket_tasks(
+    project_id: int,
+    view_id: int | None = None,
+    filter: str | None = None,
+    page: int = 1,
+    per_page: int = 50,
+) -> list[dict]:
+    """List tasks grouped by kanban bucket for a project's kanban view.
+
+    Vikunja caps this endpoint at 50 tasks per bucket per page; a bucket whose
+    `task_count` exceeds `len(tasks)` has more tasks on later pages. Use
+    `page`/`per_page` to page through a large bucket, and `filter` (same
+    syntax as `list_tasks`) to narrow results instead.
+
+    If the project has multiple kanban views, pass `view_id` (from
+    `list_kanban_views`) to target a specific one; defaults to the first.
+    """
+    view = await _kanban_view(project_id, view_id)
+    params: dict[str, Any] = {"page": page, "per_page": per_page}
+    if filter:
+        params["filter"] = filter
+    data = await _request(
+        "GET", f"/projects/{project_id}/views/{view['id']}/tasks", params=params
+    )
     return [
         {
             "id": b["id"],
             "title": b["title"],
+            "task_count": b.get("count"),
             "tasks": [_task_summary(t) for t in (b.get("tasks") or [])],
         }
         for b in (data or [])
@@ -289,7 +367,11 @@ async def get_task_bucket(task_id: int) -> dict:
     task = await _request("GET", f"/tasks/{task_id}")
     project_id = task["project_id"]
     view = await _kanban_view(project_id)
-    data = await _request("GET", f"/projects/{project_id}/views/{view['id']}/tasks")
+    data = await _request(
+        "GET",
+        f"/projects/{project_id}/views/{view['id']}/tasks",
+        params={"filter": f"id = {task_id}"},
+    )
     for b in data or []:
         for t in b.get("tasks") or []:
             if t.get("id") == task_id:
@@ -302,13 +384,17 @@ async def get_task_bucket(task_id: int) -> dict:
 
 
 @mcp.tool()
-async def move_task_to_bucket(project_id: int, task_id: int, bucket_id: int) -> dict:
+async def move_task_to_bucket(
+    project_id: int, task_id: int, bucket_id: int, view_id: int | None = None
+) -> dict:
     """Move a task into a kanban bucket.
 
     Moving a task into the view's done bucket marks it `done=true`; moving it
-    out of the done bucket clears `done`.
+    out of the done bucket clears `done`. If the project has multiple kanban
+    views, pass `view_id` (from `list_kanban_views`) to match the view
+    `bucket_id` belongs to; defaults to the first.
     """
-    view = await _kanban_view(project_id)
+    view = await _kanban_view(project_id, view_id)
     return await _request(
         "POST",
         f"/projects/{project_id}/views/{view['id']}/buckets/{bucket_id}/tasks",
