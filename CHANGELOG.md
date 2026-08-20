@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented here.
 
+## [0.5.1]
+
+### Added
+
+- A manually triggered GitHub Actions workflow that publishes to PyPI. It runs
+  the tests on Python 3.10 and 3.13, refuses to republish a version that already
+  exists on PyPI, builds with `--no-sources`, and imports the built wheel before
+  uploading, so a packaging mistake fails the run instead of reaching users.
+- A smoke test suite covering module import, tool registration, console script
+  resolution, and version agreement between `pyproject.toml` and `__init__.py`.
+  0.4.0 shipped an import error that broke every launch; these are the checks
+  that would have caught it. `pytest` is now a `dev` dependency group.
+
 ## [0.5.0]
 
 ### Added
