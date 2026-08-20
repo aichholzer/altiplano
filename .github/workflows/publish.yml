@@ -10,29 +10,10 @@ permissions:
   contents: read
 
 jobs:
+  # Reuses the PR test suite verbatim rather than redefining it, so the release
+  # gate is always exactly what was already green on the pull request.
   test:
-    name: test (python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        # The floor declared in requires-python, and a current release.
-        python-version: ["3.10", "3.13"]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
-        with:
-          version: "0.12.5"
-          python-version: ${{ matrix.python-version }}
-
-      # --locked fails if uv.lock is stale rather than silently re-resolving.
-      - name: Install dependencies
-        run: uv sync --locked
-
-      - name: Run tests
-        run: uv run --no-sync pytest -q
+    uses: ./.github/workflows/ci.yml
 
   publish:
     name: build and publish
@@ -71,7 +52,13 @@ jobs:
           uv run --no-project --with "./dist/altiplano-${PKG_VERSION}-py3-none-any.whl" \
             python -c "import altiplano; import altiplano.server; print('wheel ok:', altiplano.__version__)"
 
+      # Both artefacts are named explicitly. `uv publish` otherwise uploads
+      # everything in dist/, so naming them bounds the upload to this version and
+      # fails loudly if either file is missing or misnamed.
       - name: Publish
         env:
           UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
-        run: uv publish
+        run: |
+          uv publish \
+            "dist/altiplano-${PKG_VERSION}.tar.gz" \
+            "dist/altiplano-${PKG_VERSION}-py3-none-any.whl"

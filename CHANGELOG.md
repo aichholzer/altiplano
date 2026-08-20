@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented here.
 
+## [0.5.2]
+
+### Added
+
+- A CI workflow that runs the tests on every pull request against `main`, on
+  Python 3.10 and 3.13. GitHub reports each matrix leg as a status check, so a
+  failing test shows on the pull request. Making those checks *block* a merge is
+  a branch protection setting on the repository, not something the workflow can
+  assert for itself.
+
+### Changed
+
+- The publish workflow now calls the CI workflow instead of carrying its own copy
+  of the test job, so the release gate and the pull request gate cannot drift
+  apart.
+- The publish step names both artefacts explicitly rather than relying on
+  `uv publish`'s default of uploading everything in `dist/`. The upload is now
+  bounded to the version being released, and fails loudly if either file is
+  missing or misnamed.
+
 ## [0.5.1]
 
 ### Added
