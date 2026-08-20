@@ -1,0 +1,64 @@
+name: Publish
+
+# Manual only. Publishing is a one-way door: PyPI versions are write-once, so a
+# bad upload cannot be replaced, only yanked. Bump the version, merge to main,
+# then run this from the Actions tab.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Reuses the PR test suite verbatim rather than redefining it, so the release
+  # gate is always exactly what was already green on the pull request.
+  test:
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    name: build and publish
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.12.5"
+
+      # Fail before building rather than at the upload step, which is slower and
+      # leaves a half-finished release run behind.
+      - name: Refuse to republish an existing version
+        run: |
+          PKG_VERSION="$(uv version --short)"
+          echo "PKG_VERSION=$PKG_VERSION" >> "$GITHUB_ENV"
+          if curl -sSfI "https://pypi.org/pypi/altiplano/${PKG_VERSION}/json" > /dev/null 2>&1; then
+            echo "::error::altiplano ${PKG_VERSION} is already on PyPI. Bump the version first."
+            exit 1
+          fi
+          echo "altiplano ${PKG_VERSION} is not on PyPI yet, proceeding."
+
+      # --no-sources builds as an outside consumer would, with tool.uv.sources
+      # disabled, so a local-path override cannot leak into the release.
+      - name: Build
+        run: uv build --no-sources
+
+      # The test job exercises the source tree. This exercises the artefact that
+      # is about to be uploaded, which is where packaging mistakes surface: a
+      # module missing from the wheel passes every source-tree test.
+      - name: Verify the built wheel imports
+        run: |
+          uv run --no-project --with "./dist/altiplano-${PKG_VERSION}-py3-none-any.whl" \
+            python -c "import altiplano; import altiplano.server; print('wheel ok:', altiplano.__version__)"
+
+      # Both artefacts are named explicitly. `uv publish` otherwise uploads
+      # everything in dist/, so naming them bounds the upload to this version and
+      # fails loudly if either file is missing or misnamed.
+      - name: Publish
+        env:
+          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          uv publish \
+            "dist/altiplano-${PKG_VERSION}.tar.gz" \
+            "dist/altiplano-${PKG_VERSION}-py3-none-any.whl"

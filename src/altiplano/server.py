@@ -55,6 +55,26 @@ def _headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
 
+# Vikunja 2.4.0 added a v2 API alongside v1. Paths are identical for everything
+# this server does, but the verbs for create and update differ, so the version is
+# taken from the URL the user configured rather than probed. Pointing
+# VIKUNJA_URL at /api/v2 is the whole opt-in.
+_VERBS = {
+    1: {"create": "PUT", "update": "POST"},
+    2: {"create": "POST", "update": "PATCH"},
+}
+
+
+def _version() -> int:
+    """2 when VIKUNJA_URL ends in /api/v2, otherwise 1."""
+    return 2 if _base().endswith("/api/v2") else 1
+
+
+def _verb(action: str) -> str:
+    """The verb this API version uses for `create` or `update`."""
+    return _VERBS[_version()][action]
+
+
 async def _request(method: str, path: str, **kwargs: Any) -> Any:
     async with httpx.AsyncClient(base_url=_base(), headers=_headers(), timeout=30) as client:
         r = await client.request(method, path, **kwargs)
@@ -62,6 +82,27 @@ async def _request(method: str, path: str, **kwargs: Any) -> Any:
         if r.status_code == 204 or not r.content:
             return {"ok": True}
         return r.json()
+
+
+def _items(data: Any) -> list:
+    """Normalise a collection response across both API versions.
+
+    v1 returns a bare array, or a literal `null` for some empty collections. v2
+    wraps every collection in a pagination envelope. The check is on shape rather
+    than the configured version, so a mismatch between the two cannot break it.
+
+    Anything else means the response was not a collection at all: most likely a
+    bodyless response, which `_request` reports as a status dict. That is an error
+    rather than an empty result, because reporting it as empty is
+    indistinguishable from genuinely having no items.
+    """
+    if data is None:
+        return []
+    if isinstance(data, dict) and isinstance(data.get("items"), list):
+        return data["items"]
+    if not isinstance(data, list):
+        raise RuntimeError(f"expected a list from the API, got {type(data).__name__}")
+    return data
 
 
 def _task_summary(t: dict) -> dict:
@@ -87,7 +128,7 @@ async def list_projects() -> list[dict]:
             "parent_project_id": p.get("parent_project_id", 0),
             "is_archived": p.get("is_archived", False),
         }
-        for p in (data or [])
+        for p in _items(data)
     ]
 
 
@@ -103,7 +144,7 @@ async def create_project(
         payload["parent_project_id"] = parent_project_id
     if description is not None:
         payload["description"] = description
-    return await _request("PUT", "/projects", json=payload)
+    return await _request(_verb("create"), "/projects", json=payload)
 
 
 # --- tasks ------------------------------------------------------------------
@@ -128,7 +169,7 @@ async def list_tasks(
     if sort_by:
         params["sort_by"] = sort_by
     data = await _request("GET", f"/projects/{project_id}/tasks", params=params)
-    return [_task_summary(t) for t in (data or [])]
+    return [_task_summary(t) for t in _items(data)]
 
 
 @mcp.tool()
@@ -164,7 +205,7 @@ async def create_task(
         payload["start_date"] = start_date
     if end_date is not None:
         payload["end_date"] = end_date
-    return await _request("PUT", f"/projects/{project_id}/tasks", json=payload)
+    return await _request(_verb("create"), f"/projects/{project_id}/tasks", json=payload)
 
 
 @mcp.tool()
@@ -197,14 +238,14 @@ async def update_task(
         payload["end_date"] = end_date
     if not payload:
         raise ValueError("No fields to update")
-    return await _request("POST", f"/tasks/{task_id}", json=payload)
+    return await _request(_verb("update"), f"/tasks/{task_id}", json=payload)
 
 
 @mcp.tool()
 async def set_reminders(task_id: int, reminders: list[str]) -> dict:
     """Replace a task's reminders with the given ISO 8601 datetimes. Empty list clears them."""
     payload = {"reminders": [{"reminder": r} for r in reminders]}
-    return await _request("POST", f"/tasks/{task_id}", json=payload)
+    return await _request(_verb("update"), f"/tasks/{task_id}", json=payload)
 
 
 # --- labels -----------------------------------------------------------------
@@ -213,13 +254,13 @@ async def set_reminders(task_id: int, reminders: list[str]) -> dict:
 async def list_labels() -> list[dict]:
     """List all labels."""
     data = await _request("GET", "/labels")
-    return [{"id": x["id"], "title": x["title"]} for x in (data or [])]
+    return [{"id": x["id"], "title": x["title"]} for x in _items(data)]
 
 
 @mcp.tool()
 async def add_label(task_id: int, label_id: int) -> dict:
     """Attach a label to a task."""
-    return await _request("PUT", f"/tasks/{task_id}/labels", json={"label_id": label_id})
+    return await _request(_verb("create"), f"/tasks/{task_id}/labels", json={"label_id": label_id})
 
 
 @mcp.tool()
@@ -236,20 +277,20 @@ async def list_comments(task_id: int) -> list[dict]:
     data = await _request("GET", f"/tasks/{task_id}/comments")
     return [
         {"id": c.get("id"), "comment": c.get("comment"), "author": (c.get("author") or {}).get("username")}
-        for c in (data or [])
+        for c in _items(data)
     ]
 
 
 @mcp.tool()
 async def add_comment(task_id: int, comment: str) -> dict:
     """Add a comment to a task."""
-    return await _request("PUT", f"/tasks/{task_id}/comments", json={"comment": comment})
+    return await _request(_verb("create"), f"/tasks/{task_id}/comments", json={"comment": comment})
 
 
 @mcp.tool()
 async def update_comment(task_id: int, comment_id: int, comment: str) -> dict:
     """Replace the text of an existing comment. Get `comment_id` from `list_comments`."""
-    return await _request("POST", f"/tasks/{task_id}/comments/{comment_id}", json={"comment": comment})
+    return await _request(_verb("update"), f"/tasks/{task_id}/comments/{comment_id}", json={"comment": comment})
 
 
 @mcp.tool()
@@ -263,21 +304,21 @@ async def delete_comment(task_id: int, comment_id: int) -> dict:
 @mcp.tool()
 async def search_users(query: str) -> list[dict]:
     """Search users by name or username. Use this to find a user_id for assignees."""
-    data = await _request("GET", "/users", params={"s": query})
-    return [{"id": u.get("id"), "username": u.get("username"), "name": u.get("name")} for u in (data or [])]
+    data = await _request("GET", "/users", params={"q" if _version() == 2 else "s": query})
+    return [{"id": u.get("id"), "username": u.get("username"), "name": u.get("name")} for u in _items(data)]
 
 
 @mcp.tool()
 async def list_assignees(task_id: int) -> list[dict]:
     """List the users assigned to a task."""
     data = await _request("GET", f"/tasks/{task_id}/assignees")
-    return [{"id": u.get("id"), "username": u.get("username")} for u in (data or [])]
+    return [{"id": u.get("id"), "username": u.get("username")} for u in _items(data)]
 
 
 @mcp.tool()
 async def add_assignee(task_id: int, user_id: int) -> dict:
     """Assign a user to a task."""
-    return await _request("PUT", f"/tasks/{task_id}/assignees", json={"user_id": user_id})
+    return await _request(_verb("create"), f"/tasks/{task_id}/assignees", json={"user_id": user_id})
 
 
 @mcp.tool()

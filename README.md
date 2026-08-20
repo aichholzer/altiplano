@@ -44,14 +44,27 @@ The server resolves two values, in order:
 2. A per-device file of `KEY=VALUE` lines, default `~/.config/altiplano/env`
    (override the path with `ALTIPLANO_CONFIG`).
 
-`VIKUNJA_URL` is the base API URL including `/api/v1` (e.g. `https://todo.example.com/api/v1`).
+`VIKUNJA_URL` is the base API URL including the version prefix (e.g. `https://todo.example.com/api/v2`).
+
+## Choosing the API version
+
+Vikunja 2.4.0 added a v2 API alongside v1, and this server speaks both. The version comes from the URL you configure, so there is nothing else to set:
+
+| `VIKUNJA_URL` ends in | you get |
+| --- | --- |
+| `/api/v2` | the v2 API |
+| `/api/v1`, or anything else | the v1 API |
+
+Prefer `/api/v2` if your server has it, since Vikunja has said v1 will eventually be withdrawn. Stay on `/api/v1` for older servers; every tool works the same either way.
+
+The differences are handled internally: v2 uses `POST` to create and `PATCH` to update where v1 uses `PUT` and `POST`, returns collections in a pagination envelope rather than a bare array, renames the user search parameter from `s` to `q`, and answers deletes with `204` rather than a message body. Tool arguments and return shapes are unchanged.
 
 Recommended so the your `mcp.json` carries no secrets:
 
 - Drop a per-device file and lock it down:
   ```bash
   mkdir -p ~/.config/altiplano
-  printf 'VIKUNJA_URL=https://todo.example.com/api/v1\nVIKUNJA_API_TOKEN=tk_xxx\n' > ~/.config/altiplano/env
+  printf 'VIKUNJA_URL=https://todo.example.com/api/v2\nVIKUNJA_API_TOKEN=tk_xxx\n' > ~/.config/altiplano/env
   chmod 600 ~/.config/altiplano/env
   ```
 - Or inject via the launcher's environment (e.g. a systemd unit `EnvironmentFile=` pointing at a `chmod 600` file), which the server inherits.
@@ -81,7 +94,8 @@ uvx altiplano                           # from PyPI
 - Vikunja priority scale: 0 Unset, 1 Low, 2 Medium, 3 High, 4 Urgent, 5 DO NOW.
 - Dates are ISO 8601 datetimes. `start_date`/`end_date` mark the window you plan to work on a task (start work / finish work); `due_date` is the deadline.
 - The UI shows tasks by their project-local `identifier` (e.g. `#50`), which is not the global `id` the API uses.
-- Endpoint shapes (create via `PUT /projects/{id}/tasks`, update via `POST /tasks/{id}`) follow current Vikunja; adjust if your instance differs.
+- Verified end to end against Vikunja v2.5.0 on both `/api/v1` and `/api/v2`.
+- `list_assignees` needs a server where `GET /tasks/{id}/assignees` works. It answers 500 on v2.3.0, which was a server-side bug, and works on v2.5.0. Every other tool works on both.
 
 ## Licence
 
