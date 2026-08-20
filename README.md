@@ -32,7 +32,7 @@ Comments:
 
 Assignees:
 - `search_users` (query) — find a `user_id` to assign
-- `list_assignees` (task_id)
+- `list_assignees` (task_id) — reads the `assignees` field from the task, because `GET /tasks/{id}/assignees` returns 500 on Vikunja 2.3.0
 - `add_assignee` (task_id, user_id)
 - `remove_assignee` (task_id, user_id)
 

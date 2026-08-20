@@ -16,100 +16,64 @@ def body(request) -> dict:
 
 
 # --- routing ----------------------------------------------------------------
-# (description, call, expected verb, expected path, expected body)
+def route(name, call, verb, path, body, response=None):
+    """One routing case. `response` overrides the fixture default where a tool
+    needs a particular response shape to get as far as returning."""
+    return pytest.param(call, verb, path, body, response, id=name)
+
+
 ROUTES = [
-    ("list_projects", lambda: server.list_projects(), "GET", "/projects", {}),
-    ("get_task", lambda: server.get_task(7), "GET", "/tasks/7", {}),
-    ("list_tasks", lambda: server.list_tasks(3), "GET", "/projects/3/tasks", {}),
-    ("list_labels", lambda: server.list_labels(), "GET", "/labels", {}),
-    (
-        "add_label",
-        lambda: server.add_label(7, 1),
-        "PUT",
-        "/tasks/7/labels",
-        {"label_id": 1},
-    ),
-    ("remove_label", lambda: server.remove_label(7, 1), "DELETE", "/tasks/7/labels/1", {}),
-    ("list_comments", lambda: server.list_comments(7), "GET", "/tasks/7/comments", {}),
-    (
+    route("list_projects", lambda: server.list_projects(), "GET", "/projects", {}),
+    route("get_task", lambda: server.get_task(7), "GET", "/tasks/7", {}),
+    route("list_tasks", lambda: server.list_tasks(3), "GET", "/projects/3/tasks", {}),
+    route("list_labels", lambda: server.list_labels(), "GET", "/labels", {}),
+    route("add_label", lambda: server.add_label(7, 1), "PUT", "/tasks/7/labels", {"label_id": 1}),
+    route("remove_label", lambda: server.remove_label(7, 1), "DELETE", "/tasks/7/labels/1", {}),
+    route("list_comments", lambda: server.list_comments(7), "GET", "/tasks/7/comments", {}),
+    route(
         "add_comment",
         lambda: server.add_comment(7, "hello"),
         "PUT",
         "/tasks/7/comments",
         {"comment": "hello"},
     ),
-    (
+    route(
         "update_comment",
         lambda: server.update_comment(7, 21, "edited"),
         "POST",
         "/tasks/7/comments/21",
         {"comment": "edited"},
     ),
-    (
-        "delete_comment",
-        lambda: server.delete_comment(7, 21),
-        "DELETE",
-        "/tasks/7/comments/21",
-        {},
-    ),
-    ("list_assignees", lambda: server.list_assignees(7), "GET", "/tasks/7/assignees", {}),
-    (
-        "add_assignee",
-        lambda: server.add_assignee(7, 2),
-        "PUT",
-        "/tasks/7/assignees",
-        {"user_id": 2},
-    ),
-    (
-        "remove_assignee",
-        lambda: server.remove_assignee(7, 2),
-        "DELETE",
-        "/tasks/7/assignees/2",
-        {},
-    ),
-    (
-        "create_project",
-        lambda: server.create_project("Board"),
-        "PUT",
-        "/projects",
-        {"title": "Board"},
-    ),
-    (
-        "create_task",
-        lambda: server.create_task(3, "Task"),
-        "PUT",
-        "/projects/3/tasks",
-        {"title": "Task"},
-    ),
-    (
-        "update_task",
-        lambda: server.update_task(7, done=True),
-        "POST",
+    route("delete_comment", lambda: server.delete_comment(7, 21), "DELETE", "/tasks/7/comments/21", {}),
+    # Reads the task, not /tasks/7/assignees, so it needs a task-shaped response.
+    route(
+        "list_assignees",
+        lambda: server.list_assignees(7),
+        "GET",
         "/tasks/7",
-        {"done": True},
+        {},
+        {"assignees": []},
     ),
-    (
+    route("add_assignee", lambda: server.add_assignee(7, 2), "PUT", "/tasks/7/assignees", {"user_id": 2}),
+    route("remove_assignee", lambda: server.remove_assignee(7, 2), "DELETE", "/tasks/7/assignees/2", {}),
+    route("create_project", lambda: server.create_project("Board"), "PUT", "/projects", {"title": "Board"}),
+    route("create_task", lambda: server.create_task(3, "Task"), "PUT", "/projects/3/tasks", {"title": "Task"}),
+    route("update_task", lambda: server.update_task(7, done=True), "POST", "/tasks/7", {"done": True}),
+    route(
         "set_reminders",
         lambda: server.set_reminders(7, ["2026-08-20T09:00:00+10:00"]),
         "POST",
         "/tasks/7",
         {"reminders": [{"reminder": "2026-08-20T09:00:00+10:00"}]},
     ),
-    (
-        "search_users",
-        lambda: server.search_users("stefan"),
-        "GET",
-        "/users",
-        {},
-    ),
+    route("search_users", lambda: server.search_users("stefan"), "GET", "/users", {}),
 ]
 
 
-@pytest.mark.parametrize(
-    ("call", "verb", "path", "expected_body"),
-    [pytest.param(*route[1:], id=route[0]) for route in ROUTES],
-)
-def test_tool_uses_the_expected_verb_path_and_body(api, run, call, verb, path, expected_body):
+@pytest.mark.parametrize(("call", "verb", "path", "expected_body", "response"), ROUTES)
+def test_tool_uses_the_expected_verb_path_and_body(api, run, call, verb, path, expected_body, response):
+    if response is not None:
+        api.returns(response)
     run(call())
     assert api.last.method == verb
     assert api.last.url.path.endswith(path)
@@ -121,7 +85,7 @@ def test_every_tool_is_covered_by_a_routing_case():
     import asyncio
 
     registered = {tool.name for tool in asyncio.run(server.mcp.list_tools())}
-    assert registered == {route[0] for route in ROUTES}
+    assert registered == {case.id for case in ROUTES}
 
 
 # --- optional payload fields ------------------------------------------------
@@ -274,9 +238,23 @@ def test_search_users_returns_id_username_and_name(api, run):
     ]
 
 
-def test_list_assignees_returns_id_and_username(api, run):
-    api.returns([{"id": 1, "username": "stefan", "name": "dropped"}])
+# --- assignees, read from the task ------------------------------------------
+# The dedicated GET /tasks/{id}/assignees route answers 500 on Vikunja 2.3.0, so
+# this reads the field off the task instead. These cases pin that source.
+def test_list_assignees_reads_the_field_off_the_task(api, run):
+    api.returns({"id": 7, "assignees": [{"id": 1, "username": "stefan", "name": "dropped"}]})
     assert run(server.list_assignees(7)) == [{"id": 1, "username": "stefan"}]
+
+
+def test_list_assignees_returns_empty_when_the_field_is_absent(api, run):
+    api.returns({"id": 7, "title": "Nobody assigned"})
+    assert run(server.list_assignees(7)) == []
+
+
+def test_list_assignees_returns_empty_when_the_field_is_null(api, run):
+    """Vikunja omits assignees entirely once the last one is removed."""
+    api.returns({"id": 7, "assignees": None})
+    assert run(server.list_assignees(7)) == []
 
 
 # Applied to each collection-shape test below, so all six listings are held to
@@ -289,9 +267,10 @@ every_listing = pytest.mark.parametrize(
         lambda: server.list_labels(),
         lambda: server.list_comments(7),
         lambda: server.search_users("x"),
-        lambda: server.list_assignees(7),
     ],
-    ids=["projects", "tasks", "labels", "comments", "users", "assignees"],
+    # list_assignees is deliberately absent: it consumes a single task resource
+    # rather than a collection response, and is covered separately above.
+    ids=["projects", "tasks", "labels", "comments", "users"],
 )
 
 

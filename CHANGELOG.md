@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented here.
 
+## [0.5.5]
+
+### Fixed
+
+- `list_assignees` works again. It previously always failed, because
+  `GET /tasks/{id}/assignees` answers 500 on Vikunja 2.3.0 regardless of whether
+  the task has any assignees. Verified that the path and verb match what that
+  version documents, that query parameters make no difference, and that `PUT` and
+  `DELETE` on the same route are unaffected, so only the read is broken. The tool
+  now reads the `assignees` field from the task, which carries the same user
+  objects and is omitted entirely when nobody is assigned. `add_assignee` and
+  `remove_assignee` continue to use the dedicated route.
+
+  This is a client-side workaround, not a root-cause fix. The server-side reason
+  for the 500 is still unknown and would need the Vikunja logs.
+
 ## [0.5.4]
 
 ### Fixed

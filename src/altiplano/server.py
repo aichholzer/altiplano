@@ -286,8 +286,13 @@ async def search_users(query: str) -> list[dict]:
 @mcp.tool()
 async def list_assignees(task_id: int) -> list[dict]:
     """List the users assigned to a task."""
-    data = await _request("GET", f"/tasks/{task_id}/assignees")
-    return [{"id": u.get("id"), "username": u.get("username")} for u in _items(data)]
+    # Read the task rather than GET /tasks/{id}/assignees, which answers 500 on
+    # Vikunja 2.3.0 whether or not the task has assignees. Only that read is
+    # broken; PUT and DELETE against the dedicated route work, so add_assignee
+    # and remove_assignee still use it. The task payload carries the same user
+    # objects, and omits the field entirely when nobody is assigned.
+    task = await _request("GET", f"/tasks/{task_id}")
+    return [{"id": u.get("id"), "username": u.get("username")} for u in _items(task.get("assignees"))]
 
 
 @mcp.tool()
