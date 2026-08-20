@@ -46,19 +46,6 @@ The server resolves two values, in order:
 
 `VIKUNJA_URL` is the base API URL including the version prefix (e.g. `https://todo.example.com/api/v2`).
 
-## Choosing the API version
-
-Vikunja 2.4.0 added a v2 API alongside v1, and this server speaks both. The version comes from the URL you configure, so there is nothing else to set:
-
-| `VIKUNJA_URL` ends in | you get |
-| --- | --- |
-| `/api/v2` | the v2 API |
-| `/api/v1`, or anything else | the v1 API |
-
-Prefer `/api/v2` if your server has it, since Vikunja has said v1 will eventually be withdrawn. Stay on `/api/v1` for older servers; every tool works the same either way.
-
-The differences are handled internally: v2 uses `POST` to create and `PATCH` to update where v1 uses `PUT` and `POST`, returns collections in a pagination envelope rather than a bare array, renames the user search parameter from `s` to `q`, and answers deletes with `204` rather than a message body. Tool arguments and return shapes are unchanged.
-
 Recommended so the your `mcp.json` carries no secrets:
 
 - Drop a per-device file and lock it down:
@@ -76,17 +63,36 @@ Then `mcp.json` only needs the command, no `env` block, no plain-text secrets:
 {
   "altiplano": {
     "command": "uvx",
-    "args": ["altiplano"]
+    "args": ["altiplano@latest"]
   }
 }
 ```
+
+> `uvx` fetches the newest version on its first run, then reuses a cached environment on every run after that. Restarting your MCP client does not change this.
+>
+> `@latest` asks for the newest version and refreshes the cache. An exact pin such as `altiplano@0.6.0` works too, since requesting a specific version cannot be satisfied from a cache holding a different one, at the cost of editing your MCP file on every upgrade.
+>
+> If you suspect you are already on a stale version, `uv cache clean altiplano` then restart your client.
+
+## Choosing the API version
+
+Vikunja 2.4.0 added a v2 API alongside v1, and this server speaks both. The version comes from the URL you configure, so there is nothing else to set:
+
+| `VIKUNJA_URL` ends in | you get |
+| --- | --- |
+| `/api/v2` | the v2 API |
+| `/api/v1`, or anything else | the v1 API |
+
+Prefer `/api/v2` if your server has it, since Vikunja has said v1 will eventually be withdrawn. Stay on `/api/v1` for older servers; every tool works the same either way.
+
+The differences are handled internally: v2 uses `POST` to create and `PATCH` to update where v1 uses `PUT` and `POST`, returns collections in a pagination envelope rather than a bare array, renames the user search parameter from `s` to `q`, and answers deletes with `204` rather than a message body. Tool arguments and return shapes are unchanged.
 
 ## Run
 
 ```bash
 uv run altiplano                        # dev, from this directory
 uvx --from /your/local/path altiplano   # local path
-uvx altiplano                           # from PyPI
+uvx altiplano@latest                    # from PyPI, refreshing the cache
 ```
 
 ## Notes
