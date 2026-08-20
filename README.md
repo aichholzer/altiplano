@@ -82,7 +82,7 @@ Vikunja 2.4.0 added a v2 API alongside v1, and this MCP deals with both. The ver
 | `VIKUNJA_URL` ends in | you get |
 | --- | --- |
 | `/api/v2` | the v2 API |
-| `/api/v1`, or anything else | the v1 API |
+| `/api/v1` | the v1 API |
 
 Prefer `/api/v2` if your server has it. Stay on `/api/v1` only for older servers; every tool works the same either way, with some exceptions.
 
