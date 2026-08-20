@@ -16,7 +16,7 @@ Tasks:
 - `list_tasks` (project_id, filter, sort_by, page, per_page)
 - `get_task` (task_id)
 - `create_task` (project_id, title, description?, priority?, due_date?, start_date?, end_date?)
-- `update_task` (task_id, title?, description?, done?, priority?, start_date?, end_date?)
+- `update_task` (task_id, title?, description?, done?, priority?, start_date?, end_date?) — on v1, see the warning below about omitted fields
 - `set_reminders` (task_id, reminders) — replaces the task's reminders with the given ISO 8601 datetimes; empty list clears
 - `delete_task` (task_id) — soft-deletes the task along with its comments, labels and assignees. Vikunja keeps it for 30 days but exposes no way to restore it, so treat this as irreversible
 
@@ -84,7 +84,21 @@ Vikunja 2.4.0 added a v2 API alongside v1, and this server speaks both. The vers
 | `/api/v2` | the v2 API |
 | `/api/v1`, or anything else | the v1 API |
 
-Prefer `/api/v2` if your server has it, since Vikunja has said v1 will eventually be withdrawn. Stay on `/api/v1` for older servers; every tool works the same either way.
+Prefer `/api/v2` if your server has it, since Vikunja has said v1 will eventually be withdrawn. Stay on `/api/v1` for older servers; every tool works the same either way, with one exception worth knowing about.
+
+### On v1, updating a task discards the fields you omit
+
+v1's update endpoint is a replace, not a partial update. Whatever you leave out is reset to its zero value:
+
+```
+update_task(task_id=42, priority=4)     # on v1, this also blanks the description
+update_task(task_id=42, done=True)      # and this discards description, priority and dates
+set_reminders(task_id=42, reminders=[]) # same, via the same endpoint
+```
+
+This is Vikunja's behaviour, not something the server adds, and it is not fixed here: doing so would mean reading each task before every update, which costs a request on a path most people will not use. On v1, pass every field you want to keep.
+
+v2 is unaffected. It uses `PATCH`, a genuine partial update, so omitted fields survive. This is the strongest practical reason to point at `/api/v2` if you can.
 
 The differences are handled internally: v2 uses `POST` to create and `PATCH` to update where v1 uses `PUT` and `POST`, returns collections in a pagination envelope rather than a bare array, renames the user search parameter from `s` to `q`, and answers deletes with `204` rather than a message body. Tool arguments and return shapes are unchanged.
 

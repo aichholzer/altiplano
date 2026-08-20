@@ -2,6 +2,28 @@
 
 All notable changes to this project are documented here.
 
+## [0.8.1]
+
+### Changed
+
+- `update_task` and `set_reminders` now document that v1's update endpoint is a
+  replace: every field you omit is reset to its zero value, so passing only
+  `priority` blanks the description and closing a task with `done` discards its
+  description, priority and dates. v2 is unaffected, using `PATCH`.
+
+  `update_task` previously claimed "Only the fields you pass are changed", which
+  was true on v2 and false on v1. Since the docstring is what an agent reads
+  before calling, that made it the most load-bearing place to correct.
+
+  `set_reminders` carries the same hazard and was not previously known to: it
+  sends a partial body to the same endpoint, and was confirmed to reset description
+  and priority on v1.
+
+  The behaviour is deliberately unchanged. Fixing it would mean reading each task
+  before every update, spending a request on every call to protect a path that v2
+  users never take. The README now explains it, and this is the strongest practical
+  argument for pointing at `/api/v2`.
+
 ## [0.8.0]
 
 ### Added

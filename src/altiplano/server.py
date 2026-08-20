@@ -235,7 +235,13 @@ async def update_task(
     start_date: str | None = None,
     end_date: str | None = None,
 ) -> dict:
-    """Update a task. Only the fields you pass are changed. Use `done` to open/close it.
+    """Update a task. Use `done` to open/close it.
+
+    On v2 only the fields you pass change. On v1 they do not: that update endpoint
+    is a replace, so every field you omit is reset to its zero value. Passing just
+    `priority` there blanks the description, and passing just `done` to close a
+    task discards its description, priority and dates. On v1, pass every field you
+    want to keep. Verified against Vikunja 2.5.0.
 
     `start_date` and `end_date` are ISO 8601 datetimes marking the window you
     plan to work on the task (start work / finish work).
@@ -284,7 +290,13 @@ async def _replace_task(task_id: int, changes: dict[str, Any]) -> dict:
 
 @mcp.tool()
 async def set_reminders(task_id: int, reminders: list[str]) -> dict:
-    """Replace a task's reminders with the given ISO 8601 datetimes. Empty list clears them."""
+    """Replace a task's reminders with the given ISO 8601 datetimes. Empty list clears them.
+
+    On v1 this carries the same hazard as `update_task`, because it sends a partial
+    body to the same replace-style endpoint: the task's description and priority
+    are reset. Only call it on v1 for a task whose other fields do not matter. On
+    v2 it is a genuine partial update and leaves the rest alone.
+    """
     payload = {"reminders": [{"reminder": r} for r in reminders]}
     return await _request(_verb("update"), f"/tasks/{task_id}", json=payload)
 
