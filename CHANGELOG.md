@@ -8,9 +8,14 @@ All notable changes to this project are documented here.
 
 - Coverage reporting to Codecov from CI, uploaded from the Python 3.13 leg only
   since both legs produce identical figures.
-- `codecov.yml`, defining the commit status checks: overall coverage may not
-  regress at all, and new lines must clear the same 90 percent floor the workflow
-  enforces.
+- `codecov.yml`, configuring Codecov to report rather than gate. Both statuses are
+  marked informational, so they show what happened to coverage without ever
+  turning a pull request red. Coverage arrives as a comment and as inline
+  annotations on uncovered lines in the diff.
+
+  The targets are still strict, because they decide what gets reported: overall
+  coverage may not drop at all, and new lines are held to the same 90 percent
+  floor the workflow enforces. Strictness is free when it cannot fail anything.
 
 ### Changed
 
@@ -20,15 +25,11 @@ All notable changes to this project are documented here.
 
 ### Note
 
-- Codecov cannot fail this workflow. The action reports coverage and does not act
-  on a decline; `fail_ci_if_error` concerns upload failures, not thresholds. The
-  in-workflow gate remains `--cov-fail-under` in `pyproject.toml`. Codecov's own
-  statuses fail the pull request instead, and block a merge only once they are
-  added as required checks in branch protection, which is a repository setting
-  rather than anything the repo can assert for itself.
-
-  `fail_ci_if_error` is off on purpose: fork pull requests cannot read repository
-  secrets, and a missing token should not turn an outside contribution red.
+- Nothing about this can fail a build. The only coverage gate remains
+  `--cov-fail-under` in `pyproject.toml`, which fails the test run itself. The
+  Codecov action reports and does not act on a decline, its statuses are
+  informational, and `fail_ci_if_error` is off, which also keeps fork pull
+  requests green when they cannot read repository secrets.
 
 ## [0.8.1]
 

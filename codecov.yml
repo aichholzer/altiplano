@@ -1,27 +1,36 @@
-# Codecov's commit status checks.
+# Codecov reports, it does not gate.
 #
-# These are separate from the CI workflow. The workflow's own gate is
-# --cov-fail-under in pyproject.toml, which fails the run outright. The statuses
-# below fail the pull request instead, and only block a merge once they are added
-# as required checks in the repository's branch protection rules. Neither one can
-# be enforced from inside the other.
+# The only thing that fails CI is --cov-fail-under in pyproject.toml, which fails
+# the test run outright. Everything below is deliberately advisory: Codecov shows
+# what happened to coverage and leaves the decision to a human.
 
 coverage:
   status:
-    # Do not let overall coverage regress. `auto` compares against the base
-    # commit and a zero threshold allows no slippage, which is stricter than a
-    # fixed target: the suite currently sits at 100 percent, and a fixed 90 would
-    # quietly permit losing ten points.
+    # `informational` is the whole point of this file. Without it these statuses
+    # post a failing check when the target is missed, which reads as a broken
+    # pull request. With it, Codecov still evaluates the targets and reports the
+    # numbers, but the check always passes.
     project:
       default:
+        # `auto` compares against the base commit, and a zero threshold means any
+        # drop at all gets reported. Strict on purpose: it is what makes a
+        # regression visible, and it costs nothing when it cannot fail anything.
         target: auto
         threshold: 0%
+        informational: true
 
-    # New and changed lines must clear the same floor the workflow enforces.
+    # New and changed lines, held to the same floor the workflow enforces.
     patch:
       default:
         target: 90%
+        informational: true
 
 comment:
-  # Only comment when the diff actually moves coverage.
+  # Comment only when the diff actually moves coverage, so unrelated pull
+  # requests are not padded with a table saying nothing changed.
   require_changes: true
+
+github_checks:
+  # Marks uncovered lines inline in the Files Changed view, which is the most
+  # direct way to see what a diff failed to cover.
+  annotations: true

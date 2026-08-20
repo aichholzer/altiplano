@@ -48,15 +48,15 @@ jobs:
       # Uploaded from one leg only. Both produce identical coverage, so a second
       # upload would add nothing but noise.
       #
-      # This does not gate anything by itself: the action reports coverage, it
-      # does not fail on a decline. `--cov-fail-under` is what fails this
-      # workflow. Codecov enforces its own thresholds through separate commit
-      # status checks, configured in codecov.yml, which block a merge once added
-      # as required checks in branch protection.
+      # Nothing here gates. Coverage is reported into the pull request as a
+      # comment and as inline annotations on uncovered lines, and codecov.yml
+      # marks the statuses informational so they cannot turn a pull request red.
+      # The gate is `--cov-fail-under` in pyproject.toml, which fails the run
+      # above before this step is reached.
       #
-      # fail_ci_if_error stays off deliberately. Fork pull requests have no
-      # access to repository secrets, so a missing token must not turn an
-      # outside contribution red.
+      # fail_ci_if_error stays off for the same reason, plus one more: fork pull
+      # requests have no access to repository secrets, so a missing token must
+      # not turn an outside contribution red.
       - name: Upload coverage to Codecov
         if: matrix.python-version == '3.13'
         uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5.5.5
