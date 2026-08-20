@@ -64,6 +64,7 @@ ROUTES = [
     route("create_project", lambda: server.create_project("Board"), CREATE, "/projects", {"title": "Board"}),
     route("create_task", lambda: server.create_task(3, "Task"), CREATE, "/projects/3/tasks", {"title": "Task"}),
     route("update_task", lambda: server.update_task(7, done=True), UPDATE, "/tasks/7", {"done": True}),
+    route("delete_task", lambda: server.delete_task(7), REMOVE, "/tasks/7", {}),
     route(
         "set_reminders",
         lambda: server.set_reminders(7, ["2026-08-20T09:00:00+10:00"]),
