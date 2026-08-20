@@ -32,7 +32,7 @@ Comments:
 
 Assignees:
 - `search_users` (query) — find a `user_id` to assign
-- `list_assignees` (task_id) — reads the `assignees` field from the task, because `GET /tasks/{id}/assignees` returns 500 on Vikunja 2.3.0
+- `list_assignees` (task_id)
 - `add_assignee` (task_id, user_id)
 - `remove_assignee` (task_id, user_id)
 
@@ -82,6 +82,7 @@ uvx altiplano                           # from PyPI
 - Dates are ISO 8601 datetimes. `start_date`/`end_date` mark the window you plan to work on a task (start work / finish work); `due_date` is the deadline.
 - The UI shows tasks by their project-local `identifier` (e.g. `#50`), which is not the global `id` the API uses.
 - Endpoint shapes (create via `PUT /projects/{id}/tasks`, update via `POST /tasks/{id}`) follow current Vikunja; adjust if your instance differs.
+- Verified against Vikunja v2.5.0 on the `/api/v1` endpoints. `list_assignees` needs a version where `GET /tasks/{id}/assignees` works: it answers 500 on v2.3.0, and works on v2.5.0. Every other tool works on both.
 
 ## Licence
 

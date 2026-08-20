@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented here.
 
+## [0.5.6]
+
+### Changed
+
+- `list_assignees` reads `GET /tasks/{id}/assignees` again, reverting the 0.5.5
+  workaround. That endpoint was broken server-side on Vikunja v2.3.0 and works on
+  v2.5.0, so the workaround now costs more than it saves: fetching the whole task
+  to read a short user list transferred 3604 bytes where the dedicated endpoint
+  returns 157. It also returns `[]` rather than omitting the field when a task has
+  no assignees, so the empty case needs no special handling.
+
+  The tradeoff is that `list_assignees` fails again on the affected Vikunja
+  versions. That failure is server-side and the fix is to upgrade; carrying a
+  workaround for it indefinitely would mean every call paying for a bug nobody
+  running a current server has.
+
 ## [0.5.5]
 
 ### Fixed

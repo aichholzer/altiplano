@@ -16,10 +16,9 @@ def body(request) -> dict:
 
 
 # --- routing ----------------------------------------------------------------
-def route(name, call, verb, path, body, response=None):
-    """One routing case. `response` overrides the fixture default where a tool
-    needs a particular response shape to get as far as returning."""
-    return pytest.param(call, verb, path, body, response, id=name)
+def route(name, call, verb, path, body):
+    """One routing case, named so failures point at the tool."""
+    return pytest.param(call, verb, path, body, id=name)
 
 
 ROUTES = [
@@ -45,15 +44,7 @@ ROUTES = [
         {"comment": "edited"},
     ),
     route("delete_comment", lambda: server.delete_comment(7, 21), "DELETE", "/tasks/7/comments/21", {}),
-    # Reads the task, not /tasks/7/assignees, so it needs a task-shaped response.
-    route(
-        "list_assignees",
-        lambda: server.list_assignees(7),
-        "GET",
-        "/tasks/7",
-        {},
-        {"assignees": []},
-    ),
+    route("list_assignees", lambda: server.list_assignees(7), "GET", "/tasks/7/assignees", {}),
     route("add_assignee", lambda: server.add_assignee(7, 2), "PUT", "/tasks/7/assignees", {"user_id": 2}),
     route("remove_assignee", lambda: server.remove_assignee(7, 2), "DELETE", "/tasks/7/assignees/2", {}),
     route("create_project", lambda: server.create_project("Board"), "PUT", "/projects", {"title": "Board"}),
@@ -70,10 +61,8 @@ ROUTES = [
 ]
 
 
-@pytest.mark.parametrize(("call", "verb", "path", "expected_body", "response"), ROUTES)
-def test_tool_uses_the_expected_verb_path_and_body(api, run, call, verb, path, expected_body, response):
-    if response is not None:
-        api.returns(response)
+@pytest.mark.parametrize(("call", "verb", "path", "expected_body"), ROUTES)
+def test_tool_uses_the_expected_verb_path_and_body(api, run, call, verb, path, expected_body):
     run(call())
     assert api.last.method == verb
     assert api.last.url.path.endswith(path)
@@ -238,23 +227,9 @@ def test_search_users_returns_id_username_and_name(api, run):
     ]
 
 
-# --- assignees, read from the task ------------------------------------------
-# The dedicated GET /tasks/{id}/assignees route answers 500 on Vikunja 2.3.0, so
-# this reads the field off the task instead. These cases pin that source.
-def test_list_assignees_reads_the_field_off_the_task(api, run):
-    api.returns({"id": 7, "assignees": [{"id": 1, "username": "stefan", "name": "dropped"}]})
+def test_list_assignees_returns_id_and_username(api, run):
+    api.returns([{"id": 1, "username": "stefan", "name": "dropped", "email": "dropped"}])
     assert run(server.list_assignees(7)) == [{"id": 1, "username": "stefan"}]
-
-
-def test_list_assignees_returns_empty_when_the_field_is_absent(api, run):
-    api.returns({"id": 7, "title": "Nobody assigned"})
-    assert run(server.list_assignees(7)) == []
-
-
-def test_list_assignees_returns_empty_when_the_field_is_null(api, run):
-    """Vikunja omits assignees entirely once the last one is removed."""
-    api.returns({"id": 7, "assignees": None})
-    assert run(server.list_assignees(7)) == []
 
 
 # Applied to each collection-shape test below, so all six listings are held to
@@ -267,10 +242,9 @@ every_listing = pytest.mark.parametrize(
         lambda: server.list_labels(),
         lambda: server.list_comments(7),
         lambda: server.search_users("x"),
+        lambda: server.list_assignees(7),
     ],
-    # list_assignees is deliberately absent: it consumes a single task resource
-    # rather than a collection response, and is covered separately above.
-    ids=["projects", "tasks", "labels", "comments", "users"],
+    ids=["projects", "tasks", "labels", "comments", "users", "assignees"],
 )
 
 
