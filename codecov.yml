@@ -1,0 +1,36 @@
+# Codecov reports, it does not gate.
+#
+# The only thing that fails CI is --cov-fail-under in pyproject.toml, which fails
+# the test run outright. Everything below is deliberately advisory: Codecov shows
+# what happened to coverage and leaves the decision to a human.
+
+coverage:
+  status:
+    # `informational` is the whole point of this file. Without it these statuses
+    # post a failing check when the target is missed, which reads as a broken
+    # pull request. With it, Codecov still evaluates the targets and reports the
+    # numbers, but the check always passes.
+    project:
+      default:
+        # `auto` compares against the base commit, and a zero threshold means any
+        # drop at all gets reported. Strict on purpose: it is what makes a
+        # regression visible, and it costs nothing when it cannot fail anything.
+        target: auto
+        threshold: 0%
+        informational: true
+
+    # New and changed lines, held to the same floor the workflow enforces.
+    patch:
+      default:
+        target: 90%
+        informational: true
+
+comment:
+  # Comment only when the diff actually moves coverage, so unrelated pull
+  # requests are not padded with a table saying nothing changed.
+  require_changes: true
+
+github_checks:
+  # Marks uncovered lines inline in the Files Changed view, which is the most
+  # direct way to see what a diff failed to cover.
+  annotations: true

@@ -14,6 +14,9 @@ jobs:
   # gate is always exactly what was already green on the pull request.
   test:
     uses: ./.github/workflows/ci.yml
+    # Without this the reused workflow gets no secrets, and its coverage upload
+    # would run tokenless on every release.
+    secrets: inherit
 
   publish:
     name: build and publish
