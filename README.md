@@ -70,9 +70,9 @@ Then `mcp.json` only needs the command, no `env` block, no plain-text secrets:
 
 > `uvx` fetches the newest version on its first run, then reuses a cached environment on every run after that. Restarting your MCP client does not change this.
 >
-> `@latest` asks for the newest version and refreshes the cache. An exact pin such as `altiplano@0.6.0` works too, since requesting a specific version cannot be satisfied from a cache holding a different one, at the cost of editing your MCP file on every upgrade.
+> `@latest` refreshes that environment, but uv separately caches the list of versions it knows exist. So `@latest` means newest version uv has heard of, not newest on PyPI, and shortly after a release it can still resolve to the previous one. An exact pin does not dodge this either; it just fails loudly as unsatisfiable rather than quietly serving an older build.
 >
-> If you suspect you are already on a stale version, `uv cache clean altiplano` then restart your client.
+> After publishing, run `uv cache clean altiplano` before restarting your client. To check what is actually running: `uv run --no-project --with altiplano python -c "import altiplano; print(altiplano.__version__)"`, adding `--refresh-package altiplano` to compare that against PyPI.
 
 ## Choosing the API version
 
