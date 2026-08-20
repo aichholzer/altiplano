@@ -2,6 +2,32 @@
 
 All notable changes to this project are documented here.
 
+## [0.6.0]
+
+### Added
+
+- Support for the Vikunja v2 API alongside v1. The version is taken from the URL
+  you configure: point `VIKUNJA_URL` at `/api/v2` and you get v2, anything else
+  gets v1. No new setting, no probing, and no extra request at startup. Older
+  servers keep working unchanged, which matters because v2 only exists from
+  Vikunja 2.4.0.
+
+  Every tool takes the same arguments and returns the same shapes on both. The
+  differences absorbed internally are the create verb (`PUT` on v1, `POST` on v2),
+  the update verb (`POST` on v1, `PATCH` on v2), the collection envelope that v2
+  wraps results in, and the user search parameter, renamed from `s` to `q`.
+
+  Paths are identical across the two versions for everything this server does,
+  which is what keeps the change small.
+
+### Changed
+
+- `_items` unwraps a v2 pagination envelope as well as a v1 bare array. It
+  branches on the shape of the response rather than the configured version, so a
+  mismatch between the two degrades gracefully instead of breaking, and the
+  protection added in 0.5.4 against treating a bodyless response as an empty
+  collection still holds.
+
 ## [0.5.6]
 
 ### Changed

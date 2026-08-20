@@ -13,7 +13,7 @@ import pytest
 
 from altiplano import server
 
-BASE_URL = "https://vikunja.test/api/v1"
+HOST = "https://vikunja.test"
 TOKEN = "tk_notarealtoken"
 
 
@@ -44,9 +44,19 @@ class RecordingAPI:
 
 
 @pytest.fixture
-def api(monkeypatch: pytest.MonkeyPatch) -> RecordingAPI:
+def api_version() -> int:
+    """Which Vikunja API version the fake speaks.
+
+    Defaults to 1. Override it per test with
+    `@pytest.mark.parametrize("api_version", [1, 2])` to run against both.
+    """
+    return 1
+
+
+@pytest.fixture
+def api(api_version: int, monkeypatch: pytest.MonkeyPatch) -> RecordingAPI:
     """A fake Vikunja, with credentials supplied via the environment."""
-    monkeypatch.setenv("VIKUNJA_URL", BASE_URL)
+    monkeypatch.setenv("VIKUNJA_URL", f"{HOST}/api/v{api_version}")
     monkeypatch.setenv("VIKUNJA_API_TOKEN", TOKEN)
 
     recorder = RecordingAPI()

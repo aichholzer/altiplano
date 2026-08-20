@@ -16,55 +16,69 @@ def body(request) -> dict:
 
 
 # --- routing ----------------------------------------------------------------
-def route(name, call, verb, path, body):
-    """One routing case, named so failures point at the tool."""
-    return pytest.param(call, verb, path, body, id=name)
+def route(name, call, verbs, path, body):
+    """One routing case, named so failures point at the tool.
+
+    `verbs` is {1: verb, 2: verb}. Both are written out as literals rather than
+    derived from the server's own mapping, so the test cannot agree with a wrong
+    implementation.
+    """
+    return pytest.param(call, verbs, path, body, id=name)
+
+
+READ = {1: "GET", 2: "GET"}
+CREATE = {1: "PUT", 2: "POST"}
+UPDATE = {1: "POST", 2: "PATCH"}
+REMOVE = {1: "DELETE", 2: "DELETE"}
 
 
 ROUTES = [
-    route("list_projects", lambda: server.list_projects(), "GET", "/projects", {}),
-    route("get_task", lambda: server.get_task(7), "GET", "/tasks/7", {}),
-    route("list_tasks", lambda: server.list_tasks(3), "GET", "/projects/3/tasks", {}),
-    route("list_labels", lambda: server.list_labels(), "GET", "/labels", {}),
-    route("add_label", lambda: server.add_label(7, 1), "PUT", "/tasks/7/labels", {"label_id": 1}),
-    route("remove_label", lambda: server.remove_label(7, 1), "DELETE", "/tasks/7/labels/1", {}),
-    route("list_comments", lambda: server.list_comments(7), "GET", "/tasks/7/comments", {}),
+    route("list_projects", lambda: server.list_projects(), READ, "/projects", {}),
+    route("get_task", lambda: server.get_task(7), READ, "/tasks/7", {}),
+    route("list_tasks", lambda: server.list_tasks(3), READ, "/projects/3/tasks", {}),
+    route("list_labels", lambda: server.list_labels(), READ, "/labels", {}),
+    route("add_label", lambda: server.add_label(7, 1), CREATE, "/tasks/7/labels", {"label_id": 1}),
+    route("remove_label", lambda: server.remove_label(7, 1), REMOVE, "/tasks/7/labels/1", {}),
+    route("list_comments", lambda: server.list_comments(7), READ, "/tasks/7/comments", {}),
     route(
         "add_comment",
         lambda: server.add_comment(7, "hello"),
-        "PUT",
+        CREATE,
         "/tasks/7/comments",
         {"comment": "hello"},
     ),
     route(
         "update_comment",
         lambda: server.update_comment(7, 21, "edited"),
-        "POST",
+        UPDATE,
         "/tasks/7/comments/21",
         {"comment": "edited"},
     ),
-    route("delete_comment", lambda: server.delete_comment(7, 21), "DELETE", "/tasks/7/comments/21", {}),
-    route("list_assignees", lambda: server.list_assignees(7), "GET", "/tasks/7/assignees", {}),
-    route("add_assignee", lambda: server.add_assignee(7, 2), "PUT", "/tasks/7/assignees", {"user_id": 2}),
-    route("remove_assignee", lambda: server.remove_assignee(7, 2), "DELETE", "/tasks/7/assignees/2", {}),
-    route("create_project", lambda: server.create_project("Board"), "PUT", "/projects", {"title": "Board"}),
-    route("create_task", lambda: server.create_task(3, "Task"), "PUT", "/projects/3/tasks", {"title": "Task"}),
-    route("update_task", lambda: server.update_task(7, done=True), "POST", "/tasks/7", {"done": True}),
+    route("delete_comment", lambda: server.delete_comment(7, 21), REMOVE, "/tasks/7/comments/21", {}),
+    route("list_assignees", lambda: server.list_assignees(7), READ, "/tasks/7/assignees", {}),
+    route("add_assignee", lambda: server.add_assignee(7, 2), CREATE, "/tasks/7/assignees", {"user_id": 2}),
+    route("remove_assignee", lambda: server.remove_assignee(7, 2), REMOVE, "/tasks/7/assignees/2", {}),
+    route("create_project", lambda: server.create_project("Board"), CREATE, "/projects", {"title": "Board"}),
+    route("create_task", lambda: server.create_task(3, "Task"), CREATE, "/projects/3/tasks", {"title": "Task"}),
+    route("update_task", lambda: server.update_task(7, done=True), UPDATE, "/tasks/7", {"done": True}),
     route(
         "set_reminders",
         lambda: server.set_reminders(7, ["2026-08-20T09:00:00+10:00"]),
-        "POST",
+        UPDATE,
         "/tasks/7",
         {"reminders": [{"reminder": "2026-08-20T09:00:00+10:00"}]},
     ),
-    route("search_users", lambda: server.search_users("stefan"), "GET", "/users", {}),
+    route("search_users", lambda: server.search_users("stefan"), READ, "/users", {}),
 ]
 
 
-@pytest.mark.parametrize(("call", "verb", "path", "expected_body"), ROUTES)
-def test_tool_uses_the_expected_verb_path_and_body(api, run, call, verb, path, expected_body):
+@pytest.mark.parametrize("api_version", [1, 2])
+@pytest.mark.parametrize(("call", "verbs", "path", "expected_body"), ROUTES)
+def test_tool_uses_the_expected_verb_path_and_body(
+    api, run, api_version, call, verbs, path, expected_body
+):
     run(call())
-    assert api.last.method == verb
+    assert api.last.method == verbs[api_version]
     assert api.last.url.path.endswith(path)
     assert body(api.last) == expected_body
 
@@ -75,6 +89,54 @@ def test_every_tool_is_covered_by_a_routing_case():
 
     registered = {tool.name for tool in asyncio.run(server.mcp.list_tools())}
     assert registered == {case.id for case in ROUTES}
+
+
+# --- api version selection --------------------------------------------------
+@pytest.mark.parametrize("api_version", [1, 2])
+def test_version_comes_from_the_configured_url(api, api_version):
+    assert server._version() == api_version
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("https://vikunja.test/api/v1", 1),
+        ("https://vikunja.test/api/v2", 2),
+        # A trailing slash is stripped by _base before the check.
+        ("https://vikunja.test/api/v2/", 2),
+        # Anything unrecognised falls back to v1 rather than guessing.
+        ("https://vikunja.test/api", 1),
+        ("https://vikunja.test/api/v3", 1),
+    ],
+)
+def test_version_falls_back_to_v1_for_anything_but_an_explicit_v2_url(monkeypatch, url, expected):
+    monkeypatch.setenv("VIKUNJA_URL", url)
+    assert server._version() == expected
+
+
+@pytest.mark.parametrize("api_version", [1, 2])
+def test_listings_unwrap_whichever_collection_shape_arrives(api, run, api_version):
+    """v1 sends a bare array, v2 a pagination envelope. Both must work, and the
+    check is on shape, so a version mismatch degrades gracefully rather than
+    breaking."""
+    api.returns([{"id": 1, "title": "Home"}])
+    assert run(server.list_projects())[0]["title"] == "Home"
+
+    api.returns({"items": [{"id": 1, "title": "Home"}], "total": 1, "page": 1})
+    assert run(server.list_projects())[0]["title"] == "Home"
+
+
+def test_envelope_with_no_items_returns_empty(api, run):
+    api.returns({"items": [], "total": 0, "page": 1, "per_page": 50})
+    assert run(server.list_projects()) == []
+
+
+def test_a_dict_without_items_is_still_rejected(api, run):
+    """The 0.5.4 protection must survive envelope support: a bodyless response
+    reported as a status dict has no `items` and is not an empty collection."""
+    api.returns_raw(204)
+    with pytest.raises(RuntimeError, match="expected a list from the API, got dict"):
+        run(server.list_projects())
 
 
 # --- optional payload fields ------------------------------------------------
@@ -165,9 +227,12 @@ def test_list_tasks_passes_filter_and_sort_through_to_the_server(api, run):
     }
 
 
-def test_search_users_sends_the_query_as_s(api, run):
+@pytest.mark.parametrize(("api_version", "param"), [(1, "s"), (2, "q")])
+def test_search_users_uses_the_search_param_the_version_expects(api, run, param):
+    """v1 names it `s`, v2 renamed it to `q`. Sending the wrong one is not an
+    error, it silently returns nothing, which is why this is pinned."""
     run(server.search_users("stefan"))
-    assert dict(api.last.url.params) == {"s": "stefan"}
+    assert dict(api.last.url.params) == {param: "stefan"}
 
 
 # --- response shaping -------------------------------------------------------

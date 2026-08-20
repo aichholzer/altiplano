@@ -1,6 +1,6 @@
 [project]
 name = "altiplano"
-version = "0.5.6"
+version = "0.6.0"
 description = "Minimal MCP server for Vikunja (server-side filtering, no fluff)"
 readme = "README.md"
 requires-python = ">=3.10"
