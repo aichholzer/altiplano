@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented here.
 
+## [0.7.1]
+
+### Added
+
+- The server declares its version, so it appears as `serverInfo.version` in the
+  MCP handshake and clients can show which build they launched.
+
+  This exists because `uvx` can serve a cached build for some time after a
+  release, and until now the running version was invisible: the only way to tell
+  was to provoke a behaviour that had changed between releases. That is a poor
+  diagnostic, and it cost several restart cycles to work out that a client was
+  still on the previous version.
+
 ## [0.7.0]
 
 ### Added

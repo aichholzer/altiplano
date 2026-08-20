@@ -16,7 +16,12 @@ from typing import Any
 import httpx
 from mcp.server.mcpserver import MCPServer
 
-mcp = MCPServer("altiplano")
+from altiplano import __version__
+
+# The version is declared so it appears in the MCP handshake. `uvx` can serve a
+# cached build for a while after a release, and without this the running version
+# is invisible: the only way to tell is to provoke a behaviour that changed.
+mcp = MCPServer("altiplano", version=__version__)
 
 _CONFIG_FILE = Path(
     os.environ.get("ALTIPLANO_CONFIG", Path.home() / ".config" / "altiplano" / "env")
