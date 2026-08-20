@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented here.
 
+## [0.5.3]
+
+### Added
+
+- Real test coverage of the request layer, taking the suite from 3 tests to 64.
+  Statement and branch coverage are both at 100 percent, up from 37 percent
+  statement coverage in which no function body ran at all. Credential resolution,
+  the HTTP helper's no-content and error-status paths, every tool's verb, path
+  and body, and the response-shaping helpers are now exercised. Requests are
+  intercepted at the httpx transport boundary, so URL joining, header assembly,
+  status handling and JSON decoding remain genuine.
+- A coverage floor of 90 percent, enforced by `pytest` configuration rather than
+  a workflow flag so a local run and CI apply the identical gate. Dropping below
+  it fails the run, and therefore fails the pull request.
+- `test_every_tool_is_covered_by_a_routing_case` fails if a tool is added without
+  a corresponding wire-contract test, so coverage cannot quietly regress as the
+  tool surface grows.
+
 ## [0.5.2]
 
 ### Added
