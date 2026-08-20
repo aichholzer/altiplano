@@ -10,15 +10,15 @@ Filtering and sorting are passed straight to the Vikunja API (server-side), so t
 
 Projects:
 - `list_projects` (includes `parent_project_id`, shows sub-project nesting)
-- `create_project` (title, parent_project_id?, description?) — pass `parent_project_id` for a sub-project
+- `create_project` (title, parent_project_id?, description?): pass `parent_project_id` for a sub-project
 
 Tasks:
 - `list_tasks` (project_id, filter, sort_by, page, per_page)
 - `get_task` (task_id)
 - `create_task` (project_id, title, description?, priority?, due_date?, start_date?, end_date?)
-- `update_task` (task_id, title?, description?, done?, priority?, start_date?, end_date?) — on v1, see the warning below about omitted fields
-- `set_reminders` (task_id, reminders) — replaces the task's reminders with the given ISO 8601 datetimes; empty list clears
-- `delete_task` (task_id) — soft-deletes the task along with its comments, labels and assignees. Vikunja keeps it for 30 days but exposes no way to restore it, so treat this as irreversible
+- `update_task` (task_id, title?, description?, done?, priority?, start_date?, end_date?): on v1, see the warning below about omitted fields
+- `set_reminders` (task_id, reminders): replaces the task's reminders with the given ISO 8601 datetimes; empty list clears
+- `delete_task` (task_id): soft-deletes the task along with its comments, labels and assignees. Vikunja keeps it for 30 days but exposes no way to restore it, so treat this as irreversible
 
 Labels:
 - `list_labels`
@@ -28,11 +28,11 @@ Labels:
 Comments:
 - `list_comments` (task_id)
 - `add_comment` (task_id, comment)
-- `update_comment` (task_id, comment_id, comment) — replaces the comment text; get `comment_id` from `list_comments`
+- `update_comment` (task_id, comment_id, comment): replaces the comment text; get `comment_id` from `list_comments`
 - `delete_comment` (task_id, comment_id)
 
 Assignees:
-- `search_users` (query) — find a `user_id` to assign
+- `search_users` (query): find a `user_id` to assign
 - `list_assignees` (task_id)
 - `add_assignee` (task_id, user_id)
 - `remove_assignee` (task_id, user_id)
