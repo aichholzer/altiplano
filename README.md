@@ -87,6 +87,25 @@ Prefer `/api/v2` if your server has it, since Vikunja has said v1 will eventuall
 
 The differences are handled internally: v2 uses `POST` to create and `PATCH` to update where v1 uses `PUT` and `POST`, returns collections in a pagination envelope rather than a bare array, renames the user search parameter from `s` to `q`, and answers deletes with `204` rather than a message body. Tool arguments and return shapes are unchanged.
 
+One difference is visible to you, and it is the reason to prefer v2: descriptions and comments are Markdown.
+
+## Markdown descriptions and comments (v2 only)
+
+Vikunja stores task descriptions and comments as HTML. On v2 this server asks it to convert, so you write and read Markdown and never touch HTML:
+
+```
+create_task(project_id=12, title="Ship it", description="**bold** and a [link](https://example.com)")
+```
+
+Vikunja stores that as `<p><strong>bold</strong> and a <a href="...">link</a></p>`, and `get_task` hands it back as the Markdown you wrote. The same applies to `update_task`, `create_project`, `add_comment` and `update_comment`.
+
+On v1 there is no conversion and the fields are HTML, so Markdown you send is stored verbatim and renders as literal asterisks.
+
+Two things worth knowing:
+
+- v2 only converts on create and on full replace, never on a partial update. So changing a description reads the task first and writes it back whole, which costs one extra request and could lose a concurrent edit by something else. Updates that do not touch the description stay a single partial update.
+- Vikunja resolves `@mentions` during conversion, so writing `@someone` in a description notifies them.
+
 ## Run
 
 ```bash

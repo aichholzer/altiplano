@@ -75,6 +75,16 @@ def _verb(action: str) -> str:
     return _VERBS[_version()][action]
 
 
+def _md_params() -> dict[str, str]:
+    """Ask v2 to exchange rich-text fields as Markdown. v1 has no such option.
+
+    Descriptions and comments are stored as HTML. v2 will convert in both
+    directions, which is what lets callers write Markdown instead of hand-rolling
+    HTML. On v1 this is empty and the fields stay HTML.
+    """
+    return {"format": "markdown"} if _version() == 2 else {}
+
+
 async def _request(method: str, path: str, **kwargs: Any) -> Any:
     async with httpx.AsyncClient(base_url=_base(), headers=_headers(), timeout=30) as client:
         r = await client.request(method, path, **kwargs)
@@ -144,7 +154,7 @@ async def create_project(
         payload["parent_project_id"] = parent_project_id
     if description is not None:
         payload["description"] = description
-    return await _request(_verb("create"), "/projects", json=payload)
+    return await _request(_verb("create"), "/projects", params=_md_params(), json=payload)
 
 
 # --- tasks ------------------------------------------------------------------
@@ -174,8 +184,8 @@ async def list_tasks(
 
 @mcp.tool()
 async def get_task(task_id: int) -> dict:
-    """Get a single task with full detail."""
-    return await _request("GET", f"/tasks/{task_id}")
+    """Get a single task with full detail. On v2 the description is Markdown."""
+    return await _request("GET", f"/tasks/{task_id}", params=_md_params())
 
 
 @mcp.tool()
@@ -205,7 +215,9 @@ async def create_task(
         payload["start_date"] = start_date
     if end_date is not None:
         payload["end_date"] = end_date
-    return await _request(_verb("create"), f"/projects/{project_id}/tasks", json=payload)
+    return await _request(
+        _verb("create"), f"/projects/{project_id}/tasks", params=_md_params(), json=payload
+    )
 
 
 @mcp.tool()
@@ -238,7 +250,31 @@ async def update_task(
         payload["end_date"] = end_date
     if not payload:
         raise ValueError("No fields to update")
+    # A description has to go through a full replace on v2, because PATCH ignores
+    # ?format=markdown and would store the Markdown verbatim. Everything else
+    # stays a cheap partial update.
+    if "description" in payload and _version() == 2:
+        return await _replace_task(task_id, payload)
     return await _request(_verb("update"), f"/tasks/{task_id}", json=payload)
+
+
+async def _replace_task(task_id: int, changes: dict[str, Any]) -> dict:
+    """Apply `changes` through a full replace, so v2 converts Markdown for us.
+
+    v2 only honours the Markdown parameter on create and replace, never on a
+    partial update. Replacing resets any field it is not given, so the current
+    task is read first and the changes layered on top. The read asks for Markdown
+    as well, so a description we are not touching is written back in the same form
+    it came in rather than being double-converted.
+
+    Verified lossless across labels, assignees, reminders, dates, colour,
+    priority and percent_done. The cost is an extra request, and a lost update if
+    something else writes to the task in between.
+    """
+    current = await _request("GET", f"/tasks/{task_id}", params=_md_params())
+    body = {k: v for k, v in current.items() if k != "$schema"}
+    body.update(changes)
+    return await _request("PUT", f"/tasks/{task_id}", params=_md_params(), json=body)
 
 
 @mcp.tool()
@@ -274,7 +310,7 @@ async def remove_label(task_id: int, label_id: int) -> dict:
 @mcp.tool()
 async def list_comments(task_id: int) -> list[dict]:
     """List comments on a task."""
-    data = await _request("GET", f"/tasks/{task_id}/comments")
+    data = await _request("GET", f"/tasks/{task_id}/comments", params=_md_params())
     return [
         {"id": c.get("id"), "comment": c.get("comment"), "author": (c.get("author") or {}).get("username")}
         for c in _items(data)
@@ -284,13 +320,22 @@ async def list_comments(task_id: int) -> list[dict]:
 @mcp.tool()
 async def add_comment(task_id: int, comment: str) -> dict:
     """Add a comment to a task."""
-    return await _request(_verb("create"), f"/tasks/{task_id}/comments", json={"comment": comment})
+    return await _request(
+        _verb("create"), f"/tasks/{task_id}/comments", params=_md_params(), json={"comment": comment}
+    )
 
 
 @mcp.tool()
 async def update_comment(task_id: int, comment_id: int, comment: str) -> dict:
     """Replace the text of an existing comment. Get `comment_id` from `list_comments`."""
-    return await _request(_verb("update"), f"/tasks/{task_id}/comments/{comment_id}", json={"comment": comment})
+    # v2 honours ?format=markdown on PUT but silently ignores it on PATCH, storing
+    # the Markdown verbatim in a field the UI renders as HTML. A comment has one
+    # writable field, so replacing it and updating it are the same thing, and PUT
+    # is the variant that converts. v1 keeps its own update verb.
+    verb = "PUT" if _version() == 2 else _verb("update")
+    return await _request(
+        verb, f"/tasks/{task_id}/comments/{comment_id}", params=_md_params(), json={"comment": comment}
+    )
 
 
 @mcp.tool()

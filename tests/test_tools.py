@@ -30,6 +30,9 @@ READ = {1: "GET", 2: "GET"}
 CREATE = {1: "PUT", 2: "POST"}
 UPDATE = {1: "POST", 2: "PATCH"}
 REMOVE = {1: "DELETE", 2: "DELETE"}
+# v2 honours ?format=markdown on a replace but not on a partial update, so writes
+# that carry rich text go through PUT there.
+REPLACE = {1: "POST", 2: "PUT"}
 
 
 ROUTES = [
@@ -50,7 +53,7 @@ ROUTES = [
     route(
         "update_comment",
         lambda: server.update_comment(7, 21, "edited"),
-        UPDATE,
+        REPLACE,
         "/tasks/7/comments/21",
         {"comment": "edited"},
     ),

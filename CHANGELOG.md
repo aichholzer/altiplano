@@ -2,6 +2,34 @@
 
 All notable changes to this project are documented here.
 
+## [0.7.0]
+
+### Added
+
+- Descriptions and comments are exchanged as Markdown on v2, so callers no longer
+  write HTML by hand. `create_task`, `update_task`, `create_project`,
+  `add_comment`, `update_comment`, `get_task` and `list_comments` all speak
+  Markdown; Vikunja converts to the HTML it stores and back again, and resolves
+  `@mentions` while doing so. v1 has no such facility and is unchanged.
+
+### Changed
+
+- A description change on v2 now reads the task and writes it back whole, rather
+  than sending a partial update. This is not gratuitous: v2 honours the Markdown
+  parameter on create and on replace but silently ignores it on `PATCH`, returning
+  200 while storing the Markdown verbatim into a field rendered as HTML. A partial
+  update would therefore have corrupted the field rather than failing. Updates
+  that carry no description are untouched and remain a single request.
+
+  The cost is one extra request when a description changes, and a lost update if
+  something else writes to the same task in between. Reading first was verified
+  lossless across labels, assignees, reminders, dates, colour, priority and
+  percent done.
+
+- `update_comment` uses `PUT` on v2 instead of `PATCH`, for the same reason. A
+  comment has a single writable field, so replacing and updating it are the same
+  operation, and only the replace converts Markdown.
+
 ## [0.6.0]
 
 ### Added
