@@ -77,14 +77,14 @@ Then `mcp.json` only needs the command, no `env` block, no plain-text secrets:
 
 ## Choosing the API version
 
-Vikunja 2.4.0 added a v2 API alongside v1, and this server speaks both. The version comes from the URL you configure, so there is nothing else to set:
+Vikunja 2.4.0 added a v2 API alongside v1, and this MCP deals with both. The version comes from the URL you configure, so there is nothing else to set:
 
 | `VIKUNJA_URL` ends in | you get |
 | --- | --- |
 | `/api/v2` | the v2 API |
 | `/api/v1`, or anything else | the v1 API |
 
-Prefer `/api/v2` if your server has it, since Vikunja has said v1 will eventually be withdrawn. Stay on `/api/v1` for older servers; every tool works the same either way, with one exception worth knowing about.
+Prefer `/api/v2` if your server has it. Stay on `/api/v1` only for older servers; every tool works the same either way, with some exceptions.
 
 ### On v1, updating a task discards the fields you omit
 
@@ -96,17 +96,13 @@ update_task(task_id=42, done=True)      # and this discards description, priorit
 set_reminders(task_id=42, reminders=[]) # same, via the same endpoint
 ```
 
-This is Vikunja's behaviour, not something the server adds, and it is not fixed here: doing so would mean reading each task before every update, which costs a request on a path most people will not use. On v1, pass every field you want to keep.
+This is Vikunja's behaviour. On v1, you must pass every field you want to keep.
 
-v2 is unaffected. It uses `PATCH`, a genuine partial update, so omitted fields survive. This is the strongest practical reason to point at `/api/v2` if you can.
-
-The differences are handled internally: v2 uses `POST` to create and `PATCH` to update where v1 uses `PUT` and `POST`, returns collections in a pagination envelope rather than a bare array, renames the user search parameter from `s` to `q`, and answers deletes with `204` rather than a message body. Tool arguments and return shapes are unchanged.
-
-One difference is visible to you, and it is the reason to prefer v2: descriptions and comments are Markdown.
+v2 is unaffected. It uses `PATCH` and omitted fields survive.
 
 ## Markdown descriptions and comments (v2 only)
 
-Vikunja stores task descriptions and comments as HTML. On v2 this server asks it to convert, so you write and read Markdown and never touch HTML:
+Vikunja stores task descriptions and comments as HTML. On v2 this server asks it to convert, so you write and read Markdown:
 
 ```
 create_task(project_id=12, title="Ship it", description="**bold** and a [link](https://example.com)")
@@ -116,7 +112,7 @@ Vikunja stores that as `<p><strong>bold</strong> and a <a href="...">link</a></p
 
 On v1 there is no conversion and the fields are HTML, so Markdown you send is stored verbatim and renders as literal asterisks.
 
-Two things worth knowing:
+Two things worth mentioning:
 
 - v2 only converts on create and on full replace, never on a partial update. So changing a description reads the task first and writes it back whole, which costs one extra request and could lose a concurrent edit by something else. Updates that do not touch the description stay a single partial update.
 - Vikunja resolves `@mentions` during conversion, so writing `@someone` in a description notifies them.
