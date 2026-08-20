@@ -246,6 +246,18 @@ async def add_comment(task_id: int, comment: str) -> dict:
     return await _request("PUT", f"/tasks/{task_id}/comments", json={"comment": comment})
 
 
+@mcp.tool()
+async def update_comment(task_id: int, comment_id: int, comment: str) -> dict:
+    """Replace the text of an existing comment. Get `comment_id` from `list_comments`."""
+    return await _request("POST", f"/tasks/{task_id}/comments/{comment_id}", json={"comment": comment})
+
+
+@mcp.tool()
+async def delete_comment(task_id: int, comment_id: int) -> dict:
+    """Delete a comment from a task. Get `comment_id` from `list_comments`."""
+    return await _request("DELETE", f"/tasks/{task_id}/comments/{comment_id}")
+
+
 # --- users / assignees ------------------------------------------------------
 ##
 @mcp.tool()
