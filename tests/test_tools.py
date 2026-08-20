@@ -279,7 +279,9 @@ def test_list_assignees_returns_id_and_username(api, run):
     assert run(server.list_assignees(7)) == [{"id": 1, "username": "stefan"}]
 
 
-@pytest.mark.parametrize(
+# Applied to each collection-shape test below, so all six listings are held to
+# the same contract.
+every_listing = pytest.mark.parametrize(
     "listing",
     [
         lambda: server.list_projects(),
@@ -291,9 +293,32 @@ def test_list_assignees_returns_id_and_username(api, run):
     ],
     ids=["projects", "tasks", "labels", "comments", "users", "assignees"],
 )
+
+
+@every_listing
 def test_listings_return_empty_when_the_api_sends_null(api, run, listing):
-    # Vikunja sends a literal `null` rather than `[]` for some empty collections,
-    # which is what the `(data or [])` guard in each listing exists for. Passed as
-    # raw bytes because httpx cannot distinguish `json=None` from no body at all.
+    # Vikunja sends a literal `null` rather than `[]` for some empty collections.
+    # Passed as raw bytes because httpx cannot distinguish `json=None` from no
+    # body at all.
     api.returns_raw(200, b"null")
     assert run(listing()) == []
+
+
+@every_listing
+def test_listings_return_empty_for_an_empty_array(api, run, listing):
+    api.returns([])
+    assert run(listing()) == []
+
+
+@every_listing
+def test_listings_reject_a_response_that_is_not_a_collection(api, run, listing):
+    """An empty body is not an empty collection.
+
+    `_request` reports a bodyless response as a status dict, which is right for a
+    delete but is not a listing. Returning [] here would be indistinguishable
+    from genuinely having no items, so an agent would confidently report that
+    nothing exists when the response was actually swallowed upstream.
+    """
+    api.returns_raw(204)
+    with pytest.raises(RuntimeError, match="expected a list from the API, got dict"):
+        run(listing())

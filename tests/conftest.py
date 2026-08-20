@@ -22,7 +22,9 @@ class RecordingAPI:
 
     def __init__(self) -> None:
         self.requests: list[httpx.Request] = []
-        self._response = httpx.Response(200, json={})
+        # An empty collection, because tests that only assert on the outbound
+        # request still need a response the listing tools will accept.
+        self._response = httpx.Response(200, json=[])
 
     def returns(self, payload: Any, status: int = 200) -> None:
         self._response = httpx.Response(status, json=payload)

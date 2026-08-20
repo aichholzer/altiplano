@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented here.
 
+## [0.5.4]
+
+### Fixed
+
+- The six listing tools no longer fail with an opaque `AttributeError` raised from
+  inside a list comprehension when a response carries no body. `_request` reports
+  a bodyless response as a status dict, which is correct for a delete but is not a
+  collection, and each listing was iterating that dict's keys. Collection
+  responses now go through one helper: a literal `null` still means genuinely
+  empty, while anything that is not a list raises a `RuntimeError` naming the
+  unexpected type. Returning an empty list instead would have been the worse
+  outcome, being indistinguishable from having no items and inviting a caller to
+  report that nothing exists when the response was swallowed upstream.
+
 ## [0.5.3]
 
 ### Added

@@ -64,6 +64,22 @@ async def _request(method: str, path: str, **kwargs: Any) -> Any:
         return r.json()
 
 
+def _items(data: Any) -> list:
+    """Normalise a collection response.
+
+    Vikunja sends a literal `null` instead of `[]` for some empty collections, so
+    that maps to an empty list. Anything else non-list means the response was not
+    a collection at all: most likely a bodyless response, which `_request` reports
+    as a status dict. That is an error rather than an empty result, because
+    reporting it as empty is indistinguishable from genuinely having no items.
+    """
+    if data is None:
+        return []
+    if not isinstance(data, list):
+        raise RuntimeError(f"expected a list from the API, got {type(data).__name__}")
+    return data
+
+
 def _task_summary(t: dict) -> dict:
     return {
         "id": t.get("id"),
@@ -87,7 +103,7 @@ async def list_projects() -> list[dict]:
             "parent_project_id": p.get("parent_project_id", 0),
             "is_archived": p.get("is_archived", False),
         }
-        for p in (data or [])
+        for p in _items(data)
     ]
 
 
@@ -128,7 +144,7 @@ async def list_tasks(
     if sort_by:
         params["sort_by"] = sort_by
     data = await _request("GET", f"/projects/{project_id}/tasks", params=params)
-    return [_task_summary(t) for t in (data or [])]
+    return [_task_summary(t) for t in _items(data)]
 
 
 @mcp.tool()
@@ -213,7 +229,7 @@ async def set_reminders(task_id: int, reminders: list[str]) -> dict:
 async def list_labels() -> list[dict]:
     """List all labels."""
     data = await _request("GET", "/labels")
-    return [{"id": x["id"], "title": x["title"]} for x in (data or [])]
+    return [{"id": x["id"], "title": x["title"]} for x in _items(data)]
 
 
 @mcp.tool()
@@ -236,7 +252,7 @@ async def list_comments(task_id: int) -> list[dict]:
     data = await _request("GET", f"/tasks/{task_id}/comments")
     return [
         {"id": c.get("id"), "comment": c.get("comment"), "author": (c.get("author") or {}).get("username")}
-        for c in (data or [])
+        for c in _items(data)
     ]
 
 
@@ -264,14 +280,14 @@ async def delete_comment(task_id: int, comment_id: int) -> dict:
 async def search_users(query: str) -> list[dict]:
     """Search users by name or username. Use this to find a user_id for assignees."""
     data = await _request("GET", "/users", params={"s": query})
-    return [{"id": u.get("id"), "username": u.get("username"), "name": u.get("name")} for u in (data or [])]
+    return [{"id": u.get("id"), "username": u.get("username"), "name": u.get("name")} for u in _items(data)]
 
 
 @mcp.tool()
 async def list_assignees(task_id: int) -> list[dict]:
     """List the users assigned to a task."""
     data = await _request("GET", f"/tasks/{task_id}/assignees")
-    return [{"id": u.get("id"), "username": u.get("username")} for u in (data or [])]
+    return [{"id": u.get("id"), "username": u.get("username")} for u in _items(data)]
 
 
 @mcp.tool()
