@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented here.
 
+## [0.5.0]
+
+### Added
+
+- `update_comment` (task_id, comment_id, comment) and `delete_comment`
+  (task_id, comment_id). Comments could be listed and created but never
+  corrected or removed, so a typo in a comment was permanent from the client
+  side. Both wrap endpoints Vikunja already exposed; pass the `id` returned by
+  `list_comments` as `comment_id`.
+
 ## [0.4.0]
 
 ### Breaking

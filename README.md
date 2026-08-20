@@ -27,6 +27,8 @@ Labels:
 Comments:
 - `list_comments` (task_id)
 - `add_comment` (task_id, comment)
+- `update_comment` (task_id, comment_id, comment) — replaces the comment text; get `comment_id` from `list_comments`
+- `delete_comment` (task_id, comment_id)
 
 Assignees:
 - `search_users` (query) — find a `user_id` to assign
