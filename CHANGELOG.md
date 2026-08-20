@@ -2,6 +2,34 @@
 
 All notable changes to this project are documented here.
 
+## [0.8.2]
+
+### Added
+
+- Coverage reporting to Codecov from CI, uploaded from the Python 3.13 leg only
+  since both legs produce identical figures.
+- `codecov.yml`, defining the commit status checks: overall coverage may not
+  regress at all, and new lines must clear the same 90 percent floor the workflow
+  enforces.
+
+### Changed
+
+- The publish workflow passes secrets to the reusable CI workflow. Reusable
+  workflows do not inherit them, so without this the release run would have
+  uploaded coverage tokenless.
+
+### Note
+
+- Codecov cannot fail this workflow. The action reports coverage and does not act
+  on a decline; `fail_ci_if_error` concerns upload failures, not thresholds. The
+  in-workflow gate remains `--cov-fail-under` in `pyproject.toml`. Codecov's own
+  statuses fail the pull request instead, and block a merge only once they are
+  added as required checks in branch protection, which is a repository setting
+  rather than anything the repo can assert for itself.
+
+  `fail_ci_if_error` is off on purpose: fork pull requests cannot read repository
+  secrets, and a missing token should not turn an outside contribution red.
+
 ## [0.8.1]
 
 ### Changed

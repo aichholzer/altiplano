@@ -1,0 +1,27 @@
+# Codecov's commit status checks.
+#
+# These are separate from the CI workflow. The workflow's own gate is
+# --cov-fail-under in pyproject.toml, which fails the run outright. The statuses
+# below fail the pull request instead, and only block a merge once they are added
+# as required checks in the repository's branch protection rules. Neither one can
+# be enforced from inside the other.
+
+coverage:
+  status:
+    # Do not let overall coverage regress. `auto` compares against the base
+    # commit and a zero threshold allows no slippage, which is stricter than a
+    # fixed target: the suite currently sits at 100 percent, and a fixed 90 would
+    # quietly permit losing ten points.
+    project:
+      default:
+        target: auto
+        threshold: 0%
+
+    # New and changed lines must clear the same floor the workflow enforces.
+    patch:
+      default:
+        target: 90%
+
+comment:
+  # Only comment when the diff actually moves coverage.
+  require_changes: true
