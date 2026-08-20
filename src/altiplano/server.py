@@ -289,6 +289,19 @@ async def set_reminders(task_id: int, reminders: list[str]) -> dict:
     return await _request(_verb("update"), f"/tasks/{task_id}", json=payload)
 
 
+@mcp.tool()
+async def delete_task(task_id: int) -> dict:
+    """Delete a task. There is no way to undo this through the API.
+
+    Vikunja soft-deletes, and documents deleted tasks as retained for 30 days
+    before permanent removal, but it exposes no endpoint to list or restore them.
+    So the row outlives the task while being unreachable from here. Treat this as
+    irreversible and confirm the id first, because deleting a task also takes its
+    comments, labels and assignees with it.
+    """
+    return await _request("DELETE", f"/tasks/{task_id}")
+
+
 # --- labels -----------------------------------------------------------------
 ##
 @mcp.tool()

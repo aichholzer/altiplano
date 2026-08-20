@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented here.
 
+## [0.8.0]
+
+### Added
+
+- `delete_task` (task_id), taking the tool surface to 19. Removing a task
+  previously meant calling the API by hand, which is exactly the gap an MCP server
+  exists to close.
+
+  Vikunja soft-deletes and documents deleted tasks as retained for 30 days before
+  permanent removal, but exposes no endpoint to list or restore them. The row
+  therefore outlives the task while being unreachable through the API, so the
+  docstring presents this as irreversible and notes that a task takes its
+  comments, labels and assignees with it.
+
+  The path and verb are the same on both API versions, so this needed no version
+  branching. As with the other deletes, v1 answers with a message body and v2 with
+  no content.
+
 ## [0.7.1]
 
 ### Added

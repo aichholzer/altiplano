@@ -26,6 +26,7 @@ EXPECTED_TOOLS = {
     "create_task",
     "update_task",
     "set_reminders",
+    "delete_task",
     "list_labels",
     "add_label",
     "remove_label",

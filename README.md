@@ -18,6 +18,7 @@ Tasks:
 - `create_task` (project_id, title, description?, priority?, due_date?, start_date?, end_date?)
 - `update_task` (task_id, title?, description?, done?, priority?, start_date?, end_date?)
 - `set_reminders` (task_id, reminders) — replaces the task's reminders with the given ISO 8601 datetimes; empty list clears
+- `delete_task` (task_id) — soft-deletes the task along with its comments, labels and assignees. Vikunja keeps it for 30 days but exposes no way to restore it, so treat this as irreversible
 
 Labels:
 - `list_labels`
