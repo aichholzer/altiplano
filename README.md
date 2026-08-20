@@ -63,16 +63,16 @@ Then `mcp.json` only needs the command, no `env` block, no plain-text secrets:
 {
   "altiplano": {
     "command": "uvx",
-    "args": ["altiplano@latest"]
+    "args": ["--refresh-package", "altiplano", "altiplano@latest"]
   }
 }
 ```
 
-> `uvx` fetches the newest version on its first run, then reuses a cached environment on every run after that. Restarting your MCP client does not change this.
+> `uvx` caches aggressively. It fetches a version on first run and reuses it afterwards, and it separately caches the list of versions it knows about. So `altiplano@latest` on its own can keep launching an older build for a while after a release, and restarting your client does not help.
 >
-> `@latest` asks for the newest version and refreshes the cache. An exact pin such as `altiplano@0.6.0` works too, since requesting a specific version cannot be satisfied from a cache holding a different one, at the cost of editing your MCP file on every upgrade.
+> `--refresh-package altiplano` revalidates against PyPI on each start, which is what makes `@latest` actually mean latest. It costs roughly a tenth of a second.
 >
-> If you suspect you are already on a stale version, `uv cache clean altiplano` then restart your client.
+> If you are already stuck on an older build, quit your MCP client first, then run `uv cache clean altiplano`. It has to be quit: while the client is running it holds that cache, and the command will sit and wait for it.
 
 ## Choosing the API version
 

@@ -55,3 +55,15 @@ def test_version_is_consistent():
     # `version()` reads the built distribution metadata, which hatchling takes
     # from pyproject.toml, so this catches drift between pyproject and __init__.
     assert altiplano.__version__ == version("altiplano")
+
+
+def test_the_handshake_reports_the_running_version():
+    """Without this, a stale `uvx` cache is invisible.
+
+    The only other way to tell which version a client actually launched is to
+    provoke a behaviour that changed between releases, which is a poor diagnostic
+    and cost several restart cycles before this was declared.
+    """
+    options = mcp._lowlevel_server.create_initialization_options()
+    assert options.server_name == "altiplano"
+    assert options.server_version == altiplano.__version__
