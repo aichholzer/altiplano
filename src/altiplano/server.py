@@ -10,6 +10,7 @@ Credentials are resolved without storing secrets in a shared mcp.json:
 """
 
 import os
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -28,8 +29,36 @@ _CONFIG_FILE = Path(
 )
 
 
+# _from_file runs on every request, by way of _base and _headers, so the warning
+# below has to fire once for a given file rather than once per API call.
+_warned_about_mode: set[Path] = set()
+
+
+def _warn_if_others_can_read(path: Path) -> None:
+    """Warn when the credentials file is readable or writable beyond its owner.
+
+    The module docstring asks for chmod 600; this checks it instead of trusting
+    it. It only warns, because the file belongs to the user and refusing to read
+    one that works today would be the worse trade. The message names the path
+    and the mode, never the contents.
+    """
+    if os.name != "posix" or path in _warned_about_mode:
+        return
+    # Raises FileNotFoundError for a missing file, which _from_file already
+    # treats as "no config", so there is no extra branch to cover here.
+    mode = path.stat().st_mode & 0o777
+    if mode & 0o077:
+        _warned_about_mode.add(path)
+        warnings.warn(
+            f"{path} is accessible to group or others (mode {mode:04o}) and holds your "
+            f"Vikunja API token. Restrict it with: chmod 600 {path}",
+            stacklevel=2,
+        )
+
+
 def _from_file(key: str) -> str | None:
     try:
+        _warn_if_others_can_read(_CONFIG_FILE)
         for line in _CONFIG_FILE.read_text().splitlines():
             line = line.strip()
             if not line or line.startswith("#") or "=" not in line:

@@ -14,9 +14,12 @@ jobs:
   # gate is always exactly what was already green on the pull request.
   test:
     uses: ./.github/workflows/ci.yml
-    # Without this the reused workflow gets no secrets, and its coverage upload
-    # would run tokenless on every release.
-    secrets: inherit
+    # Named, not `secrets: inherit`. With no secrets at all the reused
+    # workflow's coverage upload would run tokenless on every release, but
+    # inherit hands it every repository secret, PYPI_API_TOKEN included, and
+    # only the publish job below has any business seeing that one.
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   publish:
     name: build and publish
