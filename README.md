@@ -1,6 +1,11 @@
 ![Altiplano](https://github.com/aichholzer/altiplano/blob/a045975ddd6b59f7c690fa5507a4f55a893c5ab8/banner.png)
 
+[![CI](https://github.com/aichholzer/altiplano/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/aichholzer/altiplano/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/aichholzer/altiplano/graph/badge.svg?token=l7Svxa1x0X)](https://codecov.io/gh/aichholzer/altiplano)
+[![Python](https://img.shields.io/badge/python-%3E%3D3.10-blue.svg)](https://www.python.org/)
+[![PyPI version](https://img.shields.io/pypi/v/altiplano.svg)](https://pypi.org/project/altiplano/)
+[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/altiplano.svg)](https://pypi.org/project/altiplano/)
+[![License](https://img.shields.io/github/license/aichholzer/altiplano)](LICENSE)
 
 # Altiplano
 
@@ -18,7 +23,7 @@ Tasks:
 - `list_tasks` (project_id, filter, sort_by, page, per_page)
 - `get_task` (task_id)
 - `create_task` (project_id, title, description?, priority?, due_date?, start_date?, end_date?)
-- `update_task` (task_id, title?, description?, done?, priority?, start_date?, end_date?): on v1, see the warning below about omitted fields
+- `update_task` (task_id, title?, description?, done?, priority?, due_date?, start_date?, end_date?): only the fields you pass change. Pass an empty string to any of the three dates to clear it
 - `set_reminders` (task_id, reminders): replaces the task's reminders with the given ISO 8601 datetimes; empty list clears
 - `delete_task` (task_id): soft-deletes the task along with its comments, labels and assignees. Vikunja keeps it for 30 days but exposes no way to restore it, so treat this as irreversible
 
@@ -86,21 +91,19 @@ Vikunja 2.4.0 added a v2 API alongside v1, and this MCP deals with both. The ver
 | `/api/v2` | the v2 API |
 | `/api/v1` | the v1 API |
 
-Prefer `/api/v2` if your server has it. Stay on `/api/v1` only for older servers; every tool works the same either way, with some exceptions.
+Prefer `/api/v2` if your server has it. Stay on `/api/v1` only for older servers; every tool behaves the same either way, though v1 pays for it in requests and cannot exchange Markdown.
 
-### On v1, updating a task discards the fields you omit
+### On v1, an update costs two requests
 
-v1's update endpoint is a replace, not a partial update. Whatever you leave out is reset to its zero value:
+Only the fields you pass ever change, on either version. Getting there differs.
 
-```
-update_task(task_id=42, priority=4)     # on v1, this also blanks the description
-update_task(task_id=42, done=True)      # and this discards description, priority and dates
-set_reminders(task_id=42, reminders=[]) # same, via the same endpoint
-```
+v1 has no partial update: `POST /tasks/{id}` is a replace, so a body carrying only the changed fields resets everything else to its zero value. Left alone, `update_task(task_id=42, priority=4)` would blank the description, `update_task(task_id=42, done=True)` would discard the description, priority and dates, and `set_reminders` would do the same through the same endpoint.
 
-This is Vikunja's behaviour. On v1, you must pass every field you want to keep.
+So on v1, `update_task` and `set_reminders` read the task first and write it back with your changes merged in. That is one extra request per update, and it is why v2 is worth pointing at.
 
-v2 is unaffected. It uses `PATCH` and omitted fields survive.
+v2 needs no read. It uses `PATCH`, omitted fields survive, and only a description forces the longer path, for the Markdown reason below.
+
+One thing v1 cannot do is notice a concurrent edit. The read-then-write on v2 sends the ETag back as `If-Match`, so a task that changed in between fails loudly. v1 has no ETag to send, so a simultaneous edit from elsewhere is overwritten.
 
 ## Markdown descriptions and comments (v2 only)
 
@@ -116,7 +119,7 @@ On v1 there is no conversion and the fields are HTML, so Markdown you send is st
 
 Two things worth mentioning:
 
-- v2 only converts on create and on full replace, never on a partial update. So changing a description reads the task first and writes it back whole, which costs one extra request and could lose a concurrent edit by something else. Updates that do not touch the description stay a single partial update.
+- v2 only converts on create and on full replace, never on a partial update. So changing a description reads the task first and writes it back whole, which costs one extra request. The ETag from that read goes back as `If-Match`, so a task that something else wrote to in between fails with a message telling you to read it again, rather than having that edit quietly overwritten. Updates that do not touch the description stay a single partial update.
 - Vikunja resolves `@mentions` during conversion, so writing `@someone` in a description notifies them.
 
 ## Run
@@ -131,6 +134,8 @@ uvx altiplano@latest                    # from PyPI, refreshing the cache
 
 - Vikunja priority scale: 0 Unset, 1 Low, 2 Medium, 3 High, 4 Urgent, 5 DO NOW.
 - Dates are ISO 8601 datetimes. `start_date`/`end_date` mark the window you plan to work on a task (start work / finish work); `due_date` is the deadline.
+- To clear a date, pass an empty string. Vikunja has no null for one: an unset date is the zero time, `0001-01-01T00:00:00Z`, and that is what gets written.
+- When a call is rejected, the error carries Vikunja's own explanation, plus its numeric error code on v2, instead of only the HTTP status.
 - The UI shows tasks by their project-local `identifier` (e.g. `#50`), which is not the global `id` the API uses.
 - Verified end to end against Vikunja v2.5.0 on both `/api/v1` and `/api/v2`.
 - `list_assignees` needs a server where `GET /tasks/{id}/assignees` works. It answers 500 on v2.3.0, which was a server-side bug, and works on v2.5.0. Every other tool works on both.

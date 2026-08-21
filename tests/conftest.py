@@ -24,18 +24,30 @@ class RecordingAPI:
         self.requests: list[httpx.Request] = []
         # An empty collection, because tests that only assert on the outbound
         # request still need a response the listing tools will accept.
-        self._response = httpx.Response(200, json=[])
+        self._responses = [httpx.Response(200, json=[])]
 
     def returns(self, payload: Any, status: int = 200) -> None:
-        self._response = httpx.Response(status, json=payload)
+        self._responses = [httpx.Response(status, json=payload)]
 
-    def returns_raw(self, status: int, content: bytes = b"") -> None:
-        """For responses with no JSON body, such as 204 or an empty 200."""
-        self._response = httpx.Response(status, content=content)
+    def returns_raw(
+        self, status: int, content: bytes = b"", headers: dict[str, str] | None = None
+    ) -> None:
+        """For responses with no JSON body: a 204, an empty 200, or a redirect."""
+        self._responses = [httpx.Response(status, content=content, headers=headers)]
+
+    def returns_in_order(self, *responses: httpx.Response) -> None:
+        """For a flow that makes more than one request.
+
+        A v2 description update reads before it writes, and the interesting cases
+        need those two answered differently.
+        """
+        self._responses = list(responses)
 
     def _handle(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
-        return self._response
+        # The last response is reused once the queue reaches it, so tests that only
+        # assert on the outbound request need not enumerate every reply.
+        return self._responses.pop(0) if len(self._responses) > 1 else self._responses[0]
 
     @property
     def last(self) -> httpx.Request:

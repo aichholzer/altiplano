@@ -2,6 +2,119 @@
 
 All notable changes to this project are documented here.
 
+## [0.9.0]
+
+### Added
+
+- `update_task` takes `due_date`. `create_task` always did, so a deadline could be
+  set when a task was created and never changed afterwards; the field went to the
+  same endpoint as `start_date` and `end_date`, which were already there, so this
+  was an omission rather than a limitation.
+
+  Checked against the API before implementing rather than assumed: the v1 OpenAPI
+  model documents `due_date` as writable, unlike `done_at`, which says it is
+  system-controlled, and `created`, which says it cannot be changed. The v2 docs
+  state the JSON models are identical across versions.
+
+- Dates can be cleared, by passing an empty string to `due_date`, `start_date` or
+  `end_date` on either `create_task` or `update_task`. They could previously only
+  be overwritten with another date.
+
+  Vikunja has no null for a date. An unset one is Go's zero time,
+  `0001-01-01T00:00:00Z`, on the wire and in the database, and an empty string is
+  not a datetime it will parse, so clearing means writing that value. `None`
+  already means "leave this field out of the payload", which is why the empty
+  string carries the meaning instead of a second argument saying the same thing.
+
+  This is the value `_replace_task` has been round-tripping for unset dates since
+  0.7.0, verified lossless at the time, so it was already known to work.
+
+### Changed
+
+- Errors now carry what the server objected to. `raise_for_status()` reported the
+  status code and nothing else, so a rejected filter expression and a task that
+  does not exist both arrived as a bare `400` or `404`, leaving an agent nothing to
+  correct. Vikunja explains itself in the body: v1 in `message`, v2 as RFC 9457
+  problem+json in `detail`, alongside its own numeric error code. All of it is now
+  in the raised message.
+
+  Still an `httpx.HTTPStatusError`, so anything branching on
+  `response.status_code` is unaffected. Only the message changed.
+
+  It also raises on any non-2xx rather than only on 4xx and 5xx, which is what
+  `raise_for_status` did. A redirect is a failure here: it means `VIKUNJA_URL` is
+  wrong, and decoding the redirect body as a result would hide that. The message
+  names the `Location` it was sent to, because that is usually the whole diagnosis.
+
+- A description change on v2 sends the ETag from its read back as `If-Match`. That
+  read-then-replace has had a lost-update window since 0.7.0, documented and
+  accepted because there was no way to detect it. v2 returns an ETag on
+  single-resource reads and honours preconditions, so the window now fails with a
+  message saying to read the task again, instead of silently discarding whatever
+  was written in between.
+
+  The header goes out only when the read supplied an ETag, so a server that does
+  not offer them behaves exactly as before.
+
+- A partial update on v2 now asks for its response in Markdown, like every other
+  read. `update_task` and `set_reminders` were answering with raw HTML in the
+  description while `get_task` answered with Markdown, so the same field arrived in
+  two different formats depending on which tool produced it. v2 ignores that
+  parameter for a `PATCH` request body, which is why a description never routes
+  through `PATCH` in the first place, but nothing stopped us asking for the response
+  in the same currency as everything else.
+
+- The credentials file is parsed once per change to it, rather than once per
+  lookup. `_base`, `_headers` and `_version` each resolve config independently, so
+  a single tool call read and parsed the file three or four times. The cache is
+  keyed on the file's mtime and size, not held for the life of the process, so a
+  rotated token is still picked up without a restart.
+
+### Fixed
+
+- `update_task` and `set_reminders` no longer destroy data on v1. That API has no
+  partial update: `POST /tasks/{id}` is a replace, so a body carrying only the
+  changed fields reset every other field to its zero value. Passing `priority`
+  blanked the description; closing a task with `done` discarded its description,
+  priority and dates; `set_reminders` did the same through the same endpoint. Both
+  tools now read the task first and merge the changes into it.
+
+  0.8.1 found this, documented it, and deliberately left it, on the grounds that
+  fixing it would spend an extra request on every v1 call to protect a path v2
+  users never take. That weighed one request against silent data loss, which is the
+  wrong way round, and it had already cost a real task its description before the
+  cause was understood. Anyone still on v1 was one careless call away from the
+  same.
+
+  The mechanism is the read-then-merge that `_replace_task` already performed for
+  the v2 Markdown path, so this is a routing change and a version-aware verb rather
+  than a new mechanism. v1 updates now cost two requests. v2 is untouched, and
+  stays a single `PATCH` unless a description is involved.
+
+  What v1 still cannot do is detect a concurrent edit: the v2 path sends the read's
+  ETag back as `If-Match`, and v1 has no ETag to send. That window is narrower than
+  the certainty of a wipe it replaces.
+
+- A credentials file that cannot be read no longer escapes as a raw `OSError` from
+  inside `_base`. Only `FileNotFoundError` was handled, so a permissions problem on
+  the file or a directory above it surfaced as an unexplained failure of whichever
+  tool happened to be called first. It now warns once, naming the path and the
+  error but never the contents, and carries on: the environment may already hold
+  the credentials, in which case the file is irrelevant and failing would be wrong.
+
+- `_replace_task` refuses to build a full replace out of a response that is not a
+  task. A bodyless response arrives as a status dict, and replacing a task with
+  that would have wiped it. Same defect class as the listing bug fixed in 0.5.4,
+  in the one place where the consequence is destructive rather than merely
+  confusing.
+
+### Note
+
+- `list_tasks(filter=...)` shadows the builtin deliberately. `filter` is the name
+  Vikunja gives the query parameter and the name callers already write, the builtin
+  is not used anywhere in the module, and renaming it would break the published
+  tool contract. Now commented as such, so it does not get "fixed" later.
+
 ## [0.8.6]
 
 ### Fixed

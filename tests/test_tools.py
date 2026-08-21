@@ -16,14 +16,18 @@ def body(request) -> dict:
 
 
 # --- routing ----------------------------------------------------------------
-def route(name, call, verbs, path, body):
+def route(name, call, verbs, path, body, response=None):
     """One routing case, named so failures point at the tool.
 
     `verbs` is {1: verb, 2: verb}. Both are written out as literals rather than
     derived from the server's own mapping, so the test cannot agree with a wrong
     implementation.
+
+    `body` is the expected request body, or a {1: body, 2: body} mapping where the
+    two versions differ. `response` overrides what the fake returns, which the two
+    tools that read the task before writing it need.
     """
-    return pytest.param(call, verbs, path, body, id=name)
+    return pytest.param(call, verbs, path, body, response, id=name)
 
 
 READ = {1: "GET", 2: "GET"}
@@ -33,6 +37,11 @@ REMOVE = {1: "DELETE", 2: "DELETE"}
 # v2 honours ?format=markdown on a replace but not on a partial update, so writes
 # that carry rich text go through PUT there.
 REPLACE = {1: "POST", 2: "PUT"}
+
+# What the fake hands back to the two tools that read the task before writing it.
+# On v1 the write is that task with the change merged in, because v1's update
+# endpoint is a replace; on v2 it is the change alone.
+READ_BACK = {"id": 7, "title": "Existing"}
 
 
 ROUTES = [
@@ -63,28 +72,44 @@ ROUTES = [
     route("remove_assignee", lambda: server.remove_assignee(7, 2), REMOVE, "/tasks/7/assignees/2", {}),
     route("create_project", lambda: server.create_project("Board"), CREATE, "/projects", {"title": "Board"}),
     route("create_task", lambda: server.create_task(3, "Task"), CREATE, "/projects/3/tasks", {"title": "Task"}),
-    route("update_task", lambda: server.update_task(7, done=True), UPDATE, "/tasks/7", {"done": True}),
+    route(
+        "update_task",
+        lambda: server.update_task(7, done=True),
+        UPDATE,
+        "/tasks/7",
+        {1: {**READ_BACK, "done": True}, 2: {"done": True}},
+        response=READ_BACK,
+    ),
     route("delete_task", lambda: server.delete_task(7), REMOVE, "/tasks/7", {}),
     route(
         "set_reminders",
         lambda: server.set_reminders(7, ["2026-08-20T09:00:00+10:00"]),
         UPDATE,
         "/tasks/7",
-        {"reminders": [{"reminder": "2026-08-20T09:00:00+10:00"}]},
+        {
+            1: {**READ_BACK, "reminders": [{"reminder": "2026-08-20T09:00:00+10:00"}]},
+            2: {"reminders": [{"reminder": "2026-08-20T09:00:00+10:00"}]},
+        },
+        response=READ_BACK,
     ),
     route("search_users", lambda: server.search_users("stefan"), READ, "/users", {}),
 ]
 
 
 @pytest.mark.parametrize("api_version", [1, 2])
-@pytest.mark.parametrize(("call", "verbs", "path", "expected_body"), ROUTES)
+@pytest.mark.parametrize(("call", "verbs", "path", "expected_body", "response"), ROUTES)
 def test_tool_uses_the_expected_verb_path_and_body(
-    api, run, api_version, call, verbs, path, expected_body
+    api, run, api_version, call, verbs, path, expected_body, response
 ):
+    if response is not None:
+        api.returns(response)
     run(call())
     assert api.last.method == verbs[api_version]
     assert api.last.url.path.endswith(path)
-    assert body(api.last) == expected_body
+    # A body given per version, for the tools whose v1 write merges into the task
+    # they read. A real JSON body never has integer keys, so this cannot collide.
+    expected = expected_body[api_version] if set(expected_body) == {1, 2} else expected_body
+    assert body(api.last) == expected
 
 
 def test_every_tool_is_covered_by_a_routing_case():
@@ -177,6 +202,9 @@ def test_create_task_includes_every_supplied_field(api, run):
 
 
 def test_update_task_includes_every_supplied_field(api, run):
+    # A description routes through the read-then-replace path on both versions, so
+    # the canned task is what these changes get merged into.
+    api.returns({"id": 7})
     run(
         server.update_task(
             7,
@@ -184,21 +212,55 @@ def test_update_task_includes_every_supplied_field(api, run):
             description="why",
             done=False,
             priority=2,
+            due_date="2026-08-21T09:00:00+10:00",
             start_date="2026-08-20T09:00:00+10:00",
             end_date="2026-08-20T17:00:00+10:00",
         )
     )
     assert body(api.last) == {
+        "id": 7,
         "title": "New",
         "description": "why",
         "done": False,
         "priority": 2,
+        "due_date": "2026-08-21T09:00:00+10:00",
         "start_date": "2026-08-20T09:00:00+10:00",
         "end_date": "2026-08-20T17:00:00+10:00",
     }
 
 
-def test_update_task_sends_done_false_rather_than_dropping_it(api, run):
+# The remaining payload tests run on v2, where an update is a genuine partial
+# update and the body on the wire is exactly the fields that were passed. v1
+# merges into the task it read first, which the routing table and the replace
+# tests below cover instead.
+@pytest.mark.parametrize("api_version", [2])
+def test_update_task_can_set_a_due_date(api, run, api_version):
+    """`create_task` always took a deadline; `update_task` did not, so a deadline
+    could be given at creation and never changed afterwards."""
+    run(server.update_task(7, due_date="2026-08-21T09:00:00+10:00"))
+    assert body(api.last) == {"due_date": "2026-08-21T09:00:00+10:00"}
+
+
+# --- clearing dates ---------------------------------------------------------
+# Vikunja has no null for a date: an unset one is Go's zero time, on the wire and
+# in the database, so clearing means writing that value. An empty string is the
+# caller's way of asking, since None already means "leave it out of the payload"
+# and "" is not a datetime Vikunja parses.
+@pytest.mark.parametrize("api_version", [2])
+@pytest.mark.parametrize("field", ["due_date", "start_date", "end_date"])
+def test_update_task_clears_a_date_given_an_empty_string(api, run, field, api_version):
+    run(server.update_task(7, **{field: ""}))
+    assert body(api.last) == {field: "0001-01-01T00:00:00Z"}
+
+
+@pytest.mark.parametrize("field", ["due_date", "start_date", "end_date"])
+def test_create_task_clears_a_date_given_an_empty_string(api, run, field):
+    run(server.create_task(3, "Task", **{field: ""}))
+    assert body(api.last) == {"title": "Task", field: "0001-01-01T00:00:00Z"}
+
+
+@pytest.mark.parametrize("api_version", [2])
+def test_update_task_sends_done_false_rather_than_dropping_it(api, run, api_version):
     """`done=False` is falsy, so a truthiness check here would silently lose it."""
     run(server.update_task(7, done=False))
     assert body(api.last) == {"done": False}
@@ -210,9 +272,58 @@ def test_update_task_rejects_an_empty_payload(api, run):
     assert api.requests == []
 
 
-def test_set_reminders_accepts_an_empty_list_to_clear(api, run):
+@pytest.mark.parametrize("api_version", [2])
+def test_set_reminders_accepts_an_empty_list_to_clear(api, run, api_version):
     run(server.set_reminders(7, []))
     assert body(api.last) == {"reminders": []}
+
+
+# --- v1 has no partial update -----------------------------------------------
+# POST /tasks/{id} replaces the task on v1, so a body carrying only the changed
+# fields resets everything else. That was documented and left armed in 0.8.1, and
+# it had already destroyed one task's description by then, so these are the
+# regression tests for both tools that send through that endpoint.
+V1_TASK = {
+    "id": 7,
+    "title": "Existing",
+    "description": "<p>keep me</p>",
+    "priority": 4,
+    "due_date": "2026-08-21T09:00:00+10:00",
+}
+
+
+def test_v1_update_merges_into_the_task_it_read_first(api, run):
+    api.returns(V1_TASK)
+    run(server.update_task(7, done=True))
+
+    read, write = api.requests
+    assert read.method == "GET"
+    assert write.method == "POST"
+    assert body(write) == {**V1_TASK, "done": True}
+
+
+def test_v1_set_reminders_merges_into_the_task_it_read_first(api, run):
+    """Same endpoint, same hazard. This one went unnoticed until 0.8.1, because a
+    reminders payload looks self-contained."""
+    api.returns(V1_TASK)
+    run(server.set_reminders(7, ["2026-08-21T09:00:00+10:00"]))
+
+    read, write = api.requests
+    assert read.method == "GET"
+    assert write.method == "POST"
+    assert body(write) == {
+        **V1_TASK,
+        "reminders": [{"reminder": "2026-08-21T09:00:00+10:00"}],
+    }
+
+
+def test_v1_refuses_to_replace_from_a_read_that_is_not_a_task(api, run):
+    """The read is what makes the write safe, so a read that returned no task must
+    not be turned into a replace: that would wipe the task instead of updating it."""
+    api.returns_raw(204)
+    with pytest.raises(RuntimeError, match="did not return task 7"):
+        run(server.update_task(7, done=True))
+    assert [r.method for r in api.requests] == ["GET"]
 
 
 # --- query parameters -------------------------------------------------------
