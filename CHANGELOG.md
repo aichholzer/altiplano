@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented here.
 
+## [0.8.3]
+
+### Added
+
+- Ruff configuration, so the linter can run as a pre-commit gate. `TRY004` is
+  ignored: it wants `_items` to raise `TypeError`, but that guard validates an API
+  response rather than a caller's argument, and the exception type is part of a
+  contract the tests assert.
+
+### Fixed
+
+- Removed the executable bit from nine tracked files that are not scripts,
+  including `LICENSE`, `banner.png` and `uv.lock`. Ruff surfaced two of them as
+  executable files without a shebang; the rest were the same defect.
+
 ## [0.8.2]
 
 ### Added

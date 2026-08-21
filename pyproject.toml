@@ -1,6 +1,6 @@
 [project]
 name = "altiplano"
-version = "0.8.2"
+version = "0.8.3"
 description = "Minimal MCP server for Vikunja (server-side filtering, no fluff)"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -25,6 +25,21 @@ dependencies = [
 dev = [
   "pytest==9.1.1",
   "pytest-cov==7.1.0",
+]
+
+[tool.ruff]
+# Matches the width the code is already written to. Ruff's linter does not
+# enforce line length by default; this is here so `ruff format` would agree with
+# the existing style rather than reflowing every file.
+line-length = 120
+
+[tool.ruff.lint]
+ignore = [
+  # Flags the isinstance guard in `_items` for not raising TypeError. That guard
+  # validates an API response, not a caller's argument, so the rule's assumption
+  # does not hold: RuntimeError is the honest type, and it is a documented part
+  # of the contract the tests assert.
+  "TRY004",
 ]
 
 [tool.pytest.ini_options]
