@@ -67,6 +67,22 @@ ROUTES = [
         {"comment": "edited"},
     ),
     route("delete_comment", lambda: server.delete_comment(7, 21), REMOVE, "/tasks/7/comments/21", {}),
+    route(
+        "add_relation",
+        lambda: server.add_relation(7, 9),
+        CREATE,
+        "/tasks/7/relations",
+        {"other_task_id": 9, "relation_kind": "related"},
+    ),
+    route(
+        "remove_relation",
+        lambda: server.remove_relation(7, 9),
+        REMOVE,
+        "/tasks/7/relations/related/9",
+        # The path carries all three values and the API documents the body as
+        # required anyway, so both go out.
+        {"other_task_id": 9, "relation_kind": "related"},
+    ),
     route("list_assignees", lambda: server.list_assignees(7), READ, "/tasks/7/assignees", {}),
     route("add_assignee", lambda: server.add_assignee(7, 2), CREATE, "/tasks/7/assignees", {"user_id": 2}),
     route("remove_assignee", lambda: server.remove_assignee(7, 2), REMOVE, "/tasks/7/assignees/2", {}),
@@ -257,6 +273,20 @@ def test_update_task_clears_a_date_given_an_empty_string(api, run, field, api_ve
 def test_create_task_clears_a_date_given_an_empty_string(api, run, field):
     run(server.create_task(3, "Task", **{field: ""}))
     assert body(api.last) == {"title": "Task", field: "0001-01-01T00:00:00Z"}
+
+
+# --- relations --------------------------------------------------------------
+# The routing cases above cover the default `related` kind. What matters here is
+# that a kind reaches a different place in each tool: the body on create, and the
+# path on remove, where getting it wrong would silently address another relation.
+def test_add_relation_carries_a_non_default_kind_in_the_body(api, run):
+    run(server.add_relation(7, 9, "blocking"))
+    assert body(api.last) == {"other_task_id": 9, "relation_kind": "blocking"}
+
+
+def test_remove_relation_puts_the_kind_in_the_path(api, run):
+    run(server.remove_relation(7, 9, "subtask"))
+    assert api.last.url.path.endswith("/tasks/7/relations/subtask/9")
 
 
 @pytest.mark.parametrize("api_version", [2])

@@ -2,6 +2,43 @@
 
 All notable changes to this project are documented here.
 
+## [0.10.0]
+
+### Added
+
+- `add_relation` (task_id, other_task_id, relation_kind) and `remove_relation`,
+  taking the tool surface to 21. Relations could be read, through the
+  `related_tasks` field `get_task` returns, but not created or removed, so linking
+  two tasks meant leaving the MCP and doing it in the web UI. That is exactly the
+  gap an MCP server exists to close, and it came up filing one task that revisited
+  the decision recorded in another.
+
+  `relation_kind` defaults to `related`, the symmetric case, so the common call is
+  `add_relation(415, 397)` with nothing else to decide. The other kinds are
+  `subtask`, `parenttask`, `duplicateof`, `duplicates`, `blocking`, `blocked`,
+  `precedes`, `follows`, `copiedfrom` and `copiedto`. Direction matters for the
+  asymmetric ones: the base task is the one in the path, and `subtask` makes the
+  other task a child of it.
+
+  The kind is passed straight through rather than validated against a local copy of
+  the enum, the same way `filter` is. The server owns that vocabulary, a local copy
+  would be one more thing to keep in sync, and since 0.9.0 a rejected value comes
+  back with Vikunja's own explanation attached. The docstrings list the kinds,
+  which is where an agent will actually read them.
+
+  No `list_relations`, because `get_task` already returns them grouped by kind.
+
+  Endpoints came from the v1 OpenAPI spec: `PUT /tasks/{id}/relations` on v1 and
+  `POST` on v2, through the existing verb table, and
+  `DELETE /tasks/{id}/relations/{kind}/{otherID}`. The spec marks a request body as
+  required on the delete too, even though the path carries the same three values,
+  so both are sent, built from the same arguments and unable to disagree.
+
+  Two things this does not establish. Whether Vikunja creates the inverse relation
+  by itself, which matters most for `subtask` and `parenttask`. And whether the v2
+  paths match v1, assumed here as they are for every other tool, with the v1 spec's
+  reference to "the v2 delete route param" as corroboration rather than proof.
+
 ## [0.9.0]
 
 ### Added

@@ -27,6 +27,12 @@ Tasks:
 - `set_reminders` (task_id, reminders): replaces the task's reminders with the given ISO 8601 datetimes; empty list clears
 - `delete_task` (task_id): soft-deletes the task along with its comments, labels and assignees. Vikunja keeps it for 30 days but exposes no way to restore it, so treat this as irreversible
 
+Relations:
+- `add_relation` (task_id, other_task_id, relation_kind?): relates two tasks, defaulting to a plain `related` link
+- `remove_relation` (task_id, other_task_id, relation_kind?): the kind must match the one the relation was created with
+
+There is no `list_relations`: `get_task` already returns `related_tasks`, grouped by kind.
+
 Labels:
 - `list_labels`
 - `add_label` (task_id, label_id)
@@ -136,6 +142,7 @@ uvx altiplano@latest                    # from PyPI, refreshing the cache
 - Dates are ISO 8601 datetimes. `start_date`/`end_date` mark the window you plan to work on a task (start work / finish work); `due_date` is the deadline.
 - To clear a date, pass an empty string. Vikunja has no null for one: an unset date is the zero time, `0001-01-01T00:00:00Z`, and that is what gets written.
 - When a call is rejected, the error carries Vikunja's own explanation, plus its numeric error code on v2, instead of only the HTTP status.
+- Relation kinds: `subtask`, `parenttask`, `related`, `duplicateof`, `duplicates`, `blocking`, `blocked`, `precedes`, `follows`, `copiedfrom`, `copiedto`. Direction matters for the asymmetric ones: `add_relation(task_id, other_task_id, "subtask")` makes the other task a child of `task_id`.
 - The UI shows tasks by their project-local `identifier` (e.g. `#50`), which is not the global `id` the API uses.
 - Verified end to end against Vikunja v2.5.0 on both `/api/v1` and `/api/v2`.
 - `list_assignees` needs a server where `GET /tasks/{id}/assignees` works. It answers 500 on v2.3.0, which was a server-side bug, and works on v2.5.0. Every other tool works on both.
