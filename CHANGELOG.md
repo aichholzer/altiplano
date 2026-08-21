@@ -2,6 +2,41 @@
 
 All notable changes to this project are documented here.
 
+## [0.8.5]
+
+### Changed
+
+- Upgraded the lock file, clearing seven advisories in `mcp`'s transitive tree:
+  four in `cryptography`, now 50.0.0, three of them high severity and the worst
+  a Bleichenbacher oracle in PKCS#7 decryption; two in `starlette`, now 1.6.0,
+  the higher one a denial of service from `request.form()` ignoring its own
+  limits; and one in `python-multipart`, now 0.0.32, where a negative
+  `Content-Length` buffers the whole body in memory.
+
+  None were reachable from this server. It speaks stdio, so `starlette` and
+  `python-multipart` are there for an HTTP transport it never starts, and
+  `cryptography` arrives through MCP auth code it does not use. Upgrading anyway,
+  because the fixes were already published and a scan that reports the same seven
+  every time teaches you to stop reading it.
+
+  Also moved, all incidental to `--upgrade`: `anyio`, `annotated-types`,
+  `certifi`, `cffi`, `click`, `httpcore2`, `httpx2`, `idna`, `pywin32`, `rpds-py`,
+  `sse-starlette`, `typing-extensions`, `typing-inspection` and `uvicorn`.
+  `pytest` and `pytest-cov` are pinned exactly and did not.
+
+  `httpx2 2.12.0` introduces one new name to the tree, `httpx2-jsfetch`. It is
+  gated behind `sys_platform == 'emscripten'`, a Pyodide fetch backend, so it is
+  recorded in the lock and installed on no platform this project runs on.
+- The publish workflow now passes the reused CI workflow only `CODECOV_TOKEN`
+  instead of `secrets: inherit`. Inherit handed the test job every repository
+  secret, `PYPI_API_TOKEN` among them, when the one it declares is the coverage
+  token, and only the publish job itself needs the publishing credential.
+- Reading the credentials file now warns once when its mode lets group or others
+  read or write it, naming the path and the mode but never the contents. The
+  module has always asked for `chmod 600`; asking without checking meant a loose
+  file stayed quietly loose. It warns rather than refuses, because the file
+  belongs to whoever set it up.
+
 ## [0.8.3]
 
 ### Added
