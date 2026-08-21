@@ -6,10 +6,17 @@ All notable changes to this project are documented here.
 
 ### Added
 
-- Ruff configuration, so the linter can run as a pre-commit gate. `TRY004` is
-  ignored: it wants `_items` to raise `TypeError`, but that guard validates an API
-  response rather than a caller's argument, and the exception type is part of a
-  contract the tests assert.
+- A committed pre-commit hook in `hooks/`, running `ruff` and then the test suite
+  with its coverage floor, in roughly two seconds. Enable it per clone with
+  `git config core.hooksPath hooks`; that setting lives in `.git/config` and
+  cannot be committed, so it is opt-in by nature and the README says so under
+  Contributing.
+- A `lint` job in CI running the same `ruff` check. The hook is opt-in, so the
+  gate cannot depend on it: this catches anyone who has not enabled it. It is a
+  separate job because linting does not vary by Python version.
+- Ruff configuration. `TRY004` is ignored: it wants `_items` to raise
+  `TypeError`, but that guard validates an API response rather than a caller's
+  argument, and the exception type is part of a contract the tests assert.
 
 ### Fixed
 
