@@ -2,6 +2,31 @@
 
 All notable changes to this project are documented here.
 
+## [0.8.6]
+
+### Fixed
+
+- CI warned that `actions/github-script` targets Node.js 20 and was being forced
+  onto Node.js 24. Nothing here calls that action: the SHA in the warning is the
+  pin inside `codecov-action` v5.5.5's own `action.yml`, whose nested
+  `github-script` runs on node20. `codecov-action` is now v7.0.0, whose nested
+  pin runs on node24.
+
+  A major bump rather than a patch, because the v5 line holds Node 20 on purpose.
+  v5.5.3 bumped `github-script` to 8.x, v5.5.4 reverted it and said v6 would
+  carry the bump instead, and v6.0.0 shipped it with a warning about requiring
+  node24. So v5 is the line for runners without node24, and v5.5.5, newer by date
+  than v7.0.0, contains only a signing-key change. v7.0.0 and v6.0.2 are the same
+  code; v6.0.2 exists as a copy to ease upgrades.
+
+  Worth fixing now rather than when it breaks: Node 20 is due to leave the
+  runners in September 2026, and because `publish.yml` reuses this workflow, an
+  unfixed pin would fail in the release path.
+
+  `actions/checkout` v7.0.1 and `astral-sh/setup-uv` v9.0.0 were checked at the
+  same time. Both run on node24 and nest no actions, so nothing else here is
+  waiting to warn.
+
 ## [0.8.5]
 
 ### Changed

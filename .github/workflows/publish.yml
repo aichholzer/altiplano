@@ -1,8 +1,5 @@
 name: Publish
 
-# Manual only. Publishing is a one-way door: PyPI versions are write-once, so a
-# bad upload cannot be replaced, only yanked. Bump the version, merge to main,
-# then run this from the Actions tab.
 on:
   workflow_dispatch:
 
@@ -10,14 +7,8 @@ permissions:
   contents: read
 
 jobs:
-  # Reuses the PR test suite verbatim rather than redefining it, so the release
-  # gate is always exactly what was already green on the pull request.
   test:
     uses: ./.github/workflows/ci.yml
-    # Named, not `secrets: inherit`. With no secrets at all the reused
-    # workflow's coverage upload would run tokenless on every release, but
-    # inherit hands it every repository secret, PYPI_API_TOKEN included, and
-    # only the publish job below has any business seeing that one.
     secrets:
       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
@@ -33,8 +24,6 @@ jobs:
         with:
           version: "0.12.5"
 
-      # Fail before building rather than at the upload step, which is slower and
-      # leaves a half-finished release run behind.
       - name: Refuse to republish an existing version
         run: |
           PKG_VERSION="$(uv version --short)"
@@ -45,22 +34,14 @@ jobs:
           fi
           echo "altiplano ${PKG_VERSION} is not on PyPI yet, proceeding."
 
-      # --no-sources builds as an outside consumer would, with tool.uv.sources
-      # disabled, so a local-path override cannot leak into the release.
       - name: Build
         run: uv build --no-sources
 
-      # The test job exercises the source tree. This exercises the artefact that
-      # is about to be uploaded, which is where packaging mistakes surface: a
-      # module missing from the wheel passes every source-tree test.
       - name: Verify the built wheel imports
         run: |
           uv run --no-project --with "./dist/altiplano-${PKG_VERSION}-py3-none-any.whl" \
             python -c "import altiplano; import altiplano.server; print('wheel ok:', altiplano.__version__)"
 
-      # Both artefacts are named explicitly. `uv publish` otherwise uploads
-      # everything in dist/, so naming them bounds the upload to this version and
-      # fails loudly if either file is missing or misnamed.
       - name: Publish
         env:
           UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
