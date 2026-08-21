@@ -1,0 +1,36 @@
+#!/bin/sh
+# Pre-commit gate: lint, then tests with the coverage floor.
+#
+# Enable it once per clone, because git hook configuration is local and cannot be
+# committed:
+#
+#     git config core.hooksPath hooks
+#
+# These are the same checks CI runs, so a failure surfaces here in about two
+# seconds instead of after a push. Almost all of that is pytest; ruff is
+# effectively instant.
+#
+# Bypass deliberately with:  git commit --no-verify
+#
+# One limitation: this checks the working tree, not the staged content. If you
+# stage a subset of your changes, what runs here is not exactly what you are
+# committing. Good enough to catch mistakes, not a guarantee about the commit.
+#
+# Tools run through uv so nothing needs installing globally. The ruff version is
+# pinned, because an unpinned linter starts rejecting commits the day it ships a
+# new rule. It must match the version in .github/workflows/ci.yml.
+
+set -eu
+
+cd "$(git rev-parse --show-toplevel)"
+
+printf 'pre-commit: ruff\n'
+uvx ruff@0.16.4 check src tests
+
+# The 90 percent coverage floor lives in pyproject.toml as --cov-fail-under, so
+# it is enforced here without being restated. One number, one place.
+# --frozen syncs the environment from the lockfile without rewriting it.
+printf 'pre-commit: pytest and coverage\n'
+uv run --frozen pytest -q
+
+printf 'pre-commit: ok\n'

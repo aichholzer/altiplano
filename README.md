@@ -135,6 +135,20 @@ uvx altiplano@latest                    # from PyPI, refreshing the cache
 - Verified end to end against Vikunja v2.5.0 on both `/api/v1` and `/api/v2`.
 - `list_assignees` needs a server where `GET /tasks/{id}/assignees` works. It answers 500 on v2.3.0, which was a server-side bug, and works on v2.5.0. Every other tool works on both.
 
+## Contributing
+
+Enable the pre-commit hook once per clone:
+
+```bash
+git config core.hooksPath hooks
+```
+
+> Git hook configuration lives in `.git/config`, which is not version controlled, so I can't do it for you. The hook itself is committed in `hooks/`, and git will not look there until you point it.
+>
+> The same checks run on every pull request. The suite must pass and coverage must stay above 90 percent.
+>
+> Coverage is also reported to Codecov on each pull request, as a comment and as inline annotations. That reporting is purely informational and never fails a build.
+
 ## Licence
 
 [MIT](./LICENSE).

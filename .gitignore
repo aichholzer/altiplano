@@ -3,6 +3,7 @@ __pycache__/
 .coverage
 coverage.xml
 .pytest_cache/
+.ruff_cache/
 .venv/
 dist/
 build/
