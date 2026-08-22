@@ -47,20 +47,21 @@ def test_v1_never_asks_for_markdown(api, run, call, api_version):
 
 
 @pytest.mark.parametrize("api_version", [2])
-def test_v2_partial_updates_ask_for_markdown_on_the_way_back(api, run, api_version):
-    """A partial update answers with the whole task, description included.
+def test_v2_partial_updates_do_not_ask_for_markdown(api, run, api_version):
+    """A partial update answers with the whole task, description included, and that
+    description comes back as the stored HTML.
 
-    Without this it answers in raw HTML while `get_task` answers in Markdown, so the
-    same field arrives in two different formats depending on which tool produced it.
-    v2 ignores the parameter for a PATCH request body, which is why a description
-    never routes through PATCH, but that does not stop us asking for the response in
-    the same currency as every other read.
+    0.10.0 asked for Markdown here, on the theory that v2 ignored the parameter only
+    for the request body. It ignores it for the response too: asking against 2.5.0
+    returned `<p><strong>Bold</strong></p>` regardless. The parameter is therefore
+    not sent, because one that the server discards implies a guarantee that does not
+    hold. `get_task` is the way to read a description as Markdown.
     """
     run(server.update_task(7, priority=3))
-    assert fmt(api.last) == "markdown"
+    assert fmt(api.last) is None
 
     run(server.set_reminders(7, []))
-    assert fmt(api.last) == "markdown"
+    assert fmt(api.last) is None
 
 
 @pytest.mark.parametrize("api_version", [2])

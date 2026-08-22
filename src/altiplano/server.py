@@ -361,6 +361,10 @@ async def update_task(
     `due_date` is the deadline. `start_date` and `end_date` are ISO 8601 datetimes
     marking the window you plan to work on the task (start work / finish work).
     Pass an empty string to any of the three to clear it.
+
+    One wrinkle in what comes back: on v2 a partial update returns the description
+    as the stored HTML, because v2 will not convert on a PATCH. Call `get_task` if
+    you need it as Markdown.
     """
     payload: dict[str, Any] = {}
     if title is not None:
@@ -385,11 +389,12 @@ async def update_task(
     # partial update.
     if _version() == 1 or "description" in payload:
         return await _replace_task(task_id, payload)
-    # Markdown is asked for on the way back, so this returns a task shaped like the
-    # one get_task returns rather than one carrying raw HTML. v2 ignores the
-    # parameter for a PATCH request body, which is exactly why a description never
-    # reaches this line, but asking costs nothing on the way out.
-    return await _request(_verb("update"), f"/tasks/{task_id}", params=_md_params(), json=payload)
+    # No ?format=markdown here. v2 ignores it on a PATCH in both directions, not
+    # just for the request body, so the task this returns carries its description as
+    # the stored HTML. Verified against 2.5.0 by asking and getting HTML back
+    # regardless. Sending a parameter the server discards would only suggest a
+    # guarantee that does not hold.
+    return await _request(_verb("update"), f"/tasks/{task_id}", json=payload)
 
 
 async def _replace_task(task_id: int, changes: dict[str, Any]) -> dict:
@@ -460,7 +465,7 @@ async def set_reminders(task_id: int, reminders: list[str]) -> dict:
     # unnoticed until 0.8.1 because the payload looks self-contained.
     if _version() == 1:
         return await _replace_task(task_id, payload)
-    return await _request(_verb("update"), f"/tasks/{task_id}", params=_md_params(), json=payload)
+    return await _request(_verb("update"), f"/tasks/{task_id}", json=payload)
 
 
 @mcp.tool()

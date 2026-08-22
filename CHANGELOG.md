@@ -2,6 +2,33 @@
 
 All notable changes to this project are documented here.
 
+## [0.10.1]
+
+### Fixed
+
+- Stopped sending `?format=markdown` on a v2 partial update, which 0.9.0 added on a
+  premise that turned out to be wrong. The theory was that v2 ignored the parameter
+  only for the request body, so asking for the response in Markdown would cost
+  nothing and make `update_task` answer in the same format as `get_task`. Tested
+  against 2.5.0 as soon as a released build could reach a live server, it ignores
+  the parameter for the response as well: a description stored as
+  `<p><strong>Bold</strong> and <code>code</code></p>` came back exactly that way
+  with the parameter set.
+
+  So the inconsistency it was meant to remove is still there, and cannot be removed
+  by asking. `update_task` and `set_reminders` return the description as stored HTML
+  on v2, and `get_task` returns Markdown. The parameter is gone rather than left in
+  place, because one the server discards suggests a guarantee that does not hold,
+  and the next person to read that line would believe it.
+
+  The docstring and the README now say so, which is the only fix available short of
+  spending a second request on a follow-up read after every partial update. That is
+  not worth it for a difference in the shape of a return value that callers can
+  resolve with `get_task`.
+
+  The 0.9.0 and 0.10.0 entries are left as written. They record what was believed at
+  the time, and this one records what testing showed.
+
 ## [0.10.0]
 
 ### Added

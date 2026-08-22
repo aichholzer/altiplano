@@ -125,6 +125,7 @@ On v1 there is no conversion and the fields are HTML, so Markdown you send is st
 
 Two things worth mentioning:
 
+- A partial update is the exception in both directions. `update_task` and `set_reminders` return the task with its description as the stored HTML, because v2 will not convert on a `PATCH`. Call `get_task` if you want it back as Markdown.
 - v2 only converts on create and on full replace, never on a partial update. So changing a description reads the task first and writes it back whole, which costs one extra request. The ETag from that read goes back as `If-Match`, so a task that something else wrote to in between fails with a message telling you to read it again, rather than having that edit quietly overwritten. Updates that do not touch the description stay a single partial update.
 - Vikunja resolves `@mentions` during conversion, so writing `@someone` in a description notifies them.
 
