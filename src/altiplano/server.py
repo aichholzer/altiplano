@@ -371,7 +371,8 @@ async def create_task(
     marked done: it reopens itself and moves its due date and reminders forward.
     `repeat_mode` is 0 to advance by `repeat_after`, 1 to repeat monthly and ignore
     `repeat_after`, or 2 to count from the day it was completed rather than from its
-    previous dates.
+    previous dates. Give a repeating task a `due_date`: it reopens whether or not
+    there is a date to advance, so one with no dates cannot be closed at all.
     """
     payload: dict[str, Any] = {"title": title}
     if description is not None:
@@ -429,6 +430,7 @@ async def update_task(
     for this task, which will reopen itself with its dates moved forward instead of
     staying closed. `repeat_mode` is 0 to advance by `repeat_after`, 1 to repeat
     monthly and ignore `repeat_after`, or 2 to count from the day it was completed.
+    A repeating task with no dates cannot be closed: it reopens regardless.
 
     One wrinkle in what comes back: on v2 a partial update returns the description
     as the stored HTML, because v2 will not convert on a PATCH. Call `get_task` if
