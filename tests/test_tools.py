@@ -275,6 +275,51 @@ def test_create_task_clears_a_date_given_an_empty_string(api, run, field):
     assert body(api.last) == {"title": "Task", field: "0001-01-01T00:00:00Z"}
 
 
+# --- progress, favourite and repeating --------------------------------------
+PROGRESS_FIELDS = {
+    "percent_done": 0.25,
+    "is_favorite": True,
+    "repeat_after": 86400,
+    "repeat_mode": 2,
+}
+
+
+def test_create_task_carries_the_progress_and_repeat_fields(api, run):
+    run(server.create_task(3, "Task", **PROGRESS_FIELDS))
+    assert body(api.last) == {"title": "Task", **PROGRESS_FIELDS}
+
+
+@pytest.mark.parametrize("api_version", [2])
+def test_update_task_carries_the_progress_and_repeat_fields(api, run, api_version):
+    run(server.update_task(7, **PROGRESS_FIELDS))
+    assert body(api.last) == PROGRESS_FIELDS
+
+
+# Every one of these means something and every one is falsy, so a truthiness check
+# in the payload builder would drop exactly the values that turn a feature off.
+OFF_VALUES = {
+    "percent_done": 0.0,
+    "is_favorite": False,
+    "repeat_after": 0,
+    "repeat_mode": 0,
+}
+
+
+@pytest.mark.parametrize(("field", "value"), OFF_VALUES.items())
+def test_create_task_sends_a_falsy_value_rather_than_dropping_it(api, run, field, value):
+    run(server.create_task(3, "Task", **{field: value}))
+    assert body(api.last) == {"title": "Task", field: value}
+
+
+@pytest.mark.parametrize("api_version", [2])
+@pytest.mark.parametrize(("field", "value"), OFF_VALUES.items())
+def test_update_task_sends_a_falsy_value_rather_than_dropping_it(
+    api, run, field, value, api_version
+):
+    run(server.update_task(7, **{field: value}))
+    assert body(api.last) == {field: value}
+
+
 # --- relations --------------------------------------------------------------
 # The routing cases above cover the default `related` kind. What matters here is
 # that a kind reaches a different place in each tool: the body on create, and the

@@ -2,6 +2,39 @@
 
 All notable changes to this project are documented here.
 
+## [0.11.0]
+
+### Added
+
+- `percent_done`, `is_favorite`, `repeat_after` and `repeat_mode` on `create_task`
+  and `update_task`, following the existing rule that a field reaches the payload
+  only if it was passed. These were the remaining writable scalars on a task that
+  this server could not set. What is left is either read-only, owned by a dedicated
+  endpoint, or kanban state.
+
+  Lifted from the suggestion in PR #4 rather than the PR itself, and each field
+  checked against the spec instead of taken on trust, which was worth doing:
+
+  `repeat_mode` is the enum `[0, 1, 2]`, generated from the Go type as
+  `TaskRepeatModeDefault`, `TaskRepeatModeMonth` and `TaskRepeatModeFromCurrentDate`.
+  Vikunja's own description of the field disagrees with its own enum, announcing
+  "three possible values" and then listing 0, 1 and 3. The enum wins, and both the
+  docstrings and the README note the discrepancy so the next reader does not take
+  the prose for gospel.
+
+  `percent_done` is a fraction despite its name: a quarter done is 0.25. The spec
+  documents no range at all, so this was settled against a live server, which also
+  turned up that nothing validates it. Passing 50 stores 50, neither clamped nor
+  read as 50 percent. Documented rather than corrected, since silently dividing a
+  caller's number by 100 would be a worse surprise than the one it prevents.
+
+  `is_favorite` is per-user state, and writable through the task rather than through
+  a separate endpoint. Confirmed both directions live.
+
+  All four are falsy at their "off" value, so a truthiness check in the payload
+  builder would drop exactly `percent_done=0`, `is_favorite=False`, `repeat_after=0`
+  and `repeat_mode=0`. Tests pin each one, on both tools.
+
 ## [0.10.1]
 
 ### Fixed

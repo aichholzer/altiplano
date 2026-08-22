@@ -318,12 +318,26 @@ async def create_task(
     due_date: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
+    percent_done: float | None = None,
+    is_favorite: bool | None = None,
+    repeat_after: int | None = None,
+    repeat_mode: int | None = None,
 ) -> dict:
     """Create a task in a project.
 
     `start_date` and `end_date` are ISO 8601 datetimes marking the window you
     plan to work on the task (start work / finish work), distinct from
     `due_date` (the deadline).
+
+    `percent_done` is a fraction despite the name, so a quarter done is 0.25 and not
+    25. Vikunja does not validate it: 50 is stored as 50, not read as 50 percent and
+    not clamped.
+
+    `repeat_after` is a number of seconds, and repeating happens when the task is
+    marked done: it reopens itself and moves its due date and reminders forward.
+    `repeat_mode` is 0 to advance by `repeat_after`, 1 to repeat monthly and ignore
+    `repeat_after`, or 2 to count from the day it was completed rather than from its
+    previous dates.
     """
     payload: dict[str, Any] = {"title": title}
     if description is not None:
@@ -336,6 +350,14 @@ async def create_task(
         payload["start_date"] = _date(start_date)
     if end_date is not None:
         payload["end_date"] = _date(end_date)
+    if percent_done is not None:
+        payload["percent_done"] = percent_done
+    if is_favorite is not None:
+        payload["is_favorite"] = is_favorite
+    if repeat_after is not None:
+        payload["repeat_after"] = repeat_after
+    if repeat_mode is not None:
+        payload["repeat_mode"] = repeat_mode
     return await _request(
         _verb("create"), f"/projects/{project_id}/tasks", params=_md_params(), json=payload
     )
@@ -351,6 +373,10 @@ async def update_task(
     due_date: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
+    percent_done: float | None = None,
+    is_favorite: bool | None = None,
+    repeat_after: int | None = None,
+    repeat_mode: int | None = None,
 ) -> dict:
     """Update a task. Only the fields you pass change. Use `done` to open/close it.
 
@@ -361,6 +387,14 @@ async def update_task(
     `due_date` is the deadline. `start_date` and `end_date` are ISO 8601 datetimes
     marking the window you plan to work on the task (start work / finish work).
     Pass an empty string to any of the three to clear it.
+
+    `percent_done` is a fraction despite the name, so a quarter done is 0.25 and not
+    25. Vikunja does not validate it: 50 is stored as 50, not read as 50 percent.
+
+    `repeat_after` is a number of seconds, and setting it changes what `done` means
+    for this task, which will reopen itself with its dates moved forward instead of
+    staying closed. `repeat_mode` is 0 to advance by `repeat_after`, 1 to repeat
+    monthly and ignore `repeat_after`, or 2 to count from the day it was completed.
 
     One wrinkle in what comes back: on v2 a partial update returns the description
     as the stored HTML, because v2 will not convert on a PATCH. Call `get_task` if
@@ -381,6 +415,14 @@ async def update_task(
         payload["start_date"] = _date(start_date)
     if end_date is not None:
         payload["end_date"] = _date(end_date)
+    if percent_done is not None:
+        payload["percent_done"] = percent_done
+    if is_favorite is not None:
+        payload["is_favorite"] = is_favorite
+    if repeat_after is not None:
+        payload["repeat_after"] = repeat_after
+    if repeat_mode is not None:
+        payload["repeat_mode"] = repeat_mode
     if not payload:
         raise ValueError("No fields to update")
     # Two separate reasons to read the task first, see _replace_task: on v1 because
