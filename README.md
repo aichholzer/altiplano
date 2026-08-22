@@ -27,6 +27,17 @@ Tasks:
 - `set_reminders` (task_id, reminders): replaces the task's reminders with the given ISO 8601 datetimes; empty list clears
 - `delete_task` (task_id): soft-deletes the task along with its comments, labels and assignees. Vikunja keeps it for 30 days but exposes no way to restore it, so treat this as irreversible
 
+Kanban:
+- `list_kanban_views` (project_id): a project's kanban views, with the ids of their default and done buckets
+- `list_buckets` (project_id, view_id?): the columns in board order, flagging which is the default and which is done
+- `list_bucket_tasks` (project_id, view_id?, filter?): the columns with their tasks. See the warning below about v2
+- `list_task_buckets` (task_id): which bucket a task sits in, one entry per kanban view
+- `move_task_to_bucket` (project_id, task_id, bucket_id, view_id?): moving into the done bucket marks the task done, and moving it out un-marks it
+
+Buckets belong to a view, not to a project, so each of these resolves one first. `view_id` is optional and the first kanban view is used, which is the only one most projects have.
+
+> `list_bucket_tasks` does not work on `/api/v2` with an API token, on Vikunja 2.5.0. That one route answers 401 while every other route here accepts the same token, and the v2 spec says it should accept one too, so the likely cause is a token created before the route existed and therefore lacking permission for it. A token created with full permissions may fix it; `/api/v1` serves the same data either way. The tool says as much when it hits that 401, rather than repeating Vikunja's claim that your token is invalid.
+
 Relations:
 - `add_relation` (task_id, other_task_id, relation_kind?): relates two tasks, defaulting to a plain `related` link
 - `remove_relation` (task_id, other_task_id, relation_kind?): the kind must match the one the relation was created with
@@ -143,6 +154,8 @@ uvx altiplano@latest                    # from PyPI, refreshing the cache
 - Dates are ISO 8601 datetimes. `start_date`/`end_date` mark the window you plan to work on a task (start work / finish work); `due_date` is the deadline.
 - To clear a date, pass an empty string. Vikunja has no null for one: an unset date is the zero time, `0001-01-01T00:00:00Z`, and that is what gets written.
 - When a call is rejected, the error carries Vikunja's own explanation, plus its numeric error code on v2, instead of only the HTTP status.
+- Kanban buckets live on a view (`view_kind` of `kanban`), not on the project. A view's `bucket_configuration_mode` is `manual` when you arrange tasks yourself, or `filter` when Vikunja builds a bucket per filter, in which case moving a task between buckets does nothing for you.
+- A bucket `limit` of `0` means no limit; a move into a full bucket is refused. A repeating task moved into the done bucket is reopened and sent to the default bucket, since done is not a state it stays in. Marking a task done through `update_task` moves it into the done bucket.
 - `percent_done` is a fraction despite the name: a quarter done is `0.25`, not `25`. Vikunja does not validate it, so `50` is stored as `50` rather than read as 50 percent.
 - `repeat_after` is a number of seconds, and it changes what marking a task done does: the task reopens itself with its due date and reminders moved forward. `repeat_mode` is `0` to advance by `repeat_after`, `1` to repeat monthly and ignore `repeat_after`, or `2` to count from the day it was completed. Vikunja's own API docs say `3` for that last one, but the enum it generates says `2`.
 - Relation kinds: `subtask`, `parenttask`, `related`, `duplicateof`, `duplicates`, `blocking`, `blocked`, `precedes`, `follows`, `copiedfrom`, `copiedto`. Direction matters for the asymmetric ones: `add_relation(task_id, other_task_id, "subtask")` makes the other task a child of `task_id`.

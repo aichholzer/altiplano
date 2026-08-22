@@ -2,6 +2,58 @@
 
 All notable changes to this project are documented here.
 
+## [0.12.0]
+
+### Added
+
+- Kanban tools, taking the surface to 26: `list_kanban_views`, `list_buckets`,
+  `list_bucket_tasks`, `list_task_buckets` and `move_task_to_bucket`. Boards were
+  the largest thing this server could see nothing of.
+
+  Buckets belong to a view rather than to a project, so each tool resolves one
+  first. `view_id` is optional and the first kanban view is taken, which is the only
+  one most projects have; views arrive ordered by position, so "first" means the
+  leftmost tab rather than an arbitrary pick. Naming a view that is not kanban, or
+  one that does not exist, fails with a message that says which of the two happened.
+
+  `move_task_to_bucket` carries side effects, all documented on the tool: the done
+  bucket marks a task done and moving out of it un-marks it, both confirmed live on
+  both API versions; a repeating task moved into the done bucket is reopened and sent
+  to the default bucket; and a bucket at its task limit refuses the move.
+
+  This was the second half of PR #4's suggestion, though little of the PR survived
+  contact with the spec:
+
+  The PR reads grouped buckets from `GET /views/{view}/tasks`. On v2 that route
+  "always returns flat tasks, even for a kanban view", and grouping moved to
+  `GET /views/{view}/buckets/tasks`, which v1 does not have at all. The path
+  therefore forks by version, and three of the PR's tools would have misread v2.
+
+  The PR hardcodes `POST` for the move, which is v1's verb; v2 wants `PUT`. That is
+  the same pair `_replace_task` and `update_comment` already needed, so `_VERBS`
+  gained a third action, `replace`, and all three call sites now go through it
+  instead of spelling the versions out locally.
+
+  The PR spends an extra request per `list_buckets` call to read bucket counts from
+  the tasks endpoint. Counts are genuinely absent from the buckets endpoint,
+  confirmed live as `count: 0` on a bucket holding 23 tasks, but the answer is not to
+  pay for them: `list_buckets` omits the field rather than reporting a zero that is
+  a lie, and `list_bucket_tasks` carries the real numbers.
+
+  The PR's `get_task_bucket` costs three requests. `GET /tasks/{id}?expand=buckets`
+  answers directly on both versions, so `list_task_buckets` is one, and it returns a
+  list because a task holds a bucket in every kanban view its project has.
+
+### Note
+
+- `list_bucket_tasks` does not work on v2 with an API token, on Vikunja 2.5.0. That
+  route answers 401 while every sibling accepts the same token and the v2 spec
+  documents it as accepting one, so the likely cause is a token predating the route
+  and lacking permission for it. It ships anyway, with that 401 mapped to an
+  explanation rather than Vikunja's claim that the token is invalid, on the
+  precedent of 0.5.6 keeping `list_assignees` on an endpoint that was broken
+  server-side at the time. v1 serves the same data and was confirmed working.
+
 ## [0.11.0]
 
 ### Added

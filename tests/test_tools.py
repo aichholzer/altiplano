@@ -6,6 +6,7 @@ update, so the verb assertions here are load bearing rather than incidental.
 
 import json
 
+import httpx
 import pytest
 
 from altiplano import server
@@ -42,6 +43,18 @@ REPLACE = {1: "POST", 2: "PUT"}
 # On v1 the write is that task with the change merged in, because v1's update
 # endpoint is a replace; on v2 it is the change alone.
 READ_BACK = {"id": 7, "title": "Existing"}
+
+# Buckets belong to a view, so every bucket tool resolves one first.
+KANBAN_VIEW = [
+    {
+        "id": 48,
+        "title": "Kanban",
+        "view_kind": "kanban",
+        "default_bucket_id": 41,
+        "done_bucket_id": 43,
+        "bucket_configuration_mode": "manual",
+    }
+]
 
 
 ROUTES = [
@@ -83,6 +96,50 @@ ROUTES = [
         # required anyway, so both go out.
         {"other_task_id": 9, "relation_kind": "related"},
     ),
+    # The bucket tools resolve a view first, so the fake has to answer that with
+    # something kanban-shaped. The same canned response serves the second request,
+    # which these cases do not assert on beyond verb, path and body.
+    route(
+        "list_kanban_views",
+        lambda: server.list_kanban_views(3),
+        READ,
+        "/projects/3/views",
+        {},
+    ),
+    route(
+        "list_buckets",
+        lambda: server.list_buckets(3),
+        READ,
+        "/projects/3/views/48/buckets",
+        {},
+        response=KANBAN_VIEW,
+    ),
+    route(
+        "list_bucket_tasks",
+        lambda: server.list_bucket_tasks(3),
+        READ,
+        # v1 groups on the view's task endpoint; v2 answers that one flat and has a
+        # separate route for the grouped form.
+        {1: "/projects/3/views/48/tasks", 2: "/projects/3/views/48/buckets/tasks"},
+        {},
+        response=KANBAN_VIEW,
+    ),
+    route(
+        "list_task_buckets",
+        lambda: server.list_task_buckets(7),
+        READ,
+        "/tasks/7",
+        {},
+        response={"id": 7, "buckets": []},
+    ),
+    route(
+        "move_task_to_bucket",
+        lambda: server.move_task_to_bucket(3, 7, 41),
+        REPLACE,
+        "/projects/3/views/48/buckets/41/tasks",
+        {"task_id": 7},
+        response=KANBAN_VIEW,
+    ),
     route("list_assignees", lambda: server.list_assignees(7), READ, "/tasks/7/assignees", {}),
     route("add_assignee", lambda: server.add_assignee(7, 2), CREATE, "/tasks/7/assignees", {"user_id": 2}),
     route("remove_assignee", lambda: server.remove_assignee(7, 2), REMOVE, "/tasks/7/assignees/2", {}),
@@ -121,9 +178,10 @@ def test_tool_uses_the_expected_verb_path_and_body(
         api.returns(response)
     run(call())
     assert api.last.method == verbs[api_version]
-    assert api.last.url.path.endswith(path)
-    # A body given per version, for the tools whose v1 write merges into the task
-    # they read. A real JSON body never has integer keys, so this cannot collide.
+    # A path or a body may be given per version, for the handful of tools where the
+    # two versions differ. A real path is a string and a real JSON body never has
+    # integer keys, so neither check can collide with a genuine value.
+    assert api.last.url.path.endswith(path[api_version] if isinstance(path, dict) else path)
     expected = expected_body[api_version] if set(expected_body) == {1, 2} else expected_body
     assert body(api.last) == expected
 
@@ -324,6 +382,209 @@ def test_update_task_sends_a_falsy_value_rather_than_dropping_it(
 # The routing cases above cover the default `related` kind. What matters here is
 # that a kind reaches a different place in each tool: the body on create, and the
 # path on remove, where getting it wrong would silently address another relation.
+# --- kanban -----------------------------------------------------------------
+TWO_KANBAN_VIEWS = [
+    {"id": 45, "title": "List", "view_kind": "list"},
+    {"id": 48, "title": "Kanban", "view_kind": "kanban", "done_bucket_id": 43},
+    {"id": 49, "title": "Triage", "view_kind": "kanban", "done_bucket_id": 0},
+]
+
+
+def test_the_first_kanban_view_is_used_when_none_is_named(api, run):
+    """Views arrive ordered by position, so the first kanban one is the leftmost tab
+    rather than whichever the server happened to list first."""
+    api.returns(TWO_KANBAN_VIEWS)
+    run(server.list_buckets(3))
+    assert api.last.url.path.endswith("/projects/3/views/48/buckets")
+
+
+def test_a_named_view_is_used_instead(api, run):
+    api.returns(TWO_KANBAN_VIEWS)
+    run(server.list_buckets(3, view_id=49))
+    assert api.last.url.path.endswith("/projects/3/views/49/buckets")
+
+
+def test_a_view_that_is_not_kanban_is_refused(api, run):
+    """Only kanban views have buckets, so pointing at a list view is a mistake worth
+    naming rather than a confusing failure from the buckets endpoint."""
+    api.returns(TWO_KANBAN_VIEWS)
+    with pytest.raises(ValueError, match="is a list view"):
+        run(server.list_buckets(3, view_id=45))
+
+
+def test_a_view_that_does_not_exist_is_refused(api, run):
+    api.returns(TWO_KANBAN_VIEWS)
+    with pytest.raises(ValueError, match="has no view 99"):
+        run(server.list_buckets(3, view_id=99))
+
+
+def test_a_project_with_no_kanban_view_is_refused(api, run):
+    api.returns([{"id": 45, "title": "List", "view_kind": "list"}])
+    with pytest.raises(ValueError, match="has no kanban view"):
+        run(server.list_buckets(3))
+
+
+def test_list_kanban_views_drops_the_other_kinds(api, run):
+    api.returns(TWO_KANBAN_VIEWS)
+    assert run(server.list_kanban_views(3)) == [
+        {
+            "id": 48,
+            "title": "Kanban",
+            "default_bucket_id": None,
+            "done_bucket_id": 43,
+            "bucket_configuration_mode": None,
+        },
+        {
+            "id": 49,
+            "title": "Triage",
+            "default_bucket_id": None,
+            "done_bucket_id": 0,
+            "bucket_configuration_mode": None,
+        },
+    ]
+
+
+BUCKETS = [
+    {"id": 41, "title": "To-Do", "position": 100, "limit": 0, "count": 0},
+    {"id": 42, "title": "Doing", "position": 200, "limit": 3, "count": 0},
+    {"id": 43, "title": "Done", "position": 300, "limit": 0, "count": 0},
+]
+
+
+def test_list_buckets_flags_the_default_and_done_columns(api, run):
+    api.returns_in_order(
+        httpx.Response(200, json=[dict(KANBAN_VIEW[0], default_bucket_id=42)]),
+        httpx.Response(200, json=BUCKETS),
+    )
+    assert run(server.list_buckets(3)) == [
+        {
+            "id": 41,
+            "title": "To-Do",
+            "position": 100,
+            "limit": 0,
+            "is_default_bucket": False,
+            "is_done_bucket": False,
+        },
+        {
+            "id": 42,
+            "title": "Doing",
+            "position": 200,
+            "limit": 3,
+            "is_default_bucket": True,
+            "is_done_bucket": False,
+        },
+        {
+            "id": 43,
+            "title": "Done",
+            "position": 300,
+            "limit": 0,
+            "is_default_bucket": False,
+            "is_done_bucket": True,
+        },
+    ]
+
+
+def test_an_unset_default_bucket_means_the_leftmost_one(api, run):
+    """Vikunja leaves `default_bucket_id` at 0 to mean "the leftmost bucket", and
+    buckets arrive in board order, so that is the first."""
+    api.returns_in_order(
+        httpx.Response(200, json=[dict(KANBAN_VIEW[0], default_bucket_id=0)]),
+        httpx.Response(200, json=BUCKETS),
+    )
+    flags = [(b["id"], b["is_default_bucket"]) for b in run(server.list_buckets(3))]
+    assert flags == [(41, True), (42, False), (43, False)]
+
+
+def test_list_buckets_survives_a_view_with_no_buckets(api, run):
+    api.returns_in_order(
+        httpx.Response(200, json=[dict(KANBAN_VIEW[0], default_bucket_id=0)]),
+        httpx.Response(200, json=[]),
+    )
+    assert run(server.list_buckets(3)) == []
+
+
+def test_list_bucket_tasks_reports_the_true_size_beside_the_tasks(api, run):
+    """Vikunja caps the tasks it sends per bucket, so `task_count` and the length of
+    `tasks` are different questions."""
+    api.returns_in_order(
+        httpx.Response(200, json=KANBAN_VIEW),
+        httpx.Response(
+            200,
+            json=[
+                {
+                    "id": 43,
+                    "title": "Done",
+                    "count": 23,
+                    "tasks": [{"id": 374, "identifier": "#1", "title": "T", "done": True}],
+                }
+            ],
+        ),
+    )
+    assert run(server.list_bucket_tasks(3)) == [
+        {
+            "id": 43,
+            "title": "Done",
+            "task_count": 23,
+            "tasks": [
+                {"id": 374, "identifier": "#1", "title": "T", "done": True, "priority": None}
+            ],
+        }
+    ]
+
+
+def test_list_bucket_tasks_passes_a_filter_to_the_server(api, run):
+    api.returns(KANBAN_VIEW)
+    run(server.list_bucket_tasks(3, filter="done = false"))
+    assert dict(api.last.url.params) == {"filter": "done = false"}
+
+
+@pytest.mark.parametrize("api_version", [2])
+def test_a_401_on_the_v2_board_explains_itself(api, run, api_version):
+    """Observed on 2.5.0: this one route rejects an API token that works everywhere
+    else, so the stock "invalid token" would send someone hunting the wrong problem.
+    """
+    api.returns_in_order(
+        httpx.Response(200, json=KANBAN_VIEW),
+        httpx.Response(401, json={"detail": "invalid token provided", "code": 11}),
+    )
+    with pytest.raises(RuntimeError, match="created with full permissions"):
+        run(server.list_bucket_tasks(3))
+
+
+@pytest.mark.parametrize("api_version", [1])
+def test_a_401_elsewhere_is_left_alone(api, run, api_version):
+    """The explanation is specific to the v2 route, so v1 must keep the real error."""
+    api.returns_in_order(
+        httpx.Response(200, json=KANBAN_VIEW),
+        httpx.Response(401, json={"message": "invalid token provided"}),
+    )
+    with pytest.raises(httpx.HTTPStatusError, match="401"):
+        run(server.list_bucket_tasks(3))
+
+
+def test_list_task_buckets_returns_one_entry_per_kanban_view(api, run):
+    api.returns(
+        {
+            "id": 7,
+            "buckets": [
+                {"id": 43, "title": "Done", "project_view_id": 48},
+                {"id": 51, "title": "Later", "project_view_id": 49},
+            ],
+        }
+    )
+    assert run(server.list_task_buckets(7)) == [
+        {"bucket_id": 43, "bucket_title": "Done", "project_view_id": 48},
+        {"bucket_id": 51, "bucket_title": "Later", "project_view_id": 49},
+    ]
+
+
+def test_list_task_buckets_asks_for_the_buckets_to_be_expanded(api, run):
+    """Without `expand`, a task's `bucket_id` is 0 and the buckets are absent."""
+    api.returns({"id": 7, "buckets": []})
+    assert run(server.list_task_buckets(7)) == []
+    assert dict(api.last.url.params) == {"expand": "buckets"}
+
+
 def test_add_relation_carries_a_non_default_kind_in_the_body(api, run):
     run(server.add_relation(7, 9, "blocking"))
     assert body(api.last) == {"other_task_id": 9, "relation_kind": "blocking"}
