@@ -34,6 +34,8 @@ EXPECTED_TOOLS = {
     "add_comment",
     "update_comment",
     "delete_comment",
+    "add_relation",
+    "remove_relation",
     "search_users",
     "list_assignees",
     "add_assignee",

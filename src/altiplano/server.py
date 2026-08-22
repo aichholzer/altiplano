@@ -29,46 +29,82 @@ _CONFIG_FILE = Path(
 )
 
 
-# _from_file runs on every request, by way of _base and _headers, so the warning
-# below has to fire once for a given file rather than once per API call.
-_warned_about_mode: set[Path] = set()
+# Vikunja has no null for a date. An unset one is Go's zero time, both on the
+# wire and in the database, so writing this value back is how a date is cleared.
+_NO_DATE = "0001-01-01T00:00:00Z"
 
 
-def _warn_if_others_can_read(path: Path) -> None:
-    """Warn when the credentials file is readable or writable beyond its owner.
+# A single tool call resolves credentials three or four times, by way of _base,
+# _headers and _version, so both the warnings below and the parse itself are done
+# once per file rather than once per lookup.
+_warned_about: set[tuple[Path, str]] = set()
+_file_cache: tuple[tuple[Path, int, int], dict[str, str]] | None = None
 
-    The module docstring asks for chmod 600; this checks it instead of trusting
-    it. It only warns, because the file belongs to the user and refusing to read
-    one that works today would be the worse trade. The message names the path
-    and the mode, never the contents.
-    """
-    if os.name != "posix" or path in _warned_about_mode:
+
+def _warn_once(key: tuple[Path, str], message: str) -> None:
+    """Warn about one file, for one reason, once per process."""
+    if key in _warned_about:
         return
-    # Raises FileNotFoundError for a missing file, which _from_file already
-    # treats as "no config", so there is no extra branch to cover here.
-    mode = path.stat().st_mode & 0o777
-    if mode & 0o077:
-        _warned_about_mode.add(path)
-        warnings.warn(
-            f"{path} is accessible to group or others (mode {mode:04o}) and holds your "
-            f"Vikunja API token. Restrict it with: chmod 600 {path}",
-            stacklevel=2,
-        )
+    _warned_about.add(key)
+    warnings.warn(message, stacklevel=3)
+
+
+def _mode_warning(path: Path, mode: int) -> str | None:
+    """The complaint to make when the credentials file is not chmod 600, if any.
+
+    The module docstring asks for 600; this checks it instead of trusting it. It
+    only warns, because the file belongs to the user and refusing to read one that
+    works today would be the worse trade. The message names the path and the mode,
+    never the contents.
+    """
+    if os.name != "posix" or not mode & 0o077:
+        return None
+    return (
+        f"{path} is accessible to group or others (mode {mode:04o}) and holds your "
+        f"Vikunja API token. Restrict it with: chmod 600 {path}"
+    )
+
+
+def _load_file() -> dict[str, str]:
+    """Parse the credentials file, re-reading it only once it changes.
+
+    Keyed on mtime and size rather than cached for the life of the process, so a
+    rotated token is still picked up without a restart.
+    """
+    global _file_cache
+    try:
+        info = _CONFIG_FILE.stat()
+        warning = _mode_warning(_CONFIG_FILE, info.st_mode & 0o777)
+        if warning:
+            _warn_once((_CONFIG_FILE, "mode"), warning)
+        stamp = (_CONFIG_FILE, info.st_mtime_ns, info.st_size)
+        if _file_cache is not None and _file_cache[0] == stamp:
+            return _file_cache[1]
+        text = _CONFIG_FILE.read_text()
+    except FileNotFoundError:
+        return {}
+    except OSError as err:
+        # Usually permissions, on the file itself or a directory above it. Warn
+        # rather than raise: the environment may already carry the credentials, in
+        # which case this file is irrelevant and failing here would be wrong.
+        _warn_once((_CONFIG_FILE, "unreadable"), f"could not read {_CONFIG_FILE}: {err}")
+        return {}
+
+    values: dict[str, str] = {}
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        # setdefault, so a duplicated key keeps the first occurrence, which is what
+        # the earlier line-by-line scan did.
+        values.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+    _file_cache = (stamp, values)
+    return values
 
 
 def _from_file(key: str) -> str | None:
-    try:
-        _warn_if_others_can_read(_CONFIG_FILE)
-        for line in _CONFIG_FILE.read_text().splitlines():
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            k, v = line.split("=", 1)
-            if k.strip() == key:
-                return v.strip().strip('"').strip("'")
-    except FileNotFoundError:
-        return None
-    return None
+    return _load_file().get(key)
 
 
 def _conf(key: str) -> str | None:
@@ -119,13 +155,63 @@ def _md_params() -> dict[str, str]:
     return {"format": "markdown"} if _version() == 2 else {}
 
 
-async def _request(method: str, path: str, **kwargs: Any) -> Any:
+def _date(value: str) -> str:
+    """Translate an empty string into the value Vikunja uses for no date.
+
+    Dates can otherwise only be overwritten, never cleared: `None` means "leave
+    this out of the payload", and an empty string is not a datetime Vikunja will
+    parse. There is no null to send, so clearing one means writing the zero time.
+    """
+    return _NO_DATE if value == "" else value
+
+
+def _error_detail(r: httpx.Response) -> str:
+    """A message that says what the server actually objected to.
+
+    httpx's own message stops at the status code, which for a rejected filter
+    expression or a validation failure leaves an agent nothing to act on. Vikunja
+    explains itself in the body: v2 follows RFC 9457 (`detail`, alongside a numeric
+    `code`), v1 uses `message`.
+    """
+    where = f"{r.status_code} {r.reason_phrase} for {r.request.method} {r.request.url}"
+    if r.has_redirect_location:
+        # Nearly always a VIKUNJA_URL that is wrong rather than a real redirect,
+        # so name where it was sent instead.
+        return f"{where}: redirected to {r.headers['Location']}"
+    try:
+        payload = r.json()
+    except ValueError:
+        return where
+    if not isinstance(payload, dict):
+        return where
+    detail = payload.get("detail") or payload.get("message") or payload.get("title")
+    if not detail:
+        return where
+    code = payload.get("code")
+    return f"{where}: {detail}" + (f" (code {code})" if code else "")
+
+
+async def _send(method: str, path: str, **kwargs: Any) -> httpx.Response:
+    """One request. Raises on any non-2xx, carrying the server's own explanation.
+
+    `is_success` rather than `is_error`, so a redirect is still a failure: it means
+    the configured URL is wrong, and decoding its body as a result would hide that.
+    """
     async with httpx.AsyncClient(base_url=_base(), headers=_headers(), timeout=30) as client:
         r = await client.request(method, path, **kwargs)
-        r.raise_for_status()
-        if r.status_code == 204 or not r.content:
-            return {"ok": True}
-        return r.json()
+        if not r.is_success:
+            raise httpx.HTTPStatusError(_error_detail(r), request=r.request, response=r)
+        return r
+
+
+def _decode(r: httpx.Response) -> Any:
+    if r.status_code == 204 or not r.content:
+        return {"ok": True}
+    return r.json()
+
+
+async def _request(method: str, path: str, **kwargs: Any) -> Any:
+    return _decode(await _send(method, path, **kwargs))
 
 
 def _items(data: Any) -> list:
@@ -160,7 +246,6 @@ def _task_summary(t: dict) -> dict:
 
 
 # --- projects ---------------------------------------------------------------
-##
 @mcp.tool()
 async def list_projects() -> list[dict]:
     """List all projects (boards). `parent_project_id` shows sub-project nesting."""
@@ -192,10 +277,12 @@ async def create_project(
 
 
 # --- tasks ------------------------------------------------------------------
-##
 @mcp.tool()
 async def list_tasks(
     project_id: int,
+    # `filter` shadows the builtin on purpose: it is the name Vikunja gives the
+    # query parameter and the name callers already write, and the builtin is not
+    # used in this module. Renaming it would break the published tool contract.
     filter: str | None = None,
     sort_by: str | None = None,
     page: int = 1,
@@ -244,11 +331,11 @@ async def create_task(
     if priority is not None:
         payload["priority"] = priority
     if due_date is not None:
-        payload["due_date"] = due_date
+        payload["due_date"] = _date(due_date)
     if start_date is not None:
-        payload["start_date"] = start_date
+        payload["start_date"] = _date(start_date)
     if end_date is not None:
-        payload["end_date"] = end_date
+        payload["end_date"] = _date(end_date)
     return await _request(
         _verb("create"), f"/projects/{project_id}/tasks", params=_md_params(), json=payload
     )
@@ -261,19 +348,19 @@ async def update_task(
     description: str | None = None,
     done: bool | None = None,
     priority: int | None = None,
+    due_date: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
 ) -> dict:
-    """Update a task. Use `done` to open/close it.
+    """Update a task. Only the fields you pass change. Use `done` to open/close it.
 
-    On v2 only the fields you pass change. On v1 they do not: that update endpoint
-    is a replace, so every field you omit is reset to its zero value. Passing just
-    `priority` there blanks the description, and passing just `done` to close a
-    task discards its description, priority and dates. On v1, pass every field you
-    want to keep. Verified against Vikunja 2.5.0.
+    v1 has no partial update, so there this reads the task and writes it back with
+    your changes merged in, at the cost of one extra request. v2 is a single PATCH
+    unless a description is involved.
 
-    `start_date` and `end_date` are ISO 8601 datetimes marking the window you
-    plan to work on the task (start work / finish work).
+    `due_date` is the deadline. `start_date` and `end_date` are ISO 8601 datetimes
+    marking the window you plan to work on the task (start work / finish work).
+    Pass an empty string to any of the three to clear it.
     """
     payload: dict[str, Any] = {}
     if title is not None:
@@ -284,50 +371,96 @@ async def update_task(
         payload["done"] = done
     if priority is not None:
         payload["priority"] = priority
+    if due_date is not None:
+        payload["due_date"] = _date(due_date)
     if start_date is not None:
-        payload["start_date"] = start_date
+        payload["start_date"] = _date(start_date)
     if end_date is not None:
-        payload["end_date"] = end_date
+        payload["end_date"] = _date(end_date)
     if not payload:
         raise ValueError("No fields to update")
-    # A description has to go through a full replace on v2, because PATCH ignores
-    # ?format=markdown and would store the Markdown verbatim. Everything else
-    # stays a cheap partial update.
-    if "description" in payload and _version() == 2:
+    # Two separate reasons to read the task first, see _replace_task: on v1 because
+    # a partial body would wipe the fields it omits, and on v2 because PATCH would
+    # store a Markdown description verbatim. Everything else on v2 stays a cheap
+    # partial update.
+    if _version() == 1 or "description" in payload:
         return await _replace_task(task_id, payload)
-    return await _request(_verb("update"), f"/tasks/{task_id}", json=payload)
+    # Markdown is asked for on the way back, so this returns a task shaped like the
+    # one get_task returns rather than one carrying raw HTML. v2 ignores the
+    # parameter for a PATCH request body, which is exactly why a description never
+    # reaches this line, but asking costs nothing on the way out.
+    return await _request(_verb("update"), f"/tasks/{task_id}", params=_md_params(), json=payload)
 
 
 async def _replace_task(task_id: int, changes: dict[str, Any]) -> dict:
-    """Apply `changes` through a full replace, so v2 converts Markdown for us.
+    """Apply `changes` by reading the task and writing it back whole.
 
-    v2 only honours the Markdown parameter on create and replace, never on a
-    partial update. Replacing resets any field it is not given, so the current
-    task is read first and the changes layered on top. The read asks for Markdown
-    as well, so a description we are not touching is written back in the same form
-    it came in rather than being double-converted.
+    There is a reason per API version to go the long way round.
 
-    Verified lossless across labels, assignees, reminders, dates, colour,
-    priority and percent_done. The cost is an extra request, and a lost update if
-    something else writes to the task in between.
+    On v1 there is no partial update at all. `POST /tasks/{id}` is a replace, so a
+    body carrying only the changed fields resets every other field to its zero
+    value: passing `priority` blanks the description, and closing a task with
+    `done` discards its description, priority and dates. Reading first and merging
+    is the only way to change one field without destroying the rest.
+
+    On v2 there is `PATCH`, but it silently ignores ?format=markdown, returning 200
+    while storing the Markdown verbatim into a field rendered as HTML. So a
+    description still has to go through a replace there, and everything else stays
+    a cheap partial update.
+
+    The read asks for Markdown too, so a description we are not touching is written
+    back in the form it came in rather than being double-converted. Verified
+    lossless across labels, assignees, reminders, dates, colour, priority and
+    percent_done.
+
+    The lost update this opens is caught where the server allows it: v2 returns an
+    ETag on a single-resource read and honours If-Match, so a task that changed in
+    between fails with 412 instead of being silently overwritten. v1 offers no
+    ETag, so no precondition is sent and that window stays open there.
     """
-    current = await _request("GET", f"/tasks/{task_id}", params=_md_params())
+    read = await _send("GET", f"/tasks/{task_id}", params=_md_params())
+    current = _decode(read)
+    if not isinstance(current, dict) or "id" not in current:
+        # A bodyless response arrives as a status dict. Replacing a task with that
+        # would wipe it, which is worse than refusing.
+        raise RuntimeError(f"the API did not return task {task_id}, so it was not updated")
     body = {k: v for k, v in current.items() if k != "$schema"}
     body.update(changes)
-    return await _request("PUT", f"/tasks/{task_id}", params=_md_params(), json=body)
+
+    headers = {}
+    etag = read.headers.get("ETag")
+    if etag:
+        headers["If-Match"] = etag
+    # On v1 the replace is the same POST a partial update would have used, which is
+    # exactly why the partial update was unsafe.
+    verb = "PUT" if _version() == 2 else "POST"
+    try:
+        return await _request(
+            verb, f"/tasks/{task_id}", params=_md_params(), headers=headers, json=body
+        )
+    except httpx.HTTPStatusError as err:
+        if err.response.status_code == 412:
+            raise RuntimeError(
+                f"task {task_id} changed while this update was being prepared, so nothing was "
+                "written. Read it again and retry."
+            ) from err
+        raise
 
 
 @mcp.tool()
 async def set_reminders(task_id: int, reminders: list[str]) -> dict:
     """Replace a task's reminders with the given ISO 8601 datetimes. Empty list clears them.
 
-    On v1 this carries the same hazard as `update_task`, because it sends a partial
-    body to the same replace-style endpoint: the task's description and priority
-    are reset. Only call it on v1 for a task whose other fields do not matter. On
-    v2 it is a genuine partial update and leaves the rest alone.
+    Nothing else about the task changes. On v1 that costs an extra request, because
+    its update endpoint is a replace and the task has to be read and written back
+    whole; on v2 it is a single partial update.
     """
-    payload = {"reminders": [{"reminder": r} for r in reminders]}
-    return await _request(_verb("update"), f"/tasks/{task_id}", json=payload)
+    payload: dict[str, Any] = {"reminders": [{"reminder": r} for r in reminders]}
+    # Same replace hazard as update_task, through the same endpoint. This one went
+    # unnoticed until 0.8.1 because the payload looks self-contained.
+    if _version() == 1:
+        return await _replace_task(task_id, payload)
+    return await _request(_verb("update"), f"/tasks/{task_id}", params=_md_params(), json=payload)
 
 
 @mcp.tool()
@@ -343,8 +476,48 @@ async def delete_task(task_id: int) -> dict:
     return await _request("DELETE", f"/tasks/{task_id}")
 
 
+# --- relations --------------------------------------------------------------
+# There is no list_relations: `get_task` already returns `related_tasks`, grouped
+# by kind. The kind is passed through rather than checked against a local copy of
+# the enum, the same way `filter` is: the server owns that vocabulary, and it
+# explains itself when given something it does not recognise.
+@mcp.tool()
+async def add_relation(task_id: int, other_task_id: int, relation_kind: str = "related") -> dict:
+    """Relate one task to another. Defaults to a plain, symmetric `related` link.
+
+    Kinds: subtask, parenttask, related, duplicateof, duplicates, blocking,
+    blocked, precedes, follows, copiedfrom, copiedto.
+
+    `task_id` is the base task and `other_task_id` is the one being related to it,
+    which is the direction that matters for the asymmetric kinds: `subtask` makes
+    the other task a child of this one. Needs write access to the base task and
+    read access to the other; they do not have to be in the same project.
+    """
+    return await _request(
+        _verb("create"),
+        f"/tasks/{task_id}/relations",
+        json={"other_task_id": other_task_id, "relation_kind": relation_kind},
+    )
+
+
+@mcp.tool()
+async def remove_relation(task_id: int, other_task_id: int, relation_kind: str = "related") -> dict:
+    """Remove a relation between two tasks.
+
+    The kind has to match the one the relation was created with; see
+    `add_relation` for the list. `get_task` reports what a task currently has.
+    """
+    # The path carries all three values, and the API documents a body as required
+    # here as well. Both are sent, built from the same arguments so they cannot
+    # disagree with each other.
+    return await _request(
+        "DELETE",
+        f"/tasks/{task_id}/relations/{relation_kind}/{other_task_id}",
+        json={"other_task_id": other_task_id, "relation_kind": relation_kind},
+    )
+
+
 # --- labels -----------------------------------------------------------------
-##
 @mcp.tool()
 async def list_labels() -> list[dict]:
     """List all labels."""
@@ -365,7 +538,6 @@ async def remove_label(task_id: int, label_id: int) -> dict:
 
 
 # --- comments ---------------------------------------------------------------
-##
 @mcp.tool()
 async def list_comments(task_id: int) -> list[dict]:
     """List comments on a task."""
@@ -404,7 +576,6 @@ async def delete_comment(task_id: int, comment_id: int) -> dict:
 
 
 # --- users / assignees ------------------------------------------------------
-##
 @mcp.tool()
 async def search_users(query: str) -> list[dict]:
     """Search users by name or username. Use this to find a user_id for assignees."""

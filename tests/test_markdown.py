@@ -8,6 +8,7 @@ update: PATCH returns 200 and stores the Markdown verbatim into a field that is
 rendered as HTML. So a description change has to go through a full replace.
 """
 
+import httpx
 import pytest
 
 from altiplano import server
@@ -43,6 +44,23 @@ def test_v1_never_asks_for_markdown(api, run, call, api_version):
     """v1 has no format parameter, so sending one would be noise at best."""
     run(call())
     assert fmt(api.last) is None
+
+
+@pytest.mark.parametrize("api_version", [2])
+def test_v2_partial_updates_ask_for_markdown_on_the_way_back(api, run, api_version):
+    """A partial update answers with the whole task, description included.
+
+    Without this it answers in raw HTML while `get_task` answers in Markdown, so the
+    same field arrives in two different formats depending on which tool produced it.
+    v2 ignores the parameter for a PATCH request body, which is why a description
+    never routes through PATCH, but that does not stop us asking for the response in
+    the same currency as every other read.
+    """
+    run(server.update_task(7, priority=3))
+    assert fmt(api.last) == "markdown"
+
+    run(server.set_reminders(7, []))
+    assert fmt(api.last) == "markdown"
 
 
 @pytest.mark.parametrize("api_version", [2])
@@ -92,11 +110,17 @@ def test_v2_update_without_a_description_stays_a_single_partial_update(api, run,
 
 
 @pytest.mark.parametrize("api_version", [1])
-def test_v1_description_update_is_a_single_request(api, run, api_version):
-    """v1 cannot convert Markdown, so there is nothing to read first."""
+def test_v1_reads_first_too_but_never_for_markdown(api, run, api_version):
+    """v1 reads before writing for a different reason than v2 does.
+
+    It cannot convert Markdown at all, so the read is not about that: its update
+    endpoint is a replace, and reading first is what stops the write wiping the
+    fields it was not given. Neither request asks for a format v1 does not have.
+    """
+    api.returns({"id": 7, "description": "<p>old</p>"})
     run(server.update_task(7, description="<p>html</p>"))
-    assert [r.method for r in api.requests] == ["POST"]
-    assert fmt(api.requests[0]) is None
+    assert [r.method for r in api.requests] == ["GET", "POST"]
+    assert all(fmt(r) is None for r in api.requests)
 
 
 @pytest.mark.parametrize("api_version", [2])
@@ -104,3 +128,59 @@ def test_set_reminders_stays_a_partial_update(api, run, api_version):
     """Reminders carry no rich text, so they must not trigger a replace."""
     run(server.set_reminders(7, ["2026-08-21T09:00:00+10:00"]))
     assert [r.method for r in api.requests] == ["PATCH"]
+
+
+# --- the read-then-replace race ---------------------------------------------
+# Reading before writing opens a window where something else can write in between,
+# and the replace would then silently discard that edit. v2 returns an ETag on a
+# single-resource read and honours If-Match, so the window can be made to fail
+# loudly instead.
+@pytest.mark.parametrize("api_version", [2])
+def test_v2_replace_sends_the_etag_back_as_if_match(api, run, api_version):
+    api.returns_in_order(
+        httpx.Response(200, json={"id": 7, "description": "old"}, headers={"ETag": '"abc123"'}),
+        httpx.Response(200, json={"id": 7, "description": MD}),
+    )
+    run(server.update_task(7, description=MD))
+    assert api.requests[-1].headers["If-Match"] == '"abc123"'
+
+
+@pytest.mark.parametrize("api_version", [2])
+def test_v2_replace_omits_if_match_when_the_read_offered_no_etag(api, run, api_version):
+    """A server without ETags has to behave exactly as it did before."""
+    api.returns({"id": 7, "description": "old"})
+    run(server.update_task(7, description=MD))
+    assert "if-match" not in api.requests[-1].headers
+
+
+@pytest.mark.parametrize("api_version", [2])
+def test_v2_replace_turns_a_precondition_failure_into_something_actionable(api, run, api_version):
+    """412 is the whole point of the header, and "Precondition Failed" on its own
+    tells an agent nothing about what to do next."""
+    api.returns_in_order(
+        httpx.Response(200, json={"id": 7, "description": "old"}, headers={"ETag": '"abc123"'}),
+        httpx.Response(412, json={"title": "Precondition Failed"}),
+    )
+    with pytest.raises(RuntimeError, match="changed while this update was being prepared"):
+        run(server.update_task(7, description=MD))
+
+
+@pytest.mark.parametrize("api_version", [2])
+def test_v2_replace_lets_any_other_failure_through_as_it_is(api, run, api_version):
+    api.returns_in_order(
+        httpx.Response(200, json={"id": 7, "description": "old"}),
+        httpx.Response(500, json={"detail": "database is on fire"}),
+    )
+    with pytest.raises(httpx.HTTPStatusError, match="database is on fire"):
+        run(server.update_task(7, description=MD))
+
+
+@pytest.mark.parametrize("api_version", [2])
+def test_v2_replace_refuses_a_read_that_is_not_a_task(api, run, api_version):
+    """A bodyless response arrives as a status dict, and a full replace built from
+    that would wipe the task rather than update it."""
+    api.returns_raw(204)
+    with pytest.raises(RuntimeError, match="did not return task 7"):
+        run(server.update_task(7, description=MD))
+    # The write must not have been attempted.
+    assert [r.method for r in api.requests] == ["GET"]

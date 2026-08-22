@@ -1,5 +1,6 @@
 """Credential resolution: environment first, then the per-device file."""
 
+import os
 import warnings
 
 import httpx
@@ -9,9 +10,11 @@ from altiplano import server
 
 
 @pytest.fixture(autouse=True)
-def _forget_mode_warnings():
-    """Clear the warn-once record so each test sees a fresh module."""
-    server._warned_about_mode.clear()
+def _forget_module_state():
+    """Clear the warn-once record and the parse cache, so each test sees a fresh
+    module rather than a neighbour's leftovers."""
+    server._warned_about.clear()
+    server._file_cache = None
 
 
 @pytest.fixture
@@ -58,6 +61,65 @@ def test_returns_none_for_a_key_that_is_absent(config_file):
 def test_returns_none_when_the_file_does_not_exist(tmp_path, monkeypatch):
     monkeypatch.setattr(server, "_CONFIG_FILE", tmp_path / "nonexistent")
     assert server._from_file("VIKUNJA_URL") is None
+
+
+def test_a_duplicated_key_keeps_the_first_occurrence(config_file):
+    """The parse replaced a first-match scan, so it must not start preferring the
+    last line instead."""
+    config_file.write_text(
+        "VIKUNJA_URL=https://first.test/api/v1\nVIKUNJA_URL=https://second.test/api/v1\n"
+    )
+    assert server._from_file("VIKUNJA_URL") == "https://first.test/api/v1"
+
+
+def test_the_file_is_read_once_per_change_not_once_per_lookup(config_file, monkeypatch):
+    """A single tool call resolves config three or four times, by way of _base,
+    _headers and _version. That used to be a read and a parse each time."""
+    config_file.write_text("VIKUNJA_URL=https://one.test/api/v1\n")
+
+    reads = []
+    real_read = server.Path.read_text
+
+    def counting_read(self, *args, **kwargs):
+        if self == config_file:
+            reads.append(self)
+        return real_read(self, *args, **kwargs)
+
+    monkeypatch.setattr(server.Path, "read_text", counting_read)
+
+    assert server._from_file("VIKUNJA_URL") == "https://one.test/api/v1"
+    assert server._from_file("VIKUNJA_API_TOKEN") is None
+    assert server._from_file("VIKUNJA_URL") == "https://one.test/api/v1"
+    assert len(reads) == 1
+
+    # A rotated token still has to be picked up, which is why the cache is keyed on
+    # the file rather than held for the life of the process. The replacement is the
+    # same length as the original, so size cannot be what invalidates it, and mtime
+    # is bumped explicitly rather than trusting the clock to have moved.
+    config_file.write_text("VIKUNJA_URL=https://two.test/api/v1\n")
+    bumped = config_file.stat().st_mtime_ns + 10**9
+    os.utime(config_file, ns=(bumped, bumped))
+
+    assert server._from_file("VIKUNJA_URL") == "https://two.test/api/v1"
+    assert len(reads) == 2
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads a file whatever its mode says")
+def test_warns_once_and_carries_on_when_the_file_cannot_be_read(config_file):
+    """An unreadable file used to escape as a raw OSError from inside _base.
+
+    It warns rather than raises because the environment may already carry the
+    credentials, in which case this file does not matter.
+    """
+    config_file.write_text("VIKUNJA_URL=https://from.file/api/v1\n")
+    config_file.chmod(0o000)
+
+    with pytest.warns(UserWarning, match="could not read"):
+        assert server._from_file("VIKUNJA_URL") is None
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert server._from_file("VIKUNJA_URL") is None
 
 
 def test_warns_when_others_can_read_the_file_but_still_reads_it(config_file):
@@ -162,6 +224,59 @@ def test_request_raises_on_an_error_status(api, run):
     api.returns({"message": "not found"}, status=404)
     with pytest.raises(httpx.HTTPStatusError):
         run(server._request("GET", "/tasks/999"))
+
+
+# --- error messages ---------------------------------------------------------
+# httpx's own message stops at the status code. Vikunja says why in the body, and
+# an agent that cannot see the reason cannot correct the call: a rejected filter
+# expression and a missing task are the same "400" without it.
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [
+        # v1 puts the human-readable text in `message`.
+        ({"message": "The task does not exist."}, "The task does not exist."),
+        # v2 is RFC 9457 problem+json: `detail`, alongside Vikunja's numeric code.
+        (
+            {"title": "Not Found", "detail": "This task does not exist.", "code": 4002},
+            "This task does not exist. (code 4002)",
+        ),
+        # Nothing but a title still beats a bare status code.
+        ({"title": "Not Found"}, ": Not Found"),
+    ],
+    ids=["v1-message", "v2-problem-json", "title-only"],
+)
+def test_an_error_carries_what_the_server_objected_to(api, run, payload, expected):
+    api.returns(payload, status=404)
+    with pytest.raises(httpx.HTTPStatusError) as caught:
+        run(server._request("GET", "/tasks/999"))
+    message = str(caught.value)
+    assert expected in message
+    # The status line survives alongside the detail, and the type is unchanged, so
+    # a caller can still branch on response.status_code.
+    assert "404" in message
+    assert caught.value.response.status_code == 404
+
+
+@pytest.mark.parametrize(
+    "body",
+    [b"<html>502 Bad Gateway</html>", b'"a bare string"', b'{"unrecognised": true}', b""],
+    ids=["html", "json-but-not-an-object", "object-explaining-nothing", "empty"],
+)
+def test_an_error_falls_back_to_the_status_line_when_the_body_explains_nothing(api, run, body):
+    api.returns_raw(502, body)
+    with pytest.raises(httpx.HTTPStatusError, match="502 Bad Gateway for GET"):
+        run(server._request("GET", "/projects"))
+
+
+def test_a_redirect_is_an_error_and_names_where_it_was_sent(api, run):
+    """Nearly always a VIKUNJA_URL missing its https or its /api/vN prefix.
+
+    Worth pinning: a redirect is not a 4xx or a 5xx, so treating only those as
+    failures would decode the redirect body as a result instead.
+    """
+    api.returns_raw(301, headers={"Location": "https://vikunja.test/api/v1/projects"})
+    with pytest.raises(httpx.HTTPStatusError, match="redirected to"):
+        run(server._request("GET", "/projects"))
 
 
 def test_main_starts_the_server(monkeypatch):
