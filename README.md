@@ -34,6 +34,8 @@ Tasks:
 Kanban:
 - `list_kanban_views` (project_id): a project's kanban views, with the ids of their default and done buckets
 - `list_buckets` (project_id, view_id?): the columns in board order, flagging which is the default and which is done
+- `create_bucket` (project_id, title, view_id?, limit?): adds a column on the right-hand end
+- `delete_bucket` (project_id, bucket_id, view_id?): removes a column and sends its tasks to the default one
 - `list_bucket_tasks` (project_id, view_id?, filter?): the columns with their tasks. See the warning below about v2
 - `list_task_buckets` (task_id): which bucket a task sits in, one entry per kanban view
 - `move_task_to_bucket` (task_id, bucket_id, view_id?): moving into the done bucket marks the task done, and moving it out un-marks it. The project is read from the task rather than passed in
@@ -51,6 +53,7 @@ There is no `list_relations`: `get_task` already returns `related_tasks`, groupe
 Labels:
 - `list_labels`
 - `create_label` (title, hex_color?, description?): `hex_color` is six hex digits with no leading `#`
+- `delete_label` (label_id): deletes the label everywhere, taking it off every task that carries it
 - `add_label` (task_id, label_id)
 - `remove_label` (task_id, label_id)
 

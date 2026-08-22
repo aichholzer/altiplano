@@ -86,6 +86,7 @@ ROUTES = [
         "/labels",
         {"title": "Doing"},
     ),
+    route("delete_label", lambda: server.delete_label(1), REMOVE, "/labels/1", {}),
     route("add_label", lambda: server.add_label(7, 1), CREATE, "/tasks/7/labels", {"label_id": 1}),
     route("remove_label", lambda: server.remove_label(7, 1), REMOVE, "/tasks/7/labels/1", {}),
     route("list_comments", lambda: server.list_comments(7), READ, "/tasks/7/comments", {}),
@@ -135,6 +136,22 @@ ROUTES = [
         lambda: server.list_buckets(3),
         READ,
         "/projects/3/views/48/buckets",
+        {},
+        response=KANBAN_VIEW,
+    ),
+    route(
+        "create_bucket",
+        lambda: server.create_bucket(3, "Doing"),
+        CREATE,
+        "/projects/3/views/48/buckets",
+        {"title": "Doing"},
+        response=KANBAN_VIEW,
+    ),
+    route(
+        "delete_bucket",
+        lambda: server.delete_bucket(3, 42),
+        REMOVE,
+        "/projects/3/views/48/buckets/42",
         {},
         response=KANBAN_VIEW,
     ),
@@ -671,6 +688,12 @@ def test_bulk_update_rejects_an_empty_payload(api, run):
     with pytest.raises(ValueError, match="No fields to update"):
         run(server.bulk_update_tasks([7]))
     assert api.requests == []
+
+
+def test_create_bucket_carries_an_optional_limit(api, run):
+    api.returns(KANBAN_VIEW)
+    run(server.create_bucket(3, "Doing", limit=3))
+    assert body(api.last) == {"title": "Doing", "limit": 3}
 
 
 def test_create_label_includes_the_optional_fields(api, run):

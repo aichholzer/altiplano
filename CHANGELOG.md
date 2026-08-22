@@ -2,6 +2,31 @@
 
 All notable changes to this project are documented here.
 
+## [0.14.0]
+
+### Added
+
+- `delete_label`, closing an asymmetry 0.13.0 opened by adding `create_label` with
+  no counterpart. It deletes the label everywhere, taking it off every task that
+  carries it, which is a different thing from `remove_label` detaching it from one.
+
+- `create_bucket` and `delete_bucket`, so a kanban board's columns can be managed
+  and not merely read. `create_bucket` takes an optional `limit`, the cap on how
+  many tasks the column accepts.
+
+  These exist because of a workflow requirement rather than for completeness: a
+  steering rule that moves a task into a `Doing` column when work starts has to be
+  able to create that column on a board that has none. `delete_bucket` comes along
+  so the same asymmetry is not opened twice in a week.
+
+  Deleting a column does not delete its tasks. Vikunja moves them to the default
+  bucket, confirmed live: a task in a deleted column reappeared in To-Do. A view
+  keeps at least one column, so the last cannot be removed.
+
+  Not included: renaming a bucket or changing its limit or position. Nothing needs
+  it, and three tools that answer a real requirement are worth more than a complete
+  CRUD set that does not.
+
 ## [0.13.0]
 
 ### Added

@@ -706,6 +706,37 @@ async def list_buckets(project_id: int, view_id: int | None = None) -> list[dict
 
 
 @mcp.tool()
+async def create_bucket(
+    project_id: int, title: str, view_id: int | None = None, limit: int | None = None
+) -> dict:
+    """Add a column to a project's kanban view. It goes on the right-hand end.
+
+    `limit` caps how many tasks the column accepts, and moves into a full one are
+    refused; leave it out, or pass 0, for no limit.
+    """
+    view = await _kanban_view(project_id, view_id)
+    payload: dict[str, Any] = {"title": title}
+    if limit is not None:
+        payload["limit"] = limit
+    return await _request(
+        _verb("create"), f"/projects/{project_id}/views/{view['id']}/buckets", json=payload
+    )
+
+
+@mcp.tool()
+async def delete_bucket(project_id: int, bucket_id: int, view_id: int | None = None) -> dict:
+    """Delete a column from a project's kanban view.
+
+    The tasks in it are not deleted: Vikunja moves them to the default bucket. A view
+    keeps at least one column, so the last one cannot be removed.
+    """
+    view = await _kanban_view(project_id, view_id)
+    return await _request(
+        "DELETE", f"/projects/{project_id}/views/{view['id']}/buckets/{bucket_id}"
+    )
+
+
+@mcp.tool()
 async def list_bucket_tasks(
     project_id: int, view_id: int | None = None, filter: str | None = None
 ) -> list[dict]:
@@ -857,6 +888,15 @@ async def create_label(
     if description is not None:
         payload["description"] = description
     return await _request(_verb("create"), "/labels", json=payload)
+
+
+@mcp.tool()
+async def delete_label(label_id: int) -> dict:
+    """Delete a label everywhere. It comes off every task that carries it.
+
+    To take a label off one task without destroying it, use `remove_label`.
+    """
+    return await _request("DELETE", f"/labels/{label_id}")
 
 
 @mcp.tool()
