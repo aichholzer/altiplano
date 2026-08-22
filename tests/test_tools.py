@@ -9,7 +9,17 @@ import json
 import httpx
 import pytest
 
-from altiplano import server
+from altiplano.api import _version
+from altiplano.server import mcp
+from altiplano.tools import (
+    assignees,
+    comments,
+    kanban,
+    labels,
+    projects,
+    relations,
+    tasks,
+)
 
 
 def body(request) -> dict:
@@ -58,63 +68,63 @@ KANBAN_VIEW = [
 
 
 ROUTES = [
-    route("list_projects", lambda: server.list_projects(), READ, "/projects", {}),
-    route("get_task", lambda: server.get_task(7), READ, "/tasks/7", {}),
-    route("list_tasks", lambda: server.list_tasks(3), READ, "/projects/3/tasks", {}),
-    route("search_tasks", lambda: server.search_tasks(), READ, "/tasks", {}),
+    route("list_projects", lambda: projects.list_projects(), READ, "/projects", {}),
+    route("get_task", lambda: tasks.get_task(7), READ, "/tasks/7", {}),
+    route("list_tasks", lambda: tasks.list_tasks(3), READ, "/projects/3/tasks", {}),
+    route("search_tasks", lambda: tasks.search_tasks(), READ, "/tasks", {}),
     route(
         "move_task",
-        lambda: server.move_task(7, 5),
+        lambda: tasks.move_task(7, 5),
         UPDATE,
         "/tasks/7",
         {1: {**READ_BACK, "project_id": 5}, 2: {"project_id": 5}},
         response=READ_BACK,
     ),
-    route("duplicate_task", lambda: server.duplicate_task(7), CREATE, "/tasks/7/duplicate", {}),
+    route("duplicate_task", lambda: tasks.duplicate_task(7), CREATE, "/tasks/7/duplicate", {}),
     route(
         "bulk_update_tasks",
-        lambda: server.bulk_update_tasks([7, 9], done=True),
+        lambda: tasks.bulk_update_tasks([7, 9], done=True),
         REPLACE,
         "/tasks/bulk",
         {"task_ids": [7, 9], "fields": ["done"], "values": {"done": True}},
     ),
-    route("list_labels", lambda: server.list_labels(), READ, "/labels", {}),
+    route("list_labels", lambda: labels.list_labels(), READ, "/labels", {}),
     route(
         "create_label",
-        lambda: server.create_label("Doing"),
+        lambda: labels.create_label("Doing"),
         CREATE,
         "/labels",
         {"title": "Doing"},
     ),
-    route("delete_label", lambda: server.delete_label(1), REMOVE, "/labels/1", {}),
-    route("add_label", lambda: server.add_label(7, 1), CREATE, "/tasks/7/labels", {"label_id": 1}),
-    route("remove_label", lambda: server.remove_label(7, 1), REMOVE, "/tasks/7/labels/1", {}),
-    route("list_comments", lambda: server.list_comments(7), READ, "/tasks/7/comments", {}),
+    route("delete_label", lambda: labels.delete_label(1), REMOVE, "/labels/1", {}),
+    route("add_label", lambda: labels.add_label(7, 1), CREATE, "/tasks/7/labels", {"label_id": 1}),
+    route("remove_label", lambda: labels.remove_label(7, 1), REMOVE, "/tasks/7/labels/1", {}),
+    route("list_comments", lambda: comments.list_comments(7), READ, "/tasks/7/comments", {}),
     route(
         "add_comment",
-        lambda: server.add_comment(7, "hello"),
+        lambda: comments.add_comment(7, "hello"),
         CREATE,
         "/tasks/7/comments",
         {"comment": "hello"},
     ),
     route(
         "update_comment",
-        lambda: server.update_comment(7, 21, "edited"),
+        lambda: comments.update_comment(7, 21, "edited"),
         REPLACE,
         "/tasks/7/comments/21",
         {"comment": "edited"},
     ),
-    route("delete_comment", lambda: server.delete_comment(7, 21), REMOVE, "/tasks/7/comments/21", {}),
+    route("delete_comment", lambda: comments.delete_comment(7, 21), REMOVE, "/tasks/7/comments/21", {}),
     route(
         "add_relation",
-        lambda: server.add_relation(7, 9),
+        lambda: relations.add_relation(7, 9),
         CREATE,
         "/tasks/7/relations",
         {"other_task_id": 9, "relation_kind": "related"},
     ),
     route(
         "remove_relation",
-        lambda: server.remove_relation(7, 9),
+        lambda: relations.remove_relation(7, 9),
         REMOVE,
         "/tasks/7/relations/related/9",
         # The path carries all three values and the API documents the body as
@@ -126,14 +136,14 @@ ROUTES = [
     # which these cases do not assert on beyond verb, path and body.
     route(
         "list_kanban_views",
-        lambda: server.list_kanban_views(3),
+        lambda: kanban.list_kanban_views(3),
         READ,
         "/projects/3/views",
         {},
     ),
     route(
         "list_buckets",
-        lambda: server.list_buckets(3),
+        lambda: kanban.list_buckets(3),
         READ,
         "/projects/3/views/48/buckets",
         {},
@@ -141,7 +151,7 @@ ROUTES = [
     ),
     route(
         "create_bucket",
-        lambda: server.create_bucket(3, "Doing"),
+        lambda: kanban.create_bucket(3, "Doing"),
         CREATE,
         "/projects/3/views/48/buckets",
         {"title": "Doing"},
@@ -149,7 +159,7 @@ ROUTES = [
     ),
     route(
         "delete_bucket",
-        lambda: server.delete_bucket(3, 42),
+        lambda: kanban.delete_bucket(3, 42),
         REMOVE,
         "/projects/3/views/48/buckets/42",
         {},
@@ -157,7 +167,7 @@ ROUTES = [
     ),
     route(
         "list_bucket_tasks",
-        lambda: server.list_bucket_tasks(3),
+        lambda: kanban.list_bucket_tasks(3),
         READ,
         # v1 groups on the view's task endpoint; v2 answers that one flat and has a
         # separate route for the grouped form.
@@ -167,7 +177,7 @@ ROUTES = [
     ),
     route(
         "list_task_buckets",
-        lambda: server.list_task_buckets(7),
+        lambda: kanban.list_task_buckets(7),
         READ,
         "/tasks/7",
         {},
@@ -175,7 +185,7 @@ ROUTES = [
     ),
     route(
         "move_task_to_bucket",
-        lambda: server.move_task_to_bucket(7, 41),
+        lambda: kanban.move_task_to_bucket(7, 41),
         REPLACE,
         "/projects/3/views/48/buckets/41/tasks",
         {"task_id": 7},
@@ -184,23 +194,23 @@ ROUTES = [
         # pagination envelope so `_items` finds the view in it.
         response={"project_id": 3, "items": KANBAN_VIEW},
     ),
-    route("list_assignees", lambda: server.list_assignees(7), READ, "/tasks/7/assignees", {}),
-    route("add_assignee", lambda: server.add_assignee(7, 2), CREATE, "/tasks/7/assignees", {"user_id": 2}),
-    route("remove_assignee", lambda: server.remove_assignee(7, 2), REMOVE, "/tasks/7/assignees/2", {}),
-    route("create_project", lambda: server.create_project("Board"), CREATE, "/projects", {"title": "Board"}),
-    route("create_task", lambda: server.create_task(3, "Task"), CREATE, "/projects/3/tasks", {"title": "Task"}),
+    route("list_assignees", lambda: assignees.list_assignees(7), READ, "/tasks/7/assignees", {}),
+    route("add_assignee", lambda: assignees.add_assignee(7, 2), CREATE, "/tasks/7/assignees", {"user_id": 2}),
+    route("remove_assignee", lambda: assignees.remove_assignee(7, 2), REMOVE, "/tasks/7/assignees/2", {}),
+    route("create_project", lambda: projects.create_project("Board"), CREATE, "/projects", {"title": "Board"}),
+    route("create_task", lambda: tasks.create_task(3, "Task"), CREATE, "/projects/3/tasks", {"title": "Task"}),
     route(
         "update_task",
-        lambda: server.update_task(7, done=True),
+        lambda: tasks.update_task(7, done=True),
         UPDATE,
         "/tasks/7",
         {1: {**READ_BACK, "done": True}, 2: {"done": True}},
         response=READ_BACK,
     ),
-    route("delete_task", lambda: server.delete_task(7), REMOVE, "/tasks/7", {}),
+    route("delete_task", lambda: tasks.delete_task(7), REMOVE, "/tasks/7", {}),
     route(
         "set_reminders",
-        lambda: server.set_reminders(7, ["2026-08-20T09:00:00+10:00"]),
+        lambda: tasks.set_reminders(7, ["2026-08-20T09:00:00+10:00"]),
         UPDATE,
         "/tasks/7",
         {
@@ -209,7 +219,7 @@ ROUTES = [
         },
         response=READ_BACK,
     ),
-    route("search_users", lambda: server.search_users("stefan"), READ, "/users", {}),
+    route("search_users", lambda: assignees.search_users("stefan"), READ, "/users", {}),
 ]
 
 
@@ -234,14 +244,14 @@ def test_every_tool_is_covered_by_a_routing_case():
     """Guards against a new tool being added without a wire-contract test."""
     import asyncio
 
-    registered = {tool.name for tool in asyncio.run(server.mcp.list_tools())}
+    registered = {tool.name for tool in asyncio.run(mcp.list_tools())}
     assert registered == {case.id for case in ROUTES}
 
 
 # --- api version selection --------------------------------------------------
 @pytest.mark.parametrize("api_version", [1, 2])
 def test_version_comes_from_the_configured_url(api, api_version):
-    assert server._version() == api_version
+    assert _version() == api_version
 
 
 @pytest.mark.parametrize(
@@ -258,7 +268,7 @@ def test_version_comes_from_the_configured_url(api, api_version):
 )
 def test_version_falls_back_to_v1_for_anything_but_an_explicit_v2_url(monkeypatch, url, expected):
     monkeypatch.setenv("VIKUNJA_URL", url)
-    assert server._version() == expected
+    assert _version() == expected
 
 
 @pytest.mark.parametrize("api_version", [1, 2])
@@ -267,15 +277,15 @@ def test_listings_unwrap_whichever_collection_shape_arrives(api, run, api_versio
     check is on shape, so a version mismatch degrades gracefully rather than
     breaking."""
     api.returns([{"id": 1, "title": "Home"}])
-    assert run(server.list_projects())[0]["title"] == "Home"
+    assert run(projects.list_projects())[0]["title"] == "Home"
 
     api.returns({"items": [{"id": 1, "title": "Home"}], "total": 1, "page": 1})
-    assert run(server.list_projects())[0]["title"] == "Home"
+    assert run(projects.list_projects())[0]["title"] == "Home"
 
 
 def test_envelope_with_no_items_returns_empty(api, run):
     api.returns({"items": [], "total": 0, "page": 1, "per_page": 50})
-    assert run(server.list_projects()) == []
+    assert run(projects.list_projects()) == []
 
 
 def test_a_dict_without_items_is_still_rejected(api, run):
@@ -283,23 +293,23 @@ def test_a_dict_without_items_is_still_rejected(api, run):
     reported as a status dict has no `items` and is not an empty collection."""
     api.returns_raw(204)
     with pytest.raises(RuntimeError, match="expected a list from the API, got dict"):
-        run(server.list_projects())
+        run(projects.list_projects())
 
 
 # --- optional payload fields ------------------------------------------------
 def test_create_project_omits_unset_fields(api, run):
-    run(server.create_project("Board"))
+    run(projects.create_project("Board"))
     assert body(api.last) == {"title": "Board"}
 
 
 def test_create_project_includes_supplied_fields(api, run):
-    run(server.create_project("Sub", parent_project_id=4, description="notes"))
+    run(projects.create_project("Sub", parent_project_id=4, description="notes"))
     assert body(api.last) == {"title": "Sub", "parent_project_id": 4, "description": "notes"}
 
 
 def test_create_task_includes_every_supplied_field(api, run):
     run(
-        server.create_task(
+        tasks.create_task(
             3,
             "Task",
             description="why",
@@ -324,7 +334,7 @@ def test_update_task_includes_every_supplied_field(api, run):
     # the canned task is what these changes get merged into.
     api.returns({"id": 7})
     run(
-        server.update_task(
+        tasks.update_task(
             7,
             title="New",
             description="why",
@@ -355,7 +365,7 @@ def test_update_task_includes_every_supplied_field(api, run):
 def test_update_task_can_set_a_due_date(api, run, api_version):
     """`create_task` always took a deadline; `update_task` did not, so a deadline
     could be given at creation and never changed afterwards."""
-    run(server.update_task(7, due_date="2026-08-21T09:00:00+10:00"))
+    run(tasks.update_task(7, due_date="2026-08-21T09:00:00+10:00"))
     assert body(api.last) == {"due_date": "2026-08-21T09:00:00+10:00"}
 
 
@@ -367,13 +377,13 @@ def test_update_task_can_set_a_due_date(api, run, api_version):
 @pytest.mark.parametrize("api_version", [2])
 @pytest.mark.parametrize("field", ["due_date", "start_date", "end_date"])
 def test_update_task_clears_a_date_given_an_empty_string(api, run, field, api_version):
-    run(server.update_task(7, **{field: ""}))
+    run(tasks.update_task(7, **{field: ""}))
     assert body(api.last) == {field: "0001-01-01T00:00:00Z"}
 
 
 @pytest.mark.parametrize("field", ["due_date", "start_date", "end_date"])
 def test_create_task_clears_a_date_given_an_empty_string(api, run, field):
-    run(server.create_task(3, "Task", **{field: ""}))
+    run(tasks.create_task(3, "Task", **{field: ""}))
     assert body(api.last) == {"title": "Task", field: "0001-01-01T00:00:00Z"}
 
 
@@ -387,13 +397,13 @@ PROGRESS_FIELDS = {
 
 
 def test_create_task_carries_the_progress_and_repeat_fields(api, run):
-    run(server.create_task(3, "Task", **PROGRESS_FIELDS))
+    run(tasks.create_task(3, "Task", **PROGRESS_FIELDS))
     assert body(api.last) == {"title": "Task", **PROGRESS_FIELDS}
 
 
 @pytest.mark.parametrize("api_version", [2])
 def test_update_task_carries_the_progress_and_repeat_fields(api, run, api_version):
-    run(server.update_task(7, **PROGRESS_FIELDS))
+    run(tasks.update_task(7, **PROGRESS_FIELDS))
     assert body(api.last) == PROGRESS_FIELDS
 
 
@@ -409,7 +419,7 @@ OFF_VALUES = {
 
 @pytest.mark.parametrize(("field", "value"), OFF_VALUES.items())
 def test_create_task_sends_a_falsy_value_rather_than_dropping_it(api, run, field, value):
-    run(server.create_task(3, "Task", **{field: value}))
+    run(tasks.create_task(3, "Task", **{field: value}))
     assert body(api.last) == {"title": "Task", field: value}
 
 
@@ -418,7 +428,7 @@ def test_create_task_sends_a_falsy_value_rather_than_dropping_it(api, run, field
 def test_update_task_sends_a_falsy_value_rather_than_dropping_it(
     api, run, field, value, api_version
 ):
-    run(server.update_task(7, **{field: value}))
+    run(tasks.update_task(7, **{field: value}))
     assert body(api.last) == {field: value}
 
 
@@ -438,13 +448,13 @@ def test_the_first_kanban_view_is_used_when_none_is_named(api, run):
     """Views arrive ordered by position, so the first kanban one is the leftmost tab
     rather than whichever the server happened to list first."""
     api.returns(TWO_KANBAN_VIEWS)
-    run(server.list_buckets(3))
+    run(kanban.list_buckets(3))
     assert api.last.url.path.endswith("/projects/3/views/48/buckets")
 
 
 def test_a_named_view_is_used_instead(api, run):
     api.returns(TWO_KANBAN_VIEWS)
-    run(server.list_buckets(3, view_id=49))
+    run(kanban.list_buckets(3, view_id=49))
     assert api.last.url.path.endswith("/projects/3/views/49/buckets")
 
 
@@ -453,24 +463,24 @@ def test_a_view_that_is_not_kanban_is_refused(api, run):
     naming rather than a confusing failure from the buckets endpoint."""
     api.returns(TWO_KANBAN_VIEWS)
     with pytest.raises(ValueError, match="is a list view"):
-        run(server.list_buckets(3, view_id=45))
+        run(kanban.list_buckets(3, view_id=45))
 
 
 def test_a_view_that_does_not_exist_is_refused(api, run):
     api.returns(TWO_KANBAN_VIEWS)
     with pytest.raises(ValueError, match="has no view 99"):
-        run(server.list_buckets(3, view_id=99))
+        run(kanban.list_buckets(3, view_id=99))
 
 
 def test_a_project_with_no_kanban_view_is_refused(api, run):
     api.returns([{"id": 45, "title": "List", "view_kind": "list"}])
     with pytest.raises(ValueError, match="has no kanban view"):
-        run(server.list_buckets(3))
+        run(kanban.list_buckets(3))
 
 
 def test_list_kanban_views_drops_the_other_kinds(api, run):
     api.returns(TWO_KANBAN_VIEWS)
-    assert run(server.list_kanban_views(3)) == [
+    assert run(kanban.list_kanban_views(3)) == [
         {
             "id": 48,
             "title": "Kanban",
@@ -500,7 +510,7 @@ def test_list_buckets_flags_the_default_and_done_columns(api, run):
         httpx.Response(200, json=[dict(KANBAN_VIEW[0], default_bucket_id=42)]),
         httpx.Response(200, json=BUCKETS),
     )
-    assert run(server.list_buckets(3)) == [
+    assert run(kanban.list_buckets(3)) == [
         {
             "id": 41,
             "title": "To-Do",
@@ -535,7 +545,7 @@ def test_an_unset_default_bucket_means_the_leftmost_one(api, run):
         httpx.Response(200, json=[dict(KANBAN_VIEW[0], default_bucket_id=0)]),
         httpx.Response(200, json=BUCKETS),
     )
-    flags = [(b["id"], b["is_default_bucket"]) for b in run(server.list_buckets(3))]
+    flags = [(b["id"], b["is_default_bucket"]) for b in run(kanban.list_buckets(3))]
     assert flags == [(41, True), (42, False), (43, False)]
 
 
@@ -544,7 +554,7 @@ def test_list_buckets_survives_a_view_with_no_buckets(api, run):
         httpx.Response(200, json=[dict(KANBAN_VIEW[0], default_bucket_id=0)]),
         httpx.Response(200, json=[]),
     )
-    assert run(server.list_buckets(3)) == []
+    assert run(kanban.list_buckets(3)) == []
 
 
 def test_list_bucket_tasks_reports_the_true_size_beside_the_tasks(api, run):
@@ -564,7 +574,7 @@ def test_list_bucket_tasks_reports_the_true_size_beside_the_tasks(api, run):
             ],
         ),
     )
-    assert run(server.list_bucket_tasks(3)) == [
+    assert run(kanban.list_bucket_tasks(3)) == [
         {
             "id": 43,
             "title": "Done",
@@ -578,7 +588,7 @@ def test_list_bucket_tasks_reports_the_true_size_beside_the_tasks(api, run):
 
 def test_list_bucket_tasks_passes_a_filter_to_the_server(api, run):
     api.returns(KANBAN_VIEW)
-    run(server.list_bucket_tasks(3, filter="done = false"))
+    run(kanban.list_bucket_tasks(3, filter="done = false"))
     assert dict(api.last.url.params) == {"filter": "done = false"}
 
 
@@ -592,7 +602,7 @@ def test_a_401_on_the_v2_board_explains_itself(api, run, api_version):
         httpx.Response(401, json={"detail": "invalid token provided", "code": 11}),
     )
     with pytest.raises(RuntimeError, match="created with full permissions"):
-        run(server.list_bucket_tasks(3))
+        run(kanban.list_bucket_tasks(3))
 
 
 @pytest.mark.parametrize("api_version", [1])
@@ -603,7 +613,7 @@ def test_a_401_elsewhere_is_left_alone(api, run, api_version):
         httpx.Response(401, json={"message": "invalid token provided"}),
     )
     with pytest.raises(httpx.HTTPStatusError, match="401"):
-        run(server.list_bucket_tasks(3))
+        run(kanban.list_bucket_tasks(3))
 
 
 def test_moving_to_a_bucket_takes_the_project_from_the_task(api, run):
@@ -615,7 +625,7 @@ def test_moving_to_a_bucket_takes_the_project_from_the_task(api, run):
         httpx.Response(200, json=KANBAN_VIEW),
         httpx.Response(200, json={"task_id": 7}),
     )
-    run(server.move_task_to_bucket(7, 41))
+    run(kanban.move_task_to_bucket(7, 41))
 
     task_read, views, move = api.requests
     assert task_read.url.path.endswith("/tasks/7")
@@ -626,7 +636,7 @@ def test_moving_to_a_bucket_takes_the_project_from_the_task(api, run):
 def test_moving_to_a_bucket_refuses_when_the_project_cannot_be_read(api, run):
     api.returns_raw(204)
     with pytest.raises(RuntimeError, match="could not read which project task 7"):
-        run(server.move_task_to_bucket(7, 41))
+        run(kanban.move_task_to_bucket(7, 41))
     assert [r.url.path.split("/")[-1] for r in api.requests] == ["7"]
 
 
@@ -635,14 +645,14 @@ def test_moving_to_a_bucket_refuses_when_the_project_cannot_be_read(api, run):
 def test_search_tasks_uses_the_search_param_the_version_expects(api, run, param):
     """Same rename as search_users: sending the wrong one is not an error, it just
     silently ignores the search."""
-    run(server.search_tasks(query="kanban"))
+    run(tasks.search_tasks(query="kanban"))
     assert dict(api.last.url.params) == {"page": "1", "per_page": "50", param: "kanban"}
 
 
 def test_search_tasks_reports_which_project_each_task_is_in(api, run):
     """The reason to search across projects is not knowing which one it is in."""
     api.returns([{"id": 374, "identifier": "#1", "title": "T", "done": False, "project_id": 12}])
-    assert run(server.search_tasks(query="T")) == [
+    assert run(tasks.search_tasks(query="T")) == [
         {
             "id": 374,
             "identifier": "#1",
@@ -655,7 +665,7 @@ def test_search_tasks_reports_which_project_each_task_is_in(api, run):
 
 
 def test_search_tasks_passes_a_filter_and_sort_through(api, run):
-    run(server.search_tasks(filter="done = false", sort_by="priority", page=2, per_page=10))
+    run(tasks.search_tasks(filter="done = false", sort_by="priority", page=2, per_page=10))
     assert dict(api.last.url.params) == {
         "page": "2",
         "per_page": "10",
@@ -667,7 +677,7 @@ def test_search_tasks_passes_a_filter_and_sort_through(api, run):
 def test_bulk_update_names_the_fields_separately_from_the_values(api, run):
     """This endpoint writes only the fields it is told to, which is what makes it a
     real partial update even on v1."""
-    run(server.bulk_update_tasks([7, 9], done=True, priority=4))
+    run(tasks.bulk_update_tasks([7, 9], done=True, priority=4))
     assert body(api.last) == {
         "task_ids": [7, 9],
         "fields": ["done", "priority"],
@@ -676,7 +686,7 @@ def test_bulk_update_names_the_fields_separately_from_the_values(api, run):
 
 
 def test_bulk_update_sends_done_false_rather_than_dropping_it(api, run):
-    run(server.bulk_update_tasks([7], done=False))
+    run(tasks.bulk_update_tasks([7], done=False))
     assert body(api.last) == {
         "task_ids": [7],
         "fields": ["done"],
@@ -686,18 +696,18 @@ def test_bulk_update_sends_done_false_rather_than_dropping_it(api, run):
 
 def test_bulk_update_rejects_an_empty_payload(api, run):
     with pytest.raises(ValueError, match="No fields to update"):
-        run(server.bulk_update_tasks([7]))
+        run(tasks.bulk_update_tasks([7]))
     assert api.requests == []
 
 
 def test_create_bucket_carries_an_optional_limit(api, run):
     api.returns(KANBAN_VIEW)
-    run(server.create_bucket(3, "Doing", limit=3))
+    run(kanban.create_bucket(3, "Doing", limit=3))
     assert body(api.last) == {"title": "Doing", "limit": 3}
 
 
 def test_create_label_includes_the_optional_fields(api, run):
-    run(server.create_label("Doing", hex_color="f59e0b", description="in flight"))
+    run(labels.create_label("Doing", hex_color="f59e0b", description="in flight"))
     assert body(api.last) == {
         "title": "Doing",
         "hex_color": "f59e0b",
@@ -715,7 +725,7 @@ def test_list_task_buckets_returns_one_entry_per_kanban_view(api, run):
             ],
         }
     )
-    assert run(server.list_task_buckets(7)) == [
+    assert run(kanban.list_task_buckets(7)) == [
         {"bucket_id": 43, "bucket_title": "Done", "project_view_id": 48},
         {"bucket_id": 51, "bucket_title": "Later", "project_view_id": 49},
     ]
@@ -724,36 +734,36 @@ def test_list_task_buckets_returns_one_entry_per_kanban_view(api, run):
 def test_list_task_buckets_asks_for_the_buckets_to_be_expanded(api, run):
     """Without `expand`, a task's `bucket_id` is 0 and the buckets are absent."""
     api.returns({"id": 7, "buckets": []})
-    assert run(server.list_task_buckets(7)) == []
+    assert run(kanban.list_task_buckets(7)) == []
     assert dict(api.last.url.params) == {"expand": "buckets"}
 
 
 def test_add_relation_carries_a_non_default_kind_in_the_body(api, run):
-    run(server.add_relation(7, 9, "blocking"))
+    run(relations.add_relation(7, 9, "blocking"))
     assert body(api.last) == {"other_task_id": 9, "relation_kind": "blocking"}
 
 
 def test_remove_relation_puts_the_kind_in_the_path(api, run):
-    run(server.remove_relation(7, 9, "subtask"))
+    run(relations.remove_relation(7, 9, "subtask"))
     assert api.last.url.path.endswith("/tasks/7/relations/subtask/9")
 
 
 @pytest.mark.parametrize("api_version", [2])
 def test_update_task_sends_done_false_rather_than_dropping_it(api, run, api_version):
     """`done=False` is falsy, so a truthiness check here would silently lose it."""
-    run(server.update_task(7, done=False))
+    run(tasks.update_task(7, done=False))
     assert body(api.last) == {"done": False}
 
 
 def test_update_task_rejects_an_empty_payload(api, run):
     with pytest.raises(ValueError, match="No fields to update"):
-        run(server.update_task(7))
+        run(tasks.update_task(7))
     assert api.requests == []
 
 
 @pytest.mark.parametrize("api_version", [2])
 def test_set_reminders_accepts_an_empty_list_to_clear(api, run, api_version):
-    run(server.set_reminders(7, []))
+    run(tasks.set_reminders(7, []))
     assert body(api.last) == {"reminders": []}
 
 
@@ -773,7 +783,7 @@ V1_TASK = {
 
 def test_v1_update_merges_into_the_task_it_read_first(api, run):
     api.returns(V1_TASK)
-    run(server.update_task(7, done=True))
+    run(tasks.update_task(7, done=True))
 
     read, write = api.requests
     assert read.method == "GET"
@@ -785,7 +795,7 @@ def test_v1_set_reminders_merges_into_the_task_it_read_first(api, run):
     """Same endpoint, same hazard. This one went unnoticed until 0.8.1, because a
     reminders payload looks self-contained."""
     api.returns(V1_TASK)
-    run(server.set_reminders(7, ["2026-08-21T09:00:00+10:00"]))
+    run(tasks.set_reminders(7, ["2026-08-21T09:00:00+10:00"]))
 
     read, write = api.requests
     assert read.method == "GET"
@@ -800,7 +810,7 @@ def test_move_task_goes_through_the_same_write_path_as_an_update(api, run):
     """Moving is an update that sets project_id, so on v1 it must merge like one
     rather than replacing the task with a single field."""
     api.returns(V1_TASK)
-    run(server.move_task(7, 5))
+    run(tasks.move_task(7, 5))
 
     read, write = api.requests
     assert read.method == "GET"
@@ -812,18 +822,18 @@ def test_v1_refuses_to_replace_from_a_read_that_is_not_a_task(api, run):
     not be turned into a replace: that would wipe the task instead of updating it."""
     api.returns_raw(204)
     with pytest.raises(RuntimeError, match="did not return task 7"):
-        run(server.update_task(7, done=True))
+        run(tasks.update_task(7, done=True))
     assert [r.method for r in api.requests] == ["GET"]
 
 
 # --- query parameters -------------------------------------------------------
 def test_list_tasks_always_paginates(api, run):
-    run(server.list_tasks(3))
+    run(tasks.list_tasks(3))
     assert dict(api.last.url.params) == {"page": "1", "per_page": "50"}
 
 
 def test_list_tasks_passes_filter_and_sort_through_to_the_server(api, run):
-    run(server.list_tasks(3, filter="done = false", sort_by="priority", page=2, per_page=10))
+    run(tasks.list_tasks(3, filter="done = false", sort_by="priority", page=2, per_page=10))
     assert dict(api.last.url.params) == {
         "page": "2",
         "per_page": "10",
@@ -836,7 +846,7 @@ def test_list_tasks_passes_filter_and_sort_through_to_the_server(api, run):
 def test_search_users_uses_the_search_param_the_version_expects(api, run, param):
     """v1 names it `s`, v2 renamed it to `q`. Sending the wrong one is not an
     error, it silently returns nothing, which is why this is pinned."""
-    run(server.search_users("stefan"))
+    run(assignees.search_users("stefan"))
     assert dict(api.last.url.params) == {param: "stefan"}
 
 
@@ -848,7 +858,7 @@ def test_list_projects_exposes_nesting_and_defaults_missing_fields(api, run):
             {"id": 11, "title": "Fitness"},
         ]
     )
-    assert run(server.list_projects()) == [
+    assert run(projects.list_projects()) == [
         {"id": 1, "title": "Home", "parent_project_id": 0, "is_archived": False},
         {"id": 11, "title": "Fitness", "parent_project_id": 0, "is_archived": False},
     ]
@@ -868,38 +878,38 @@ def test_list_tasks_returns_a_summary_not_the_full_task(api, run):
             }
         ]
     )
-    assert run(server.list_tasks(12)) == [
+    assert run(tasks.list_tasks(12)) == [
         {"id": 374, "identifier": "#1", "title": "Task", "done": False, "priority": 3}
     ]
 
 
 def test_list_labels_returns_id_and_title(api, run):
     api.returns([{"id": 1, "title": "Doing", "hex_color": "f59e0b"}])
-    assert run(server.list_labels()) == [{"id": 1, "title": "Doing"}]
+    assert run(labels.list_labels()) == [{"id": 1, "title": "Doing"}]
 
 
 def test_list_comments_flattens_the_author_to_a_username(api, run):
     api.returns([{"id": 21, "comment": "hello", "author": {"username": "stefan"}}])
-    assert run(server.list_comments(7)) == [
+    assert run(comments.list_comments(7)) == [
         {"id": 21, "comment": "hello", "author": "stefan"}
     ]
 
 
 def test_list_comments_tolerates_a_missing_author(api, run):
     api.returns([{"id": 21, "comment": "hello"}])
-    assert run(server.list_comments(7)) == [{"id": 21, "comment": "hello", "author": None}]
+    assert run(comments.list_comments(7)) == [{"id": 21, "comment": "hello", "author": None}]
 
 
 def test_search_users_returns_id_username_and_name(api, run):
     api.returns([{"id": 1, "username": "stefan", "name": "Stefan", "email": "dropped"}])
-    assert run(server.search_users("stefan")) == [
+    assert run(assignees.search_users("stefan")) == [
         {"id": 1, "username": "stefan", "name": "Stefan"}
     ]
 
 
 def test_list_assignees_returns_id_and_username(api, run):
     api.returns([{"id": 1, "username": "stefan", "name": "dropped", "email": "dropped"}])
-    assert run(server.list_assignees(7)) == [{"id": 1, "username": "stefan"}]
+    assert run(assignees.list_assignees(7)) == [{"id": 1, "username": "stefan"}]
 
 
 # Applied to each collection-shape test below, so all six listings are held to
@@ -907,12 +917,12 @@ def test_list_assignees_returns_id_and_username(api, run):
 every_listing = pytest.mark.parametrize(
     "listing",
     [
-        lambda: server.list_projects(),
-        lambda: server.list_tasks(3),
-        lambda: server.list_labels(),
-        lambda: server.list_comments(7),
-        lambda: server.search_users("x"),
-        lambda: server.list_assignees(7),
+        lambda: projects.list_projects(),
+        lambda: tasks.list_tasks(3),
+        lambda: labels.list_labels(),
+        lambda: comments.list_comments(7),
+        lambda: assignees.search_users("x"),
+        lambda: assignees.list_assignees(7),
     ],
     ids=["projects", "tasks", "labels", "comments", "users", "assignees"],
 )

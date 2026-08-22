@@ -11,8 +11,6 @@ from typing import Any
 import httpx
 import pytest
 
-from altiplano import server
-
 HOST = "https://vikunja.test"
 TOKEN = "tk_notarealtoken"
 
@@ -77,7 +75,9 @@ def api(api_version: int, monkeypatch: pytest.MonkeyPatch) -> RecordingAPI:
     def with_mock_transport(**kwargs: Any) -> httpx.AsyncClient:
         return real_client(transport=httpx.MockTransport(recorder._handle), **kwargs)
 
-    monkeypatch.setattr(server.httpx, "AsyncClient", with_mock_transport)
+    # Patched on httpx itself rather than through the module that calls it, so it
+    # holds wherever the client is built and does not care which module that is.
+    monkeypatch.setattr(httpx, "AsyncClient", with_mock_transport)
     return recorder
 
 

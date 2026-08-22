@@ -172,6 +172,22 @@ uvx altiplano@latest                    # from PyPI, refreshing the cache
 - Verified end to end against Vikunja v2.5.0 on both `/api/v1` and `/api/v2`.
 - `list_assignees` needs a server where `GET /tasks/{id}/assignees` works. It answers 500 on v2.3.0, which was a server-side bug, and works on v2.5.0. Every other tool works on both.
 
+## Layout
+
+```
+altiplano/
+  app.py       the MCP instance, alone, so tool modules can import it
+  config.py    where credentials come from; the only module that reads a file
+  api.py       version and verb differences, the request layer, response shaping
+  tools/       one module per section of this README
+  server.py    imports the tool modules to register them, and main()
+```
+
+A tool module is the whole of what a section needs: `@mcp.tool()` functions, and any
+helper only they use. Adding a section means adding a file and one import in
+`server.py`; the test suite fails until the new tools appear in both the routing
+table and the smoke test's list, which is deliberate.
+
 ## Contributing
 
 Enable the pre-commit hook once per clone:

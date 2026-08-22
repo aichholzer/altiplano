@@ -2,6 +2,41 @@
 
 All notable changes to this project are documented here.
 
+## [0.14.1]
+
+### Changed
+
+- `server.py` is now a package. It had reached 988 lines and 34 tools, so it is
+  split along the same seams the README uses: `app.py` holds the MCP instance,
+  `config.py` resolves credentials, `api.py` owns the version differences and the
+  request layer, and `tools/` has a module per section. `server.py` keeps only the
+  imports that register the tools and `main`.
+
+  `app.py` exists to break a cycle rather than out of taste. Every tool module needs
+  the instance for `@mcp.tool()`, and `server` needs to import every tool module so
+  that decorator runs. With the instance in `server`, those two facts are a circular
+  import; in its own module, importing nothing of ours, there is no cycle to reason
+  about.
+
+  Two modules for the support layer rather than four. `_date` and `_task_summary`
+  are shaping rather than transport and could argue for a third file, but a module
+  holding three helpers earns less than it costs to look in.
+
+  No behaviour changed. The tool bodies were moved by line range rather than retyped,
+  so nothing could drift in transcription, and the suite is unchanged at 226 tests
+  and 100 percent statement and branch coverage. Two of those tests are what make
+  the move safe to believe: one compares the registered tools against a written list
+  of all 34 names, so a module that fails to import or an instance that ends up
+  duplicated fails loudly, and one loads the console script, keeping
+  `altiplano.server:main` honest.
+
+  The tests moved with the code, since `server` no longer owns any of it. Two of
+  their patches needed thought rather than renaming, because rebinding a name in one
+  module never reaches another: `_CONFIG_FILE` and `_file_cache` are now patched on
+  `config`, and the fake transport is installed on `httpx` itself rather than through
+  whichever module happens to call it, which is both simpler and indifferent to where
+  the client gets built.
+
 ## [0.14.0]
 
 ### Added
