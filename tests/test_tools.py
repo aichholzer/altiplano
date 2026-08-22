@@ -61,7 +61,31 @@ ROUTES = [
     route("list_projects", lambda: server.list_projects(), READ, "/projects", {}),
     route("get_task", lambda: server.get_task(7), READ, "/tasks/7", {}),
     route("list_tasks", lambda: server.list_tasks(3), READ, "/projects/3/tasks", {}),
+    route("search_tasks", lambda: server.search_tasks(), READ, "/tasks", {}),
+    route(
+        "move_task",
+        lambda: server.move_task(7, 5),
+        UPDATE,
+        "/tasks/7",
+        {1: {**READ_BACK, "project_id": 5}, 2: {"project_id": 5}},
+        response=READ_BACK,
+    ),
+    route("duplicate_task", lambda: server.duplicate_task(7), CREATE, "/tasks/7/duplicate", {}),
+    route(
+        "bulk_update_tasks",
+        lambda: server.bulk_update_tasks([7, 9], done=True),
+        REPLACE,
+        "/tasks/bulk",
+        {"task_ids": [7, 9], "fields": ["done"], "values": {"done": True}},
+    ),
     route("list_labels", lambda: server.list_labels(), READ, "/labels", {}),
+    route(
+        "create_label",
+        lambda: server.create_label("Doing"),
+        CREATE,
+        "/labels",
+        {"title": "Doing"},
+    ),
     route("add_label", lambda: server.add_label(7, 1), CREATE, "/tasks/7/labels", {"label_id": 1}),
     route("remove_label", lambda: server.remove_label(7, 1), REMOVE, "/tasks/7/labels/1", {}),
     route("list_comments", lambda: server.list_comments(7), READ, "/tasks/7/comments", {}),
@@ -134,11 +158,14 @@ ROUTES = [
     ),
     route(
         "move_task_to_bucket",
-        lambda: server.move_task_to_bucket(3, 7, 41),
+        lambda: server.move_task_to_bucket(7, 41),
         REPLACE,
         "/projects/3/views/48/buckets/41/tasks",
         {"task_id": 7},
-        response=KANBAN_VIEW,
+        # Read first for the task's project, then for the view. One canned response
+        # serves both: a dict carrying project_id for the task read, wrapped in the
+        # pagination envelope so `_items` finds the view in it.
+        response={"project_id": 3, "items": KANBAN_VIEW},
     ),
     route("list_assignees", lambda: server.list_assignees(7), READ, "/tasks/7/assignees", {}),
     route("add_assignee", lambda: server.add_assignee(7, 2), CREATE, "/tasks/7/assignees", {"user_id": 2}),
@@ -562,6 +589,99 @@ def test_a_401_elsewhere_is_left_alone(api, run, api_version):
         run(server.list_bucket_tasks(3))
 
 
+def test_moving_to_a_bucket_takes_the_project_from_the_task(api, run):
+    """The project is derived rather than passed, so it cannot contradict the task.
+    A caller-supplied one that disagreed would build a path that looks valid and
+    404s."""
+    api.returns_in_order(
+        httpx.Response(200, json={"id": 7, "project_id": 3}),
+        httpx.Response(200, json=KANBAN_VIEW),
+        httpx.Response(200, json={"task_id": 7}),
+    )
+    run(server.move_task_to_bucket(7, 41))
+
+    task_read, views, move = api.requests
+    assert task_read.url.path.endswith("/tasks/7")
+    assert views.url.path.endswith("/projects/3/views")
+    assert move.url.path.endswith("/projects/3/views/48/buckets/41/tasks")
+
+
+def test_moving_to_a_bucket_refuses_when_the_project_cannot_be_read(api, run):
+    api.returns_raw(204)
+    with pytest.raises(RuntimeError, match="could not read which project task 7"):
+        run(server.move_task_to_bucket(7, 41))
+    assert [r.url.path.split("/")[-1] for r in api.requests] == ["7"]
+
+
+# --- searching, bulk and labels ----------------------------------------------
+@pytest.mark.parametrize(("api_version", "param"), [(1, "s"), (2, "q")])
+def test_search_tasks_uses_the_search_param_the_version_expects(api, run, param):
+    """Same rename as search_users: sending the wrong one is not an error, it just
+    silently ignores the search."""
+    run(server.search_tasks(query="kanban"))
+    assert dict(api.last.url.params) == {"page": "1", "per_page": "50", param: "kanban"}
+
+
+def test_search_tasks_reports_which_project_each_task_is_in(api, run):
+    """The reason to search across projects is not knowing which one it is in."""
+    api.returns([{"id": 374, "identifier": "#1", "title": "T", "done": False, "project_id": 12}])
+    assert run(server.search_tasks(query="T")) == [
+        {
+            "id": 374,
+            "identifier": "#1",
+            "title": "T",
+            "done": False,
+            "priority": None,
+            "project_id": 12,
+        }
+    ]
+
+
+def test_search_tasks_passes_a_filter_and_sort_through(api, run):
+    run(server.search_tasks(filter="done = false", sort_by="priority", page=2, per_page=10))
+    assert dict(api.last.url.params) == {
+        "page": "2",
+        "per_page": "10",
+        "filter": "done = false",
+        "sort_by": "priority",
+    }
+
+
+def test_bulk_update_names_the_fields_separately_from_the_values(api, run):
+    """This endpoint writes only the fields it is told to, which is what makes it a
+    real partial update even on v1."""
+    run(server.bulk_update_tasks([7, 9], done=True, priority=4))
+    assert body(api.last) == {
+        "task_ids": [7, 9],
+        "fields": ["done", "priority"],
+        "values": {"done": True, "priority": 4},
+    }
+
+
+def test_bulk_update_sends_done_false_rather_than_dropping_it(api, run):
+    run(server.bulk_update_tasks([7], done=False))
+    assert body(api.last) == {
+        "task_ids": [7],
+        "fields": ["done"],
+        "values": {"done": False},
+    }
+
+
+def test_bulk_update_rejects_an_empty_payload(api, run):
+    with pytest.raises(ValueError, match="No fields to update"):
+        run(server.bulk_update_tasks([7]))
+    assert api.requests == []
+
+
+def test_create_label_includes_the_optional_fields(api, run):
+    run(server.create_label("Doing", hex_color="f59e0b", description="in flight"))
+    assert body(api.last) == {
+        "title": "Doing",
+        "hex_color": "f59e0b",
+        "description": "in flight",
+    }
+
+
 def test_list_task_buckets_returns_one_entry_per_kanban_view(api, run):
     api.returns(
         {
@@ -651,6 +771,17 @@ def test_v1_set_reminders_merges_into_the_task_it_read_first(api, run):
         **V1_TASK,
         "reminders": [{"reminder": "2026-08-21T09:00:00+10:00"}],
     }
+
+
+def test_move_task_goes_through_the_same_write_path_as_an_update(api, run):
+    """Moving is an update that sets project_id, so on v1 it must merge like one
+    rather than replacing the task with a single field."""
+    api.returns(V1_TASK)
+    run(server.move_task(7, 5))
+
+    read, write = api.requests
+    assert read.method == "GET"
+    assert body(write) == {**V1_TASK, "project_id": 5}
 
 
 def test_v1_refuses_to_replace_from_a_read_that_is_not_a_task(api, run):

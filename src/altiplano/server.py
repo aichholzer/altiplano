@@ -308,6 +308,36 @@ async def list_tasks(
 
 
 @mcp.tool()
+async def search_tasks(
+    query: str | None = None,
+    filter: str | None = None,
+    sort_by: str | None = None,
+    page: int = 1,
+    per_page: int = 50,
+) -> list[dict]:
+    """Search tasks across every project you can see.
+
+    `list_tasks` needs to be told a project. This does not, which makes it the tool
+    for "find this task, I do not remember where it lives". Results carry
+    `project_id` for the same reason.
+
+    `query` is a text search over titles and descriptions. `filter` and `sort_by` are
+    the same server-side syntax `list_tasks` takes. Vikunja documents the text search
+    as not combinable with a filter, so use one or the other.
+    """
+    params: dict[str, Any] = {"page": page, "per_page": per_page}
+    if query:
+        # Renamed between versions, the same way it is for search_users.
+        params["q" if _version() == 2 else "s"] = query
+    if filter:
+        params["filter"] = filter
+    if sort_by:
+        params["sort_by"] = sort_by
+    data = await _request("GET", "/tasks", params=params)
+    return [{**_task_summary(t), "project_id": t.get("project_id")} for t in _items(data)]
+
+
+@mcp.tool()
 async def get_task(task_id: int) -> dict:
     """Get a single task with full detail. On v2 the description is Markdown."""
     return await _request("GET", f"/tasks/{task_id}", params=_md_params())
@@ -429,6 +459,11 @@ async def update_task(
         payload["repeat_mode"] = repeat_mode
     if not payload:
         raise ValueError("No fields to update")
+    return await _write_task(task_id, payload)
+
+
+async def _write_task(task_id: int, payload: dict[str, Any]) -> dict:
+    """Send task changes whichever way this API version requires."""
     # Two separate reasons to read the task first, see _replace_task: on v1 because
     # a partial body would wipe the fields it omits, and on v2 because PATCH would
     # store a Markdown description verbatim. Everything else on v2 stays a cheap
@@ -441,6 +476,59 @@ async def update_task(
     # regardless. Sending a parameter the server discards would only suggest a
     # guarantee that does not hold.
     return await _request(_verb("update"), f"/tasks/{task_id}", json=payload)
+
+
+@mcp.tool()
+async def move_task(task_id: int, project_id: int) -> dict:
+    """Move a task to another project. Needs write access to the target.
+
+    Vikunja has no endpoint for this. A task's `project_id` is writable and setting
+    it is the move, so this costs what an update costs: two requests on v1, one on
+    v2.
+
+    Labels, assignees, comments, relations and dates all come along. The task's
+    project-local `identifier` does not: that is derived from the project it is in,
+    so it is reassigned on arrival.
+    """
+    return await _write_task(task_id, {"project_id": project_id})
+
+
+@mcp.tool()
+async def duplicate_task(task_id: int) -> dict:
+    """Copy a task, with its labels, assignees, attachments and reminders.
+
+    The copy lands in the same project as the original and carries a `copiedfrom`
+    relation back to it. Vikunja offers no way to duplicate straight into another
+    project; call `move_task` on the copy for that.
+    """
+    return await _request(_verb("create"), f"/tasks/{task_id}/duplicate")
+
+
+@mcp.tool()
+async def bulk_update_tasks(
+    task_ids: list[int], done: bool | None = None, priority: int | None = None
+) -> dict:
+    """Set `done` or `priority` on many tasks in one request.
+
+    Only the fields you pass are written, on either API version. This endpoint takes
+    the field names separately from the values, which makes it a genuine partial
+    update even on v1, where updating a single task is not.
+
+    You need write access to every project involved. If it is missing on even one,
+    the whole request is refused and nothing changes.
+    """
+    values: dict[str, Any] = {}
+    if done is not None:
+        values["done"] = done
+    if priority is not None:
+        values["priority"] = priority
+    if not values:
+        raise ValueError("No fields to update")
+    return await _request(
+        _verb("replace"),
+        "/tasks/bulk",
+        json={"task_ids": task_ids, "fields": sorted(values), "values": values},
+    )
 
 
 async def _replace_task(task_id: int, changes: dict[str, Any]) -> dict:
@@ -675,9 +763,7 @@ async def list_task_buckets(task_id: int) -> list[dict]:
 
 
 @mcp.tool()
-async def move_task_to_bucket(
-    project_id: int, task_id: int, bucket_id: int, view_id: int | None = None
-) -> dict:
+async def move_task_to_bucket(task_id: int, bucket_id: int, view_id: int | None = None) -> dict:
     """Move a task into a kanban bucket. Re-sending the same bucket does nothing.
 
     This changes more than the column, and `list_kanban_views` tells you which
@@ -690,7 +776,16 @@ async def move_task_to_bucket(
 
     Only meaningful when the view's `bucket_configuration_mode` is `manual`. In
     `filter` mode a task's bucket follows the filters, not you.
+
+    The project is read from the task rather than passed in, which costs a request
+    and removes an argument that could contradict the task it was given.
     """
+    task = await _request("GET", f"/tasks/{task_id}")
+    project_id = task.get("project_id") if isinstance(task, dict) else None
+    if not project_id:
+        raise RuntimeError(
+            f"could not read which project task {task_id} is in, so it was not moved"
+        )
     view = await _kanban_view(project_id, view_id)
     return await _request(
         _verb("replace"),
@@ -746,6 +841,22 @@ async def list_labels() -> list[dict]:
     """List all labels."""
     data = await _request("GET", "/labels")
     return [{"id": x["id"], "title": x["title"]} for x in _items(data)]
+
+
+@mcp.tool()
+async def create_label(
+    title: str, hex_color: str | None = None, description: str | None = None
+) -> dict:
+    """Create a label, which `add_label` can then attach to tasks.
+
+    `hex_color` is six hex digits with no leading `#`, as `list_labels` reports them.
+    """
+    payload: dict[str, Any] = {"title": title}
+    if hex_color is not None:
+        payload["hex_color"] = hex_color
+    if description is not None:
+        payload["description"] = description
+    return await _request(_verb("create"), "/labels", json=payload)
 
 
 @mcp.tool()

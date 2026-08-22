@@ -2,6 +2,49 @@
 
 All notable changes to this project are documented here.
 
+## [0.13.0]
+
+### Added
+
+- Five tools, taking the surface to 31: `search_tasks`, `move_task`,
+  `duplicate_task`, `bulk_update_tasks` and `create_label`. These were offered in a
+  branch referenced from PR #4's comments, approved there, and never submitted as a
+  pull request. Each was rebuilt from the spec rather than copied, and two of the
+  fork's versions could not have worked:
+
+  `search_tasks` is the first tool here that does not need to be told a project. The
+  fork targets `/tasks/all`, which does not exist on either API version of 2.5.0;
+  the cross-project route is `GET /tasks`, and it takes the same `s` on v1 and `q`
+  on v2 rename that `search_users` already handles. Results carry `project_id`,
+  because not knowing which project a task is in is the reason to reach for this.
+
+  `duplicate_task` takes no target project, where the fork offered one. The endpoint
+  accepts no body at all: it copies into the same project and records a `copiedfrom`
+  relation back to the original, both confirmed live. Duplicating elsewhere is this
+  followed by `move_task`, which the docstring says.
+
+  `move_task` exists because Vikunja has no move endpoint. A task's `project_id` is
+  writable, and the v2 schema is explicit that setting it to another project is the
+  move, so this goes through the same write path `update_task` uses, now factored
+  out as `_write_task`. The task keeps its labels, assignees, comments and relations;
+  its project-local `identifier` is reassigned on arrival, observed live as `#57`
+  becoming `HOME-1`.
+
+  `bulk_update_tasks` sends field names separately from values, which is what the
+  endpoint wants and what makes it a genuine partial update even on v1, where a
+  single-task update is not.
+
+  `create_label` closes the gap where labels could be listed and attached but never
+  created.
+
+### Changed
+
+- `move_task_to_bucket` no longer takes `project_id`. It reads the project from the
+  task, which costs a request and removes an argument that could contradict the task
+  it was given; a mismatched one produced a 404 from a path that looked correct.
+  This was a review point on PR #4 that went unanswered there and applied equally to
+  the version shipped in 0.12.0, which has not been released.
+
 ## [0.12.0]
 
 ### Added

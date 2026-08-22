@@ -21,9 +21,13 @@ Projects:
 
 Tasks:
 - `list_tasks` (project_id, filter, sort_by, page, per_page)
+- `search_tasks` (query?, filter?, sort_by?, page, per_page): the same, across every project you can see, and each result carries its `project_id`
 - `get_task` (task_id)
 - `create_task` (project_id, title, description?, priority?, due_date?, start_date?, end_date?, percent_done?, is_favorite?, repeat_after?, repeat_mode?)
 - `update_task` (task_id, title?, description?, done?, priority?, due_date?, start_date?, end_date?, percent_done?, is_favorite?, repeat_after?, repeat_mode?): only the fields you pass change. Pass an empty string to any of the three dates to clear it
+- `move_task` (task_id, project_id): moves a task to another project. Its project-local `identifier` is reassigned on arrival
+- `duplicate_task` (task_id): copies a task into the same project, with a `copiedfrom` relation back to the original
+- `bulk_update_tasks` (task_ids, done?, priority?): sets those fields on many tasks in one request, writing only the fields you pass
 - `set_reminders` (task_id, reminders): replaces the task's reminders with the given ISO 8601 datetimes; empty list clears
 - `delete_task` (task_id): soft-deletes the task along with its comments, labels and assignees. Vikunja keeps it for 30 days but exposes no way to restore it, so treat this as irreversible
 
@@ -32,7 +36,7 @@ Kanban:
 - `list_buckets` (project_id, view_id?): the columns in board order, flagging which is the default and which is done
 - `list_bucket_tasks` (project_id, view_id?, filter?): the columns with their tasks. See the warning below about v2
 - `list_task_buckets` (task_id): which bucket a task sits in, one entry per kanban view
-- `move_task_to_bucket` (project_id, task_id, bucket_id, view_id?): moving into the done bucket marks the task done, and moving it out un-marks it
+- `move_task_to_bucket` (task_id, bucket_id, view_id?): moving into the done bucket marks the task done, and moving it out un-marks it. The project is read from the task rather than passed in
 
 Buckets belong to a view, not to a project, so each of these resolves one first. `view_id` is optional and the first kanban view is used, which is the only one most projects have.
 
@@ -46,6 +50,7 @@ There is no `list_relations`: `get_task` already returns `related_tasks`, groupe
 
 Labels:
 - `list_labels`
+- `create_label` (title, hex_color?, description?): `hex_color` is six hex digits with no leading `#`
 - `add_label` (task_id, label_id)
 - `remove_label` (task_id, label_id)
 
