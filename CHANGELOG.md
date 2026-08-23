@@ -2,6 +2,221 @@
 
 All notable changes to this project are documented here.
 
+## [0.14.1]
+
+### Changed
+
+- `server.py` is now a package. It had reached 988 lines and 34 tools, so it is
+  split along the same seams the README uses: `app.py` holds the MCP instance,
+  `config.py` resolves credentials, `api.py` owns the version differences and the
+  request layer, and `tools/` has a module per section. `server.py` keeps only the
+  imports that register the tools and `main`.
+
+  `app.py` exists to break a cycle rather than out of taste. Every tool module needs
+  the instance for `@mcp.tool()`, and `server` needs to import every tool module so
+  that decorator runs. With the instance in `server`, those two facts are a circular
+  import; in its own module, importing nothing of ours, there is no cycle to reason
+  about.
+
+  Two modules for the support layer rather than four. `_date` and `_task_summary`
+  are shaping rather than transport and could argue for a third file, but a module
+  holding three helpers earns less than it costs to look in.
+
+  No behaviour changed. The tool bodies were moved by line range rather than retyped,
+  so nothing could drift in transcription, and the suite is unchanged at 226 tests
+  and 100 percent statement and branch coverage. Two of those tests are what make
+  the move safe to believe: one compares the registered tools against a written list
+  of all 34 names, so a module that fails to import or an instance that ends up
+  duplicated fails loudly, and one loads the console script, keeping
+  `altiplano.server:main` honest.
+
+  The tests moved with the code, since `server` no longer owns any of it. Two of
+  their patches needed thought rather than renaming, because rebinding a name in one
+  module never reaches another: `_CONFIG_FILE` and `_file_cache` are now patched on
+  `config`, and the fake transport is installed on `httpx` itself rather than through
+  whichever module happens to call it, which is both simpler and indifferent to where
+  the client gets built.
+
+## [0.14.0]
+
+### Added
+
+- `delete_label`, closing an asymmetry 0.13.0 opened by adding `create_label` with
+  no counterpart. It deletes the label everywhere, taking it off every task that
+  carries it, which is a different thing from `remove_label` detaching it from one.
+
+- `create_bucket` and `delete_bucket`, so a kanban board's columns can be managed
+  and not merely read. `create_bucket` takes an optional `limit`, the cap on how
+  many tasks the column accepts.
+
+  These exist because of a workflow requirement rather than for completeness: a
+  steering rule that moves a task into a `Doing` column when work starts has to be
+  able to create that column on a board that has none. `delete_bucket` comes along
+  so the same asymmetry is not opened twice in a week.
+
+  Deleting a column does not delete its tasks. Vikunja moves them to the default
+  bucket, confirmed live: a task in a deleted column reappeared in To-Do. A view
+  keeps at least one column, so the last cannot be removed.
+
+  Not included: renaming a bucket or changing its limit or position. Nothing needs
+  it, and three tools that answer a real requirement are worth more than a complete
+  CRUD set that does not.
+
+## [0.13.0]
+
+### Added
+
+- Five tools, taking the surface to 31: `search_tasks`, `move_task`,
+  `duplicate_task`, `bulk_update_tasks` and `create_label`. These were offered in a
+  branch referenced from PR #4's comments, approved there, and never submitted as a
+  pull request. Each was rebuilt from the spec rather than copied, and two of the
+  fork's versions could not have worked:
+
+  `search_tasks` is the first tool here that does not need to be told a project. The
+  fork targets `/tasks/all`, which does not exist on either API version of 2.5.0;
+  the cross-project route is `GET /tasks`, and it takes the same `s` on v1 and `q`
+  on v2 rename that `search_users` already handles. Results carry `project_id`,
+  because not knowing which project a task is in is the reason to reach for this.
+
+  `duplicate_task` takes no target project, where the fork offered one. The endpoint
+  accepts no body at all: it copies into the same project and records a `copiedfrom`
+  relation back to the original, both confirmed live. Duplicating elsewhere is this
+  followed by `move_task`, which the docstring says.
+
+  `move_task` exists because Vikunja has no move endpoint. A task's `project_id` is
+  writable, and the v2 schema is explicit that setting it to another project is the
+  move, so this goes through the same write path `update_task` uses, now factored
+  out as `_write_task`. The task keeps its labels, assignees, comments and relations;
+  its project-local `identifier` is reassigned on arrival, observed live as `#57`
+  becoming `HOME-1`.
+
+  `bulk_update_tasks` sends field names separately from values, which is what the
+  endpoint wants and what makes it a genuine partial update even on v1, where a
+  single-task update is not.
+
+  `create_label` closes the gap where labels could be listed and attached but never
+  created.
+
+### Changed
+
+- `move_task_to_bucket` no longer takes `project_id`. It reads the project from the
+  task, which costs a request and removes an argument that could contradict the task
+  it was given; a mismatched one produced a 404 from a path that looked correct.
+  This was a review point on PR #4 that went unanswered there and applied equally to
+  the version shipped in 0.12.0, which has not been released.
+
+## [0.12.0]
+
+### Added
+
+- Kanban tools, taking the surface to 26: `list_kanban_views`, `list_buckets`,
+  `list_bucket_tasks`, `list_task_buckets` and `move_task_to_bucket`. Boards were
+  the largest thing this server could see nothing of.
+
+  Buckets belong to a view rather than to a project, so each tool resolves one
+  first. `view_id` is optional and the first kanban view is taken, which is the only
+  one most projects have; views arrive ordered by position, so "first" means the
+  leftmost tab rather than an arbitrary pick. Naming a view that is not kanban, or
+  one that does not exist, fails with a message that says which of the two happened.
+
+  `move_task_to_bucket` carries side effects, all documented on the tool: the done
+  bucket marks a task done and moving out of it un-marks it, both confirmed live on
+  both API versions; a repeating task moved into the done bucket is reopened and sent
+  to the default bucket; and a bucket at its task limit refuses the move.
+
+  This was the second half of PR #4's suggestion, though little of the PR survived
+  contact with the spec:
+
+  The PR reads grouped buckets from `GET /views/{view}/tasks`. On v2 that route
+  "always returns flat tasks, even for a kanban view", and grouping moved to
+  `GET /views/{view}/buckets/tasks`, which v1 does not have at all. The path
+  therefore forks by version, and three of the PR's tools would have misread v2.
+
+  The PR hardcodes `POST` for the move, which is v1's verb; v2 wants `PUT`. That is
+  the same pair `_replace_task` and `update_comment` already needed, so `_VERBS`
+  gained a third action, `replace`, and all three call sites now go through it
+  instead of spelling the versions out locally.
+
+  The PR spends an extra request per `list_buckets` call to read bucket counts from
+  the tasks endpoint. Counts are genuinely absent from the buckets endpoint,
+  confirmed live as `count: 0` on a bucket holding 23 tasks, but the answer is not to
+  pay for them: `list_buckets` omits the field rather than reporting a zero that is
+  a lie, and `list_bucket_tasks` carries the real numbers.
+
+  The PR's `get_task_bucket` costs three requests. `GET /tasks/{id}?expand=buckets`
+  answers directly on both versions, so `list_task_buckets` is one, and it returns a
+  list because a task holds a bucket in every kanban view its project has.
+
+### Note
+
+- `list_bucket_tasks` does not work on v2 with an API token, on Vikunja 2.5.0. That
+  route answers 401 while every sibling accepts the same token and the v2 spec
+  documents it as accepting one, so the likely cause is a token predating the route
+  and lacking permission for it. It ships anyway, with that 401 mapped to an
+  explanation rather than Vikunja's claim that the token is invalid, on the
+  precedent of 0.5.6 keeping `list_assignees` on an endpoint that was broken
+  server-side at the time. v1 serves the same data and was confirmed working.
+
+## [0.11.0]
+
+### Added
+
+- `percent_done`, `is_favorite`, `repeat_after` and `repeat_mode` on `create_task`
+  and `update_task`, following the existing rule that a field reaches the payload
+  only if it was passed. These were the remaining writable scalars on a task that
+  this server could not set. What is left is either read-only, owned by a dedicated
+  endpoint, or kanban state.
+
+  Lifted from the suggestion in PR #4 rather than the PR itself, and each field
+  checked against the spec instead of taken on trust, which was worth doing:
+
+  `repeat_mode` is the enum `[0, 1, 2]`, generated from the Go type as
+  `TaskRepeatModeDefault`, `TaskRepeatModeMonth` and `TaskRepeatModeFromCurrentDate`.
+  Vikunja's own description of the field disagrees with its own enum, announcing
+  "three possible values" and then listing 0, 1 and 3. The enum wins, and both the
+  docstrings and the README note the discrepancy so the next reader does not take
+  the prose for gospel.
+
+  `percent_done` is a fraction despite its name: a quarter done is 0.25. The spec
+  documents no range at all, so this was settled against a live server, which also
+  turned up that nothing validates it. Passing 50 stores 50, neither clamped nor
+  read as 50 percent. Documented rather than corrected, since silently dividing a
+  caller's number by 100 would be a worse surprise than the one it prevents.
+
+  `is_favorite` is per-user state, and writable through the task rather than through
+  a separate endpoint. Confirmed both directions live.
+
+  All four are falsy at their "off" value, so a truthiness check in the payload
+  builder would drop exactly `percent_done=0`, `is_favorite=False`, `repeat_after=0`
+  and `repeat_mode=0`. Tests pin each one, on both tools.
+
+## [0.10.1]
+
+### Fixed
+
+- Stopped sending `?format=markdown` on a v2 partial update, which 0.9.0 added on a
+  premise that turned out to be wrong. The theory was that v2 ignored the parameter
+  only for the request body, so asking for the response in Markdown would cost
+  nothing and make `update_task` answer in the same format as `get_task`. Tested
+  against 2.5.0 as soon as a released build could reach a live server, it ignores
+  the parameter for the response as well: a description stored as
+  `<p><strong>Bold</strong> and <code>code</code></p>` came back exactly that way
+  with the parameter set.
+
+  So the inconsistency it was meant to remove is still there, and cannot be removed
+  by asking. `update_task` and `set_reminders` return the description as stored HTML
+  on v2, and `get_task` returns Markdown. The parameter is gone rather than left in
+  place, because one the server discards suggests a guarantee that does not hold,
+  and the next person to read that line would believe it.
+
+  The docstring and the README now say so, which is the only fix available short of
+  spending a second request on a follow-up read after every partial update. That is
+  not worth it for a difference in the shape of a return value that callers can
+  resolve with `get_task`.
+
+  The 0.9.0 and 0.10.0 entries are left as written. They record what was believed at
+  the time, and this one records what testing showed.
+
 ## [0.10.0]
 
 ### Added

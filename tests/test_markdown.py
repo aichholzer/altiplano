@@ -11,7 +11,11 @@ rendered as HTML. So a description change has to go through a full replace.
 import httpx
 import pytest
 
-from altiplano import server
+from altiplano.tools import (
+    comments,
+    projects,
+    tasks,
+)
 
 MD = "**bold** and a [link](https://example.com)"
 
@@ -22,12 +26,12 @@ def fmt(request) -> str | None:
 
 # Tools whose payload or result carries rich text, so they must ask for Markdown.
 RICH_TEXT_CALLS = [
-    pytest.param(lambda: server.get_task(7), id="get_task"),
-    pytest.param(lambda: server.list_comments(7), id="list_comments"),
-    pytest.param(lambda: server.create_task(3, "T", description=MD), id="create_task"),
-    pytest.param(lambda: server.create_project("P", description=MD), id="create_project"),
-    pytest.param(lambda: server.add_comment(7, MD), id="add_comment"),
-    pytest.param(lambda: server.update_comment(7, 21, MD), id="update_comment"),
+    pytest.param(lambda: tasks.get_task(7), id="get_task"),
+    pytest.param(lambda: comments.list_comments(7), id="list_comments"),
+    pytest.param(lambda: tasks.create_task(3, "T", description=MD), id="create_task"),
+    pytest.param(lambda: projects.create_project("P", description=MD), id="create_project"),
+    pytest.param(lambda: comments.add_comment(7, MD), id="add_comment"),
+    pytest.param(lambda: comments.update_comment(7, 21, MD), id="update_comment"),
 ]
 
 
@@ -47,27 +51,28 @@ def test_v1_never_asks_for_markdown(api, run, call, api_version):
 
 
 @pytest.mark.parametrize("api_version", [2])
-def test_v2_partial_updates_ask_for_markdown_on_the_way_back(api, run, api_version):
-    """A partial update answers with the whole task, description included.
+def test_v2_partial_updates_do_not_ask_for_markdown(api, run, api_version):
+    """A partial update answers with the whole task, description included, and that
+    description comes back as the stored HTML.
 
-    Without this it answers in raw HTML while `get_task` answers in Markdown, so the
-    same field arrives in two different formats depending on which tool produced it.
-    v2 ignores the parameter for a PATCH request body, which is why a description
-    never routes through PATCH, but that does not stop us asking for the response in
-    the same currency as every other read.
+    0.10.0 asked for Markdown here, on the theory that v2 ignored the parameter only
+    for the request body. It ignores it for the response too: asking against 2.5.0
+    returned `<p><strong>Bold</strong></p>` regardless. The parameter is therefore
+    not sent, because one that the server discards implies a guarantee that does not
+    hold. `get_task` is the way to read a description as Markdown.
     """
-    run(server.update_task(7, priority=3))
-    assert fmt(api.last) == "markdown"
+    run(tasks.update_task(7, priority=3))
+    assert fmt(api.last) is None
 
-    run(server.set_reminders(7, []))
-    assert fmt(api.last) == "markdown"
+    run(tasks.set_reminders(7, []))
+    assert fmt(api.last) is None
 
 
 @pytest.mark.parametrize("api_version", [2])
 def test_v2_description_update_reads_then_replaces(api, run, api_version):
     """PATCH would not convert, so a description change becomes read then replace."""
     api.returns({"id": 7, "title": "Existing", "description": "old", "priority": 4})
-    run(server.update_task(7, description=MD))
+    run(tasks.update_task(7, description=MD))
 
     read, write = api.requests
     assert read.method == "GET"
@@ -80,7 +85,7 @@ def test_v2_description_update_reads_then_replaces(api, run, api_version):
 def test_v2_replace_preserves_fields_it_was_not_given(api, run, api_version):
     """The whole point of reading first: an unrelated field must survive."""
     api.returns({"id": 7, "title": "Existing", "description": "old", "priority": 4, "done": True})
-    run(server.update_task(7, description=MD))
+    run(tasks.update_task(7, description=MD))
 
     import json
 
@@ -95,7 +100,7 @@ def test_v2_replace_preserves_fields_it_was_not_given(api, run, api_version):
 def test_v2_replace_drops_the_schema_key_it_read_back(api, run, api_version):
     """`$schema` is v2 response metadata, not a writable field."""
     api.returns({"$schema": "https://example.test/schema.json", "id": 7, "description": "old"})
-    run(server.update_task(7, description=MD))
+    run(tasks.update_task(7, description=MD))
 
     import json
 
@@ -105,7 +110,7 @@ def test_v2_replace_drops_the_schema_key_it_read_back(api, run, api_version):
 @pytest.mark.parametrize("api_version", [2])
 def test_v2_update_without_a_description_stays_a_single_partial_update(api, run, api_version):
     """No rich text, no reason to pay for a read or to widen the write."""
-    run(server.update_task(7, priority=3))
+    run(tasks.update_task(7, priority=3))
     assert [r.method for r in api.requests] == ["PATCH"]
 
 
@@ -118,7 +123,7 @@ def test_v1_reads_first_too_but_never_for_markdown(api, run, api_version):
     fields it was not given. Neither request asks for a format v1 does not have.
     """
     api.returns({"id": 7, "description": "<p>old</p>"})
-    run(server.update_task(7, description="<p>html</p>"))
+    run(tasks.update_task(7, description="<p>html</p>"))
     assert [r.method for r in api.requests] == ["GET", "POST"]
     assert all(fmt(r) is None for r in api.requests)
 
@@ -126,7 +131,7 @@ def test_v1_reads_first_too_but_never_for_markdown(api, run, api_version):
 @pytest.mark.parametrize("api_version", [2])
 def test_set_reminders_stays_a_partial_update(api, run, api_version):
     """Reminders carry no rich text, so they must not trigger a replace."""
-    run(server.set_reminders(7, ["2026-08-21T09:00:00+10:00"]))
+    run(tasks.set_reminders(7, ["2026-08-21T09:00:00+10:00"]))
     assert [r.method for r in api.requests] == ["PATCH"]
 
 
@@ -141,7 +146,7 @@ def test_v2_replace_sends_the_etag_back_as_if_match(api, run, api_version):
         httpx.Response(200, json={"id": 7, "description": "old"}, headers={"ETag": '"abc123"'}),
         httpx.Response(200, json={"id": 7, "description": MD}),
     )
-    run(server.update_task(7, description=MD))
+    run(tasks.update_task(7, description=MD))
     assert api.requests[-1].headers["If-Match"] == '"abc123"'
 
 
@@ -149,7 +154,7 @@ def test_v2_replace_sends_the_etag_back_as_if_match(api, run, api_version):
 def test_v2_replace_omits_if_match_when_the_read_offered_no_etag(api, run, api_version):
     """A server without ETags has to behave exactly as it did before."""
     api.returns({"id": 7, "description": "old"})
-    run(server.update_task(7, description=MD))
+    run(tasks.update_task(7, description=MD))
     assert "if-match" not in api.requests[-1].headers
 
 
@@ -162,7 +167,7 @@ def test_v2_replace_turns_a_precondition_failure_into_something_actionable(api, 
         httpx.Response(412, json={"title": "Precondition Failed"}),
     )
     with pytest.raises(RuntimeError, match="changed while this update was being prepared"):
-        run(server.update_task(7, description=MD))
+        run(tasks.update_task(7, description=MD))
 
 
 @pytest.mark.parametrize("api_version", [2])
@@ -172,7 +177,7 @@ def test_v2_replace_lets_any_other_failure_through_as_it_is(api, run, api_versio
         httpx.Response(500, json={"detail": "database is on fire"}),
     )
     with pytest.raises(httpx.HTTPStatusError, match="database is on fire"):
-        run(server.update_task(7, description=MD))
+        run(tasks.update_task(7, description=MD))
 
 
 @pytest.mark.parametrize("api_version", [2])
@@ -181,6 +186,6 @@ def test_v2_replace_refuses_a_read_that_is_not_a_task(api, run, api_version):
     that would wipe the task rather than update it."""
     api.returns_raw(204)
     with pytest.raises(RuntimeError, match="did not return task 7"):
-        run(server.update_task(7, description=MD))
+        run(tasks.update_task(7, description=MD))
     # The write must not have been attempted.
     assert [r.method for r in api.requests] == ["GET"]

@@ -6,15 +6,16 @@ import warnings
 import httpx
 import pytest
 
-from altiplano import server
+from altiplano import config, server
+from altiplano.api import _request
 
 
 @pytest.fixture(autouse=True)
 def _forget_module_state():
     """Clear the warn-once record and the parse cache, so each test sees a fresh
     module rather than a neighbour's leftovers."""
-    server._warned_about.clear()
-    server._file_cache = None
+    config._warned_about.clear()
+    config._file_cache = None
 
 
 @pytest.fixture
@@ -27,13 +28,13 @@ def config_file(tmp_path, monkeypatch):
     """
     path = tmp_path / "env"
     path.touch(mode=0o600)
-    monkeypatch.setattr(server, "_CONFIG_FILE", path)
+    monkeypatch.setattr(config, "_CONFIG_FILE", path)
     return path
 
 
 def test_reads_a_key_from_file(config_file):
     config_file.write_text("VIKUNJA_URL=https://from.file/api/v1\n")
-    assert server._from_file("VIKUNJA_URL") == "https://from.file/api/v1"
+    assert config._from_file("VIKUNJA_URL") == "https://from.file/api/v1"
 
 
 def test_ignores_comments_blanks_and_lines_without_an_equals(config_file):
@@ -44,23 +45,23 @@ def test_ignores_comments_blanks_and_lines_without_an_equals(config_file):
         "this line has no equals sign\n"
         "VIKUNJA_URL=https://real.test/api/v1\n"
     )
-    assert server._from_file("VIKUNJA_URL") == "https://real.test/api/v1"
+    assert config._from_file("VIKUNJA_URL") == "https://real.test/api/v1"
 
 
 @pytest.mark.parametrize("raw", ['"quoted"', "'quoted'", "  quoted  "])
 def test_strips_quotes_and_surrounding_whitespace(config_file, raw):
     config_file.write_text(f"TOKEN={raw}\n")
-    assert server._from_file("TOKEN") == "quoted"
+    assert config._from_file("TOKEN") == "quoted"
 
 
 def test_returns_none_for_a_key_that_is_absent(config_file):
     config_file.write_text("OTHER=value\n")
-    assert server._from_file("VIKUNJA_URL") is None
+    assert config._from_file("VIKUNJA_URL") is None
 
 
 def test_returns_none_when_the_file_does_not_exist(tmp_path, monkeypatch):
-    monkeypatch.setattr(server, "_CONFIG_FILE", tmp_path / "nonexistent")
-    assert server._from_file("VIKUNJA_URL") is None
+    monkeypatch.setattr(config, "_CONFIG_FILE", tmp_path / "nonexistent")
+    assert config._from_file("VIKUNJA_URL") is None
 
 
 def test_a_duplicated_key_keeps_the_first_occurrence(config_file):
@@ -69,7 +70,7 @@ def test_a_duplicated_key_keeps_the_first_occurrence(config_file):
     config_file.write_text(
         "VIKUNJA_URL=https://first.test/api/v1\nVIKUNJA_URL=https://second.test/api/v1\n"
     )
-    assert server._from_file("VIKUNJA_URL") == "https://first.test/api/v1"
+    assert config._from_file("VIKUNJA_URL") == "https://first.test/api/v1"
 
 
 def test_the_file_is_read_once_per_change_not_once_per_lookup(config_file, monkeypatch):
@@ -78,18 +79,18 @@ def test_the_file_is_read_once_per_change_not_once_per_lookup(config_file, monke
     config_file.write_text("VIKUNJA_URL=https://one.test/api/v1\n")
 
     reads = []
-    real_read = server.Path.read_text
+    real_read = config.Path.read_text
 
     def counting_read(self, *args, **kwargs):
         if self == config_file:
             reads.append(self)
         return real_read(self, *args, **kwargs)
 
-    monkeypatch.setattr(server.Path, "read_text", counting_read)
+    monkeypatch.setattr(config.Path, "read_text", counting_read)
 
-    assert server._from_file("VIKUNJA_URL") == "https://one.test/api/v1"
-    assert server._from_file("VIKUNJA_API_TOKEN") is None
-    assert server._from_file("VIKUNJA_URL") == "https://one.test/api/v1"
+    assert config._from_file("VIKUNJA_URL") == "https://one.test/api/v1"
+    assert config._from_file("VIKUNJA_API_TOKEN") is None
+    assert config._from_file("VIKUNJA_URL") == "https://one.test/api/v1"
     assert len(reads) == 1
 
     # A rotated token still has to be picked up, which is why the cache is keyed on
@@ -100,7 +101,7 @@ def test_the_file_is_read_once_per_change_not_once_per_lookup(config_file, monke
     bumped = config_file.stat().st_mtime_ns + 10**9
     os.utime(config_file, ns=(bumped, bumped))
 
-    assert server._from_file("VIKUNJA_URL") == "https://two.test/api/v1"
+    assert config._from_file("VIKUNJA_URL") == "https://two.test/api/v1"
     assert len(reads) == 2
 
 
@@ -115,11 +116,11 @@ def test_warns_once_and_carries_on_when_the_file_cannot_be_read(config_file):
     config_file.chmod(0o000)
 
     with pytest.warns(UserWarning, match="could not read"):
-        assert server._from_file("VIKUNJA_URL") is None
+        assert config._from_file("VIKUNJA_URL") is None
 
     with warnings.catch_warnings():
         warnings.simplefilter("error")
-        assert server._from_file("VIKUNJA_URL") is None
+        assert config._from_file("VIKUNJA_URL") is None
 
 
 def test_warns_when_others_can_read_the_file_but_still_reads_it(config_file):
@@ -127,7 +128,7 @@ def test_warns_when_others_can_read_the_file_but_still_reads_it(config_file):
     config_file.chmod(0o644)
 
     with pytest.warns(UserWarning, match="chmod 600") as caught:
-        assert server._from_file("VIKUNJA_API_TOKEN") == "tk_secret"
+        assert config._from_file("VIKUNJA_API_TOKEN") == "tk_secret"
 
     assert len(caught) == 1
     message = str(caught[0].message)
@@ -144,7 +145,7 @@ def test_does_not_warn_when_only_the_owner_can_read_the_file(config_file):
 
     with warnings.catch_warnings():
         warnings.simplefilter("error")
-        assert server._from_file("VIKUNJA_API_TOKEN") == "tk_secret"
+        assert config._from_file("VIKUNJA_API_TOKEN") == "tk_secret"
 
 
 def test_warns_once_per_file_not_once_per_read(config_file):
@@ -155,9 +156,9 @@ def test_warns_once_per_file_not_once_per_read(config_file):
     # the module's warn-once guard rather than the warnings registry.
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        server._from_file("VIKUNJA_API_TOKEN")
-        server._from_file("VIKUNJA_API_TOKEN")
-        server._from_file("VIKUNJA_URL")
+        config._from_file("VIKUNJA_API_TOKEN")
+        config._from_file("VIKUNJA_API_TOKEN")
+        config._from_file("VIKUNJA_URL")
 
     assert len(caught) == 1
 
@@ -165,29 +166,29 @@ def test_warns_once_per_file_not_once_per_read(config_file):
 def test_environment_wins_over_the_file(config_file, monkeypatch):
     config_file.write_text("VIKUNJA_URL=https://from.file/api/v1\n")
     monkeypatch.setenv("VIKUNJA_URL", "https://from.env/api/v1")
-    assert server._conf("VIKUNJA_URL") == "https://from.env/api/v1"
+    assert config._conf("VIKUNJA_URL") == "https://from.env/api/v1"
 
 
 def test_falls_back_to_the_file_when_the_environment_is_unset(config_file, monkeypatch):
     config_file.write_text("VIKUNJA_URL=https://from.file/api/v1\n")
     monkeypatch.delenv("VIKUNJA_URL", raising=False)
-    assert server._conf("VIKUNJA_URL") == "https://from.file/api/v1"
+    assert config._conf("VIKUNJA_URL") == "https://from.file/api/v1"
 
 
 def test_base_strips_a_trailing_slash(monkeypatch):
     monkeypatch.setenv("VIKUNJA_URL", "https://vikunja.test/api/v1/")
-    assert server._base() == "https://vikunja.test/api/v1"
+    assert config._base() == "https://vikunja.test/api/v1"
 
 
 def test_base_raises_when_the_url_is_unset(config_file, monkeypatch):
     monkeypatch.delenv("VIKUNJA_URL", raising=False)
     with pytest.raises(RuntimeError, match="VIKUNJA_URL is not set"):
-        server._base()
+        config._base()
 
 
 def test_headers_carry_the_bearer_token(monkeypatch):
     monkeypatch.setenv("VIKUNJA_API_TOKEN", "tk_abc")
-    assert server._headers() == {
+    assert config._headers() == {
         "Authorization": "Bearer tk_abc",
         "Content-Type": "application/json",
     }
@@ -196,34 +197,34 @@ def test_headers_carry_the_bearer_token(monkeypatch):
 def test_headers_raise_when_the_token_is_unset(config_file, monkeypatch):
     monkeypatch.delenv("VIKUNJA_API_TOKEN", raising=False)
     with pytest.raises(RuntimeError, match="VIKUNJA_API_TOKEN is not set"):
-        server._headers()
+        config._headers()
 
 
 def test_request_sends_the_token_and_resolves_against_the_base_url(api, run):
-    run(server._request("GET", "/projects"))
-    assert api.last.url == f"{server._base()}/projects"
-    assert api.last.headers["Authorization"] == f"Bearer {server._conf('VIKUNJA_API_TOKEN')}"
+    run(_request("GET", "/projects"))
+    assert api.last.url == f"{config._base()}/projects"
+    assert api.last.headers["Authorization"] == f"Bearer {config._conf('VIKUNJA_API_TOKEN')}"
 
 
 def test_request_reports_ok_for_no_content(api, run):
     api.returns_raw(204)
-    assert run(server._request("DELETE", "/tasks/1/labels/2")) == {"ok": True}
+    assert run(_request("DELETE", "/tasks/1/labels/2")) == {"ok": True}
 
 
 def test_request_reports_ok_for_an_empty_body(api, run):
     api.returns_raw(200)
-    assert run(server._request("GET", "/projects")) == {"ok": True}
+    assert run(_request("GET", "/projects")) == {"ok": True}
 
 
 def test_request_decodes_a_json_body(api, run):
     api.returns({"id": 7})
-    assert run(server._request("GET", "/tasks/7")) == {"id": 7}
+    assert run(_request("GET", "/tasks/7")) == {"id": 7}
 
 
 def test_request_raises_on_an_error_status(api, run):
     api.returns({"message": "not found"}, status=404)
     with pytest.raises(httpx.HTTPStatusError):
-        run(server._request("GET", "/tasks/999"))
+        run(_request("GET", "/tasks/999"))
 
 
 # --- error messages ---------------------------------------------------------
@@ -248,7 +249,7 @@ def test_request_raises_on_an_error_status(api, run):
 def test_an_error_carries_what_the_server_objected_to(api, run, payload, expected):
     api.returns(payload, status=404)
     with pytest.raises(httpx.HTTPStatusError) as caught:
-        run(server._request("GET", "/tasks/999"))
+        run(_request("GET", "/tasks/999"))
     message = str(caught.value)
     assert expected in message
     # The status line survives alongside the detail, and the type is unchanged, so
@@ -265,7 +266,7 @@ def test_an_error_carries_what_the_server_objected_to(api, run, payload, expecte
 def test_an_error_falls_back_to_the_status_line_when_the_body_explains_nothing(api, run, body):
     api.returns_raw(502, body)
     with pytest.raises(httpx.HTTPStatusError, match="502 Bad Gateway for GET"):
-        run(server._request("GET", "/projects"))
+        run(_request("GET", "/projects"))
 
 
 def test_a_redirect_is_an_error_and_names_where_it_was_sent(api, run):
@@ -276,7 +277,7 @@ def test_a_redirect_is_an_error_and_names_where_it_was_sent(api, run):
     """
     api.returns_raw(301, headers={"Location": "https://vikunja.test/api/v1/projects"})
     with pytest.raises(httpx.HTTPStatusError, match="redirected to"):
-        run(server._request("GET", "/projects"))
+        run(_request("GET", "/projects"))
 
 
 def test_main_starts_the_server(monkeypatch):
