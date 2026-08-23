@@ -10,7 +10,7 @@ resolution-markers = [
 
 [[package]]
 name = "altiplano"
-version = "0.14.1"
+version = "1.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },

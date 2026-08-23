@@ -4,7 +4,6 @@
 [![codecov](https://codecov.io/gh/aichholzer/altiplano/graph/badge.svg?token=l7Svxa1x0X)](https://codecov.io/gh/aichholzer/altiplano)
 [![Python](https://img.shields.io/badge/python-%3E%3D3.10-blue.svg)](https://www.python.org/)
 [![PyPI version](https://img.shields.io/pypi/v/altiplano.svg)](https://pypi.org/project/altiplano/)
-[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/altiplano.svg)](https://pypi.org/project/altiplano/)
 [![License](https://img.shields.io/github/license/aichholzer/altiplano)](LICENSE)
 
 # Altiplano
@@ -171,6 +170,17 @@ uvx altiplano@latest                    # from PyPI, refreshing the cache
 - The UI shows tasks by their project-local `identifier` (e.g. `#50`), which is not the global `id` the API uses.
 - Verified end to end against Vikunja v2.5.0 on both `/api/v1` and `/api/v2`.
 - `list_assignees` needs a server where `GET /tasks/{id}/assignees` works. It answers 500 on v2.3.0, which was a server-side bug, and works on v2.5.0. Every other tool works on both.
+
+## Stability
+
+Stable from 1.0.0, and SemVer is a contract from here rather than a description.
+
+- Tool names, their arguments and defaults, the shape of what they return, and how
+  credentials are resolved: covered. Removing or renaming any of that means a major bump.
+- A new tool, or a new optional argument on an existing one: a minor bump.
+- Anything underscore-prefixed is internal, in whichever module it lives. Not API, no promises.
+
+Verified against Vikunja 2.5.0 on both `/api/v1` and `/api/v2`, tool by tool, and not only against the test suite. The one thing that does not work is `list_bucket_tasks` on v2 with an API token, which is server-side; see the note under Kanban above.
 
 ## Layout
 
