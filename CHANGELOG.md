@@ -2,370 +2,186 @@
 
 All notable changes to this project are documented here.
 
+## [1.0.0]
+
+Stable. The tool surface is settled, and SemVer applies from here: tool names, their
+arguments and defaults, the shape of what they return, and how credentials are
+resolved. Adding a tool or an optional argument is a minor bump; removing or renaming
+any of the above is a major one. Names prefixed with an underscore are internal.
+
+Released together with 0.10.1 through 0.14.1 below, so PyPI goes from 0.10.0 to
+1.0.0. `Development Status` moves to `5 - Production/Stable`.
+
+Every tool is verified against Vikunja 2.5.0 on both `/api/v1` and `/api/v2`. 226
+tests, 100 percent statement and branch coverage, on Python 3.10 and 3.13.
+
+Known issue: `list_bucket_tasks` fails on v2 with an API token; see 0.12.0.
+
 ## [0.14.1]
 
 ### Changed
 
-- `server.py` is now a package. It had reached 988 lines and 34 tools, so it is
-  split along the same seams the README uses: `app.py` holds the MCP instance,
-  `config.py` resolves credentials, `api.py` owns the version differences and the
-  request layer, and `tools/` has a module per section. `server.py` keeps only the
-  imports that register the tools and `main`.
+- `server.py` is split into a package. `app.py` holds the MCP instance, `config.py`
+  resolves credentials, `api.py` owns the version differences and the request layer,
+  and `tools/` has one module per section of the README. `server.py` keeps the imports
+  that register the tools, and `main`.
 
-  `app.py` exists to break a cycle rather than out of taste. Every tool module needs
-  the instance for `@mcp.tool()`, and `server` needs to import every tool module so
-  that decorator runs. With the instance in `server`, those two facts are a circular
-  import; in its own module, importing nothing of ours, there is no cycle to reason
-  about.
+  The instance needs a module of its own because the tool modules import it and
+  `server` imports them, which in one file is a circular import.
 
-  Two modules for the support layer rather than four. `_date` and `_task_summary`
-  are shaping rather than transport and could argue for a third file, but a module
-  holding three helpers earns less than it costs to look in.
-
-  No behaviour changed. The tool bodies were moved by line range rather than retyped,
-  so nothing could drift in transcription, and the suite is unchanged at 226 tests
-  and 100 percent statement and branch coverage. Two of those tests are what make
-  the move safe to believe: one compares the registered tools against a written list
-  of all 34 names, so a module that fails to import or an instance that ends up
-  duplicated fails loudly, and one loads the console script, keeping
-  `altiplano.server:main` honest.
-
-  The tests moved with the code, since `server` no longer owns any of it. Two of
-  their patches needed thought rather than renaming, because rebinding a name in one
-  module never reaches another: `_CONFIG_FILE` and `_file_cache` are now patched on
-  `config`, and the fake transport is installed on `httpx` itself rather than through
-  whichever module happens to call it, which is both simpler and indifferent to where
-  the client gets built.
+  No behaviour changed.
 
 ## [0.14.0]
 
 ### Added
 
-- `delete_label`, closing an asymmetry 0.13.0 opened by adding `create_label` with
-  no counterpart. It deletes the label everywhere, taking it off every task that
-  carries it, which is a different thing from `remove_label` detaching it from one.
-
-- `create_bucket` and `delete_bucket`, so a kanban board's columns can be managed
-  and not merely read. `create_bucket` takes an optional `limit`, the cap on how
-  many tasks the column accepts.
-
-  These exist because of a workflow requirement rather than for completeness: a
-  steering rule that moves a task into a `Doing` column when work starts has to be
-  able to create that column on a board that has none. `delete_bucket` comes along
-  so the same asymmetry is not opened twice in a week.
-
-  Deleting a column does not delete its tasks. Vikunja moves them to the default
-  bucket, confirmed live: a task in a deleted column reappeared in To-Do. A view
-  keeps at least one column, so the last cannot be removed.
-
-  Not included: renaming a bucket or changing its limit or position. Nothing needs
-  it, and three tools that answer a real requirement are worth more than a complete
-  CRUD set that does not.
+- `delete_label` (label_id), which deletes a label everywhere, as distinct from
+  `remove_label` detaching it from a single task.
+- `create_bucket` (project_id, title, view_id?, limit?) and `delete_bucket`
+  (project_id, bucket_id, view_id?). Deleting a column moves its tasks to the default
+  column rather than deleting them, and a view keeps at least one column.
 
 ## [0.13.0]
 
 ### Added
 
-- Five tools, taking the surface to 31: `search_tasks`, `move_task`,
-  `duplicate_task`, `bulk_update_tasks` and `create_label`. These were offered in a
-  branch referenced from PR #4's comments, approved there, and never submitted as a
-  pull request. Each was rebuilt from the spec rather than copied, and two of the
-  fork's versions could not have worked:
-
-  `search_tasks` is the first tool here that does not need to be told a project. The
-  fork targets `/tasks/all`, which does not exist on either API version of 2.5.0;
-  the cross-project route is `GET /tasks`, and it takes the same `s` on v1 and `q`
-  on v2 rename that `search_users` already handles. Results carry `project_id`,
-  because not knowing which project a task is in is the reason to reach for this.
-
-  `duplicate_task` takes no target project, where the fork offered one. The endpoint
-  accepts no body at all: it copies into the same project and records a `copiedfrom`
-  relation back to the original, both confirmed live. Duplicating elsewhere is this
-  followed by `move_task`, which the docstring says.
-
-  `move_task` exists because Vikunja has no move endpoint. A task's `project_id` is
-  writable, and the v2 schema is explicit that setting it to another project is the
-  move, so this goes through the same write path `update_task` uses, now factored
-  out as `_write_task`. The task keeps its labels, assignees, comments and relations;
-  its project-local `identifier` is reassigned on arrival, observed live as `#57`
-  becoming `HOME-1`.
-
-  `bulk_update_tasks` sends field names separately from values, which is what the
-  endpoint wants and what makes it a genuine partial update even on v1, where a
-  single-task update is not.
-
-  `create_label` closes the gap where labels could be listed and attached but never
-  created.
+- `search_tasks` (query?, filter?, sort_by?, page, per_page), the first tool that does
+  not need to be told a project. `GET /tasks` on both versions, with the same `s` on
+  v1 and `q` on v2 rename `search_users` uses. Results carry `project_id`.
+- `move_task` (task_id, project_id). Vikunja has no move endpoint: `project_id` is
+  writable and setting it is the move. The task's project-local `identifier` is
+  reassigned on arrival.
+- `duplicate_task` (task_id). Copies into the same project with a `copiedfrom`
+  relation back to the original. The endpoint takes no target project, so duplicating
+  elsewhere is this followed by `move_task`.
+- `bulk_update_tasks` (task_ids, done?, priority?). Field names are sent separately
+  from values, so only the named fields are written, on either version.
+- `create_label` (title, hex_color?, description?).
 
 ### Changed
 
 - `move_task_to_bucket` no longer takes `project_id`. It reads the project from the
-  task, which costs a request and removes an argument that could contradict the task
-  it was given; a mismatched one produced a 404 from a path that looked correct.
-  This was a review point on PR #4 that went unanswered there and applied equally to
-  the version shipped in 0.12.0, which has not been released.
+  task: one more request, one fewer argument that can contradict the task it is given.
 
 ## [0.12.0]
 
 ### Added
 
-- Kanban tools, taking the surface to 26: `list_kanban_views`, `list_buckets`,
-  `list_bucket_tasks`, `list_task_buckets` and `move_task_to_bucket`. Boards were
-  the largest thing this server could see nothing of.
+- Kanban tools: `list_kanban_views`, `list_buckets`, `list_bucket_tasks`,
+  `list_task_buckets` and `move_task_to_bucket`.
 
-  Buckets belong to a view rather than to a project, so each tool resolves one
-  first. `view_id` is optional and the first kanban view is taken, which is the only
-  one most projects have; views arrive ordered by position, so "first" means the
-  leftmost tab rather than an arbitrary pick. Naming a view that is not kanban, or
-  one that does not exist, fails with a message that says which of the two happened.
+  Buckets belong to a view rather than to a project, so each tool resolves one first.
+  `view_id` is optional and the first kanban view is used, which is the only one most
+  projects have.
 
-  `move_task_to_bucket` carries side effects, all documented on the tool: the done
-  bucket marks a task done and moving out of it un-marks it, both confirmed live on
-  both API versions; a repeating task moved into the done bucket is reopened and sent
-  to the default bucket; and a bucket at its task limit refuses the move.
+  `move_task_to_bucket` has side effects, listed on the tool: the done bucket marks a
+  task done and moving out of it un-marks it, a repeating task moved into the done
+  bucket is reopened and sent to the default bucket, and a bucket at its task limit
+  refuses the move.
 
-  This was the second half of PR #4's suggestion, though little of the PR survived
-  contact with the spec:
-
-  The PR reads grouped buckets from `GET /views/{view}/tasks`. On v2 that route
-  "always returns flat tasks, even for a kanban view", and grouping moved to
-  `GET /views/{view}/buckets/tasks`, which v1 does not have at all. The path
-  therefore forks by version, and three of the PR's tools would have misread v2.
-
-  The PR hardcodes `POST` for the move, which is v1's verb; v2 wants `PUT`. That is
-  the same pair `_replace_task` and `update_comment` already needed, so `_VERBS`
-  gained a third action, `replace`, and all three call sites now go through it
-  instead of spelling the versions out locally.
-
-  The PR spends an extra request per `list_buckets` call to read bucket counts from
-  the tasks endpoint. Counts are genuinely absent from the buckets endpoint,
-  confirmed live as `count: 0` on a bucket holding 23 tasks, but the answer is not to
-  pay for them: `list_buckets` omits the field rather than reporting a zero that is
-  a lie, and `list_bucket_tasks` carries the real numbers.
-
-  The PR's `get_task_bucket` costs three requests. `GET /tasks/{id}?expand=buckets`
-  answers directly on both versions, so `list_task_buckets` is one, and it returns a
-  list because a task holds a bucket in every kanban view its project has.
+  Buckets with their tasks come from `GET /views/{view}/tasks` on v1 and
+  `GET /views/{view}/buckets/tasks` on v2, which v1 does not have; on v2 the view
+  tasks route returns flat tasks even for a kanban view. `list_buckets` omits task
+  counts because that endpoint does not populate them, and `list_bucket_tasks`
+  carries them. `list_task_buckets` reads `GET /tasks/{id}?expand=buckets` and returns
+  one entry per kanban view, since a task holds a bucket in each.
 
 ### Note
 
-- `list_bucket_tasks` does not work on v2 with an API token, on Vikunja 2.5.0. That
-  route answers 401 while every sibling accepts the same token and the v2 spec
-  documents it as accepting one, so the likely cause is a token predating the route
-  and lacking permission for it. It ships anyway, with that 401 mapped to an
-  explanation rather than Vikunja's claim that the token is invalid, on the
-  precedent of 0.5.6 keeping `list_assignees` on an endpoint that was broken
-  server-side at the time. v1 serves the same data and was confirmed working.
+- `list_bucket_tasks` does not work on v2 with an API token on Vikunja 2.5.0. That
+  route answers 401 while every sibling accepts the same token, which suggests a token
+  predating the route and lacking permission for it. The 401 is reported with that
+  explanation rather than Vikunja's claim that the token is invalid, and `/api/v1`
+  serves the same data.
 
 ## [0.11.0]
 
 ### Added
 
 - `percent_done`, `is_favorite`, `repeat_after` and `repeat_mode` on `create_task`
-  and `update_task`, following the existing rule that a field reaches the payload
-  only if it was passed. These were the remaining writable scalars on a task that
-  this server could not set. What is left is either read-only, owned by a dedicated
-  endpoint, or kanban state.
+  and `update_task`.
 
-  Lifted from the suggestion in PR #4 rather than the PR itself, and each field
-  checked against the spec instead of taken on trust, which was worth doing:
+  `percent_done` is a fraction despite the name: a quarter done is 0.25. Nothing
+  validates it, so 50 is stored as 50 rather than read as 50 percent.
 
-  `repeat_mode` is the enum `[0, 1, 2]`, generated from the Go type as
-  `TaskRepeatModeDefault`, `TaskRepeatModeMonth` and `TaskRepeatModeFromCurrentDate`.
-  Vikunja's own description of the field disagrees with its own enum, announcing
-  "three possible values" and then listing 0, 1 and 3. The enum wins, and both the
-  docstrings and the README note the discrepancy so the next reader does not take
-  the prose for gospel.
-
-  `percent_done` is a fraction despite its name: a quarter done is 0.25. The spec
-  documents no range at all, so this was settled against a live server, which also
-  turned up that nothing validates it. Passing 50 stores 50, neither clamped nor
-  read as 50 percent. Documented rather than corrected, since silently dividing a
-  caller's number by 100 would be a worse surprise than the one it prevents.
-
-  `is_favorite` is per-user state, and writable through the task rather than through
-  a separate endpoint. Confirmed both directions live.
-
-  All four are falsy at their "off" value, so a truthiness check in the payload
-  builder would drop exactly `percent_done=0`, `is_favorite=False`, `repeat_after=0`
-  and `repeat_mode=0`. Tests pin each one, on both tools.
+  `repeat_after` is a number of seconds, and a repeating task reopens itself when
+  marked done, so one with no dates cannot be closed. `repeat_mode` is 0 to advance by
+  `repeat_after`, 1 to repeat monthly, 2 to count from the day it was completed.
+  Vikunja's description of that field says 3 for the last one; its generated enum
+  says 2.
 
 ## [0.10.1]
 
 ### Fixed
 
-- Stopped sending `?format=markdown` on a v2 partial update, which 0.9.0 added on a
-  premise that turned out to be wrong. The theory was that v2 ignored the parameter
-  only for the request body, so asking for the response in Markdown would cost
-  nothing and make `update_task` answer in the same format as `get_task`. Tested
-  against 2.5.0 as soon as a released build could reach a live server, it ignores
-  the parameter for the response as well: a description stored as
-  `<p><strong>Bold</strong> and <code>code</code></p>` came back exactly that way
-  with the parameter set.
-
-  So the inconsistency it was meant to remove is still there, and cannot be removed
-  by asking. `update_task` and `set_reminders` return the description as stored HTML
-  on v2, and `get_task` returns Markdown. The parameter is gone rather than left in
-  place, because one the server discards suggests a guarantee that does not hold,
-  and the next person to read that line would believe it.
-
-  The docstring and the README now say so, which is the only fix available short of
-  spending a second request on a follow-up read after every partial update. That is
-  not worth it for a difference in the shape of a return value that callers can
-  resolve with `get_task`.
-
-  The 0.9.0 and 0.10.0 entries are left as written. They record what was believed at
-  the time, and this one records what testing showed.
+- Stopped sending `?format=markdown` on a v2 partial update, added in 0.9.0 on the
+  assumption that v2 ignored it only for the request body. It ignores it for the
+  response as well, so the parameter did nothing. `update_task` and `set_reminders`
+  return the description as stored HTML on v2, where `get_task` returns Markdown.
 
 ## [0.10.0]
 
 ### Added
 
-- `add_relation` (task_id, other_task_id, relation_kind) and `remove_relation`,
-  taking the tool surface to 21. Relations could be read, through the
-  `related_tasks` field `get_task` returns, but not created or removed, so linking
-  two tasks meant leaving the MCP and doing it in the web UI. That is exactly the
-  gap an MCP server exists to close, and it came up filing one task that revisited
-  the decision recorded in another.
+- `add_relation` (task_id, other_task_id, relation_kind) and `remove_relation`.
+  Relations could be read through `get_task`'s `related_tasks` but not changed.
 
-  `relation_kind` defaults to `related`, the symmetric case, so the common call is
-  `add_relation(415, 397)` with nothing else to decide. The other kinds are
-  `subtask`, `parenttask`, `duplicateof`, `duplicates`, `blocking`, `blocked`,
-  `precedes`, `follows`, `copiedfrom` and `copiedto`. Direction matters for the
-  asymmetric ones: the base task is the one in the path, and `subtask` makes the
-  other task a child of it.
-
-  The kind is passed straight through rather than validated against a local copy of
-  the enum, the same way `filter` is. The server owns that vocabulary, a local copy
-  would be one more thing to keep in sync, and since 0.9.0 a rejected value comes
-  back with Vikunja's own explanation attached. The docstrings list the kinds,
-  which is where an agent will actually read them.
+  `relation_kind` defaults to `related`. The others are `subtask`, `parenttask`,
+  `duplicateof`, `duplicates`, `blocking`, `blocked`, `precedes`, `follows`,
+  `copiedfrom` and `copiedto`. Direction matters for the asymmetric ones: the base
+  task is the one in the path, so `subtask` makes the other task its child. Vikunja
+  maintains the inverse side itself.
 
   No `list_relations`, because `get_task` already returns them grouped by kind.
-
-  Endpoints came from the v1 OpenAPI spec: `PUT /tasks/{id}/relations` on v1 and
-  `POST` on v2, through the existing verb table, and
-  `DELETE /tasks/{id}/relations/{kind}/{otherID}`. The spec marks a request body as
-  required on the delete too, even though the path carries the same three values,
-  so both are sent, built from the same arguments and unable to disagree.
-
-  Two things this does not establish. Whether Vikunja creates the inverse relation
-  by itself, which matters most for `subtask` and `parenttask`. And whether the v2
-  paths match v1, assumed here as they are for every other tool, with the v1 spec's
-  reference to "the v2 delete route param" as corroboration rather than proof.
 
 ## [0.9.0]
 
 ### Added
 
-- `update_task` takes `due_date`. `create_task` always did, so a deadline could be
-  set when a task was created and never changed afterwards; the field went to the
-  same endpoint as `start_date` and `end_date`, which were already there, so this
-  was an omission rather than a limitation.
-
-  Checked against the API before implementing rather than assumed: the v1 OpenAPI
-  model documents `due_date` as writable, unlike `done_at`, which says it is
-  system-controlled, and `created`, which says it cannot be changed. The v2 docs
-  state the JSON models are identical across versions.
-
+- `update_task` takes `due_date`, which `create_task` already had.
 - Dates can be cleared, by passing an empty string to `due_date`, `start_date` or
-  `end_date` on either `create_task` or `update_task`. They could previously only
-  be overwritten with another date.
-
-  Vikunja has no null for a date. An unset one is Go's zero time,
-  `0001-01-01T00:00:00Z`, on the wire and in the database, and an empty string is
-  not a datetime it will parse, so clearing means writing that value. `None`
-  already means "leave this field out of the payload", which is why the empty
-  string carries the meaning instead of a second argument saying the same thing.
-
-  This is the value `_replace_task` has been round-tripping for unset dates since
-  0.7.0, verified lossless at the time, so it was already known to work.
+  `end_date` on either tool. Vikunja has no null for a date: an unset one is the zero
+  time, `0001-01-01T00:00:00Z`, and that is what gets written.
 
 ### Changed
 
-- Errors now carry what the server objected to. `raise_for_status()` reported the
-  status code and nothing else, so a rejected filter expression and a task that
-  does not exist both arrived as a bare `400` or `404`, leaving an agent nothing to
-  correct. Vikunja explains itself in the body: v1 in `message`, v2 as RFC 9457
-  problem+json in `detail`, alongside its own numeric error code. All of it is now
-  in the raised message.
+- Errors carry what the server objected to rather than only a status code: v1's
+  `message`, or v2's RFC 9457 `detail` and numeric code. Still an
+  `httpx.HTTPStatusError`, so branching on `response.status_code` is unaffected.
 
-  Still an `httpx.HTTPStatusError`, so anything branching on
-  `response.status_code` is unaffected. Only the message changed.
+  Any non-2xx now raises, so a redirect fails instead of being decoded as a result,
+  and the message names the `Location` it was sent to.
 
-  It also raises on any non-2xx rather than only on 4xx and 5xx, which is what
-  `raise_for_status` did. A redirect is a failure here: it means `VIKUNJA_URL` is
-  wrong, and decoding the redirect body as a result would hide that. The message
-  names the `Location` it was sent to, because that is usually the whole diagnosis.
+- A description change on v2 sends the ETag from its read back as `If-Match`, so a
+  task modified in between fails with a message to read it again rather than being
+  silently overwritten. Sent only when the read supplied an ETag.
 
-- A description change on v2 sends the ETag from its read back as `If-Match`. That
-  read-then-replace has had a lost-update window since 0.7.0, documented and
-  accepted because there was no way to detect it. v2 returns an ETag on
-  single-resource reads and honours preconditions, so the window now fails with a
-  message saying to read the task again, instead of silently discarding whatever
-  was written in between.
-
-  The header goes out only when the read supplied an ETag, so a server that does
-  not offer them behaves exactly as before.
-
-- A partial update on v2 now asks for its response in Markdown, like every other
-  read. `update_task` and `set_reminders` were answering with raw HTML in the
-  description while `get_task` answered with Markdown, so the same field arrived in
-  two different formats depending on which tool produced it. v2 ignores that
-  parameter for a `PATCH` request body, which is why a description never routes
-  through `PATCH` in the first place, but nothing stopped us asking for the response
-  in the same currency as everything else.
-
-- The credentials file is parsed once per change to it, rather than once per
-  lookup. `_base`, `_headers` and `_version` each resolve config independently, so
-  a single tool call read and parsed the file three or four times. The cache is
-  keyed on the file's mtime and size, not held for the life of the process, so a
-  rotated token is still picked up without a restart.
+- The credentials file is parsed once per change to it rather than once per lookup,
+  keyed on its mtime and size, so a rotated token is still picked up without a
+  restart.
 
 ### Fixed
 
-- `update_task` and `set_reminders` no longer destroy data on v1. That API has no
-  partial update: `POST /tasks/{id}` is a replace, so a body carrying only the
-  changed fields reset every other field to its zero value. Passing `priority`
-  blanked the description; closing a task with `done` discarded its description,
-  priority and dates; `set_reminders` did the same through the same endpoint. Both
-  tools now read the task first and merge the changes into it.
+- `update_task` and `set_reminders` no longer discard fields on v1. That API has no
+  partial update: `POST /tasks/{id}` is a replace, so a body carrying only the changed
+  fields reset every other field to its zero value. Both tools now read the task and
+  merge the changes into it.
 
-  0.8.1 found this, documented it, and deliberately left it, on the grounds that
-  fixing it would spend an extra request on every v1 call to protect a path v2
-  users never take. That weighed one request against silent data loss, which is the
-  wrong way round, and it had already cost a real task its description before the
-  cause was understood. Anyone still on v1 was one careless call away from the
-  same.
+  v1 updates cost two requests. v2 is untouched and stays a single `PATCH` unless a
+  description is involved. v1 cannot detect a concurrent edit, having no ETag to send.
 
-  The mechanism is the read-then-merge that `_replace_task` already performed for
-  the v2 Markdown path, so this is a routing change and a version-aware verb rather
-  than a new mechanism. v1 updates now cost two requests. v2 is untouched, and
-  stays a single `PATCH` unless a description is involved.
+- A credentials file that cannot be read warns once, naming the path and the error but
+  never the contents, instead of raising an `OSError` from inside `_base`.
 
-  What v1 still cannot do is detect a concurrent edit: the v2 path sends the read's
-  ETag back as `If-Match`, and v1 has no ETag to send. That window is narrower than
-  the certainty of a wipe it replaces.
-
-- A credentials file that cannot be read no longer escapes as a raw `OSError` from
-  inside `_base`. Only `FileNotFoundError` was handled, so a permissions problem on
-  the file or a directory above it surfaced as an unexplained failure of whichever
-  tool happened to be called first. It now warns once, naming the path and the
-  error but never the contents, and carries on: the environment may already hold
-  the credentials, in which case the file is irrelevant and failing would be wrong.
-
-- `_replace_task` refuses to build a full replace out of a response that is not a
-  task. A bodyless response arrives as a status dict, and replacing a task with
-  that would have wiped it. Same defect class as the listing bug fixed in 0.5.4,
-  in the one place where the consequence is destructive rather than merely
-  confusing.
+- `_replace_task` refuses to build a replace out of a response that is not a task. A
+  bodyless response arrives as a status dict, and replacing a task with that would
+  have wiped it.
 
 ### Note
 
-- `list_tasks(filter=...)` shadows the builtin deliberately. `filter` is the name
-  Vikunja gives the query parameter and the name callers already write, the builtin
-  is not used anywhere in the module, and renaming it would break the published
-  tool contract. Now commented as such, so it does not get "fixed" later.
+- `list_tasks(filter=...)` shadows the builtin deliberately: `filter` is the name
+  Vikunja gives the query parameter and the name callers write. Commented in the
+  source so it does not get "fixed" later.
 
 ## [0.8.6]
 

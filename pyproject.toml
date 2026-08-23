@@ -1,6 +1,6 @@
 [project]
 name = "altiplano"
-version = "0.14.1"
+version = "1.0.0"
 description = "Minimal MCP server for Vikunja (server-side filtering, no fluff)"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -10,10 +10,13 @@ authors = [
 ]
 keywords = ["mcp", "vikunja", "model-context-protocol", "todo", "tasks"]
 classifiers = [
-  "Development Status :: 4 - Beta",
+  "Development Status :: 5 - Production/Stable",
   "Intended Audience :: Developers",
   "Programming Language :: Python :: 3",
+  # Only the two versions CI actually runs. The ones in between will almost
+  # certainly work; claiming them without testing them is a different thing.
   "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.13",
   "Topic :: Utilities",
 ]
 dependencies = [
