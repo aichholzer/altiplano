@@ -5,9 +5,9 @@ from altiplano.app import mcp
 
 
 # There is no list_relations: `get_task` already returns `related_tasks`, grouped
-# by kind. The kind is passed through rather than checked against a local copy of
-# the enum, the same way `filter` is: the server owns that vocabulary, and it
-# explains itself when given something it does not recognise.
+# by kind. The kind is passed straight through, the same way `filter` is: the
+# server owns that vocabulary, and it explains itself when given something it does
+# not recognise.
 @mcp.tool()
 async def add_relation(task_id: int, other_task_id: int, relation_kind: str = "related") -> dict:
     """Relate one task to another. Defaults to a plain, symmetric `related` link.

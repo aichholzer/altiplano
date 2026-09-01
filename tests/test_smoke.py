@@ -7,7 +7,7 @@ agree with each other.
 
 Two constraints shape these tests. They never call `main()`, which starts the
 server and never returns. And they need no Vikunja credentials, because
-`server.py` reads config inside the request helpers rather than at import time.
+`server.py` reads config inside the request helpers, well after import time.
 """
 
 import asyncio
@@ -37,6 +37,7 @@ EXPECTED_TOOLS = {
     "search_tasks",
     "move_task",
     "duplicate_task",
+    "bulk_create_tasks",
     "bulk_update_tasks",
     "create_label",
     "delete_label",

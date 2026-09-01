@@ -183,7 +183,7 @@ def test_v2_replace_lets_any_other_failure_through_as_it_is(api, run, api_versio
 @pytest.mark.parametrize("api_version", [2])
 def test_v2_replace_refuses_a_read_that_is_not_a_task(api, run, api_version):
     """A bodyless response arrives as a status dict, and a full replace built from
-    that would wipe the task rather than update it."""
+    that would wipe the task."""
     api.returns_raw(204)
     with pytest.raises(RuntimeError, match="did not return task 7"):
         run(tasks.update_task(7, description=MD))

@@ -13,7 +13,7 @@ from altiplano.api import _request
 @pytest.fixture(autouse=True)
 def _forget_module_state():
     """Clear the warn-once record and the parse cache, so each test sees a fresh
-    module rather than a neighbour's leftovers."""
+    module, free of a neighbour's leftovers."""
     config._warned_about.clear()
     config._file_cache = None
 
@@ -94,9 +94,9 @@ def test_the_file_is_read_once_per_change_not_once_per_lookup(config_file, monke
     assert len(reads) == 1
 
     # A rotated token still has to be picked up, which is why the cache is keyed on
-    # the file rather than held for the life of the process. The replacement is the
-    # same length as the original, so size cannot be what invalidates it, and mtime
-    # is bumped explicitly rather than trusting the clock to have moved.
+    # the file and expires with it. The replacement is the same length as the
+    # original, so size cannot be what invalidates it, and mtime is bumped
+    # explicitly, because the clock may not have moved.
     config_file.write_text("VIKUNJA_URL=https://two.test/api/v1\n")
     bumped = config_file.stat().st_mtime_ns + 10**9
     os.utime(config_file, ns=(bumped, bumped))
@@ -109,7 +109,7 @@ def test_the_file_is_read_once_per_change_not_once_per_lookup(config_file, monke
 def test_warns_once_and_carries_on_when_the_file_cannot_be_read(config_file):
     """An unreadable file used to escape as a raw OSError from inside _base.
 
-    It warns rather than raises because the environment may already carry the
+    It warns and carries on, because the environment may already carry the
     credentials, in which case this file does not matter.
     """
     config_file.write_text("VIKUNJA_URL=https://from.file/api/v1\n")
@@ -153,7 +153,7 @@ def test_warns_once_per_file_not_once_per_read(config_file):
     config_file.chmod(0o644)
 
     # "always" defeats Python's own per-message dedupe, so what this counts is
-    # the module's warn-once guard rather than the warnings registry.
+    # the module's own warn-once guard, with the warnings registry out of the way.
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         config._from_file("VIKUNJA_API_TOKEN")

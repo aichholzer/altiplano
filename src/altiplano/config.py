@@ -20,7 +20,7 @@ _CONFIG_FILE = Path(
 
 # A single tool call resolves credentials three or four times, by way of _base,
 # _headers and _version, so both the warnings below and the parse itself are done
-# once per file rather than once per lookup.
+# once per file.
 _warned_about: set[tuple[Path, str]] = set()
 _file_cache: tuple[tuple[Path, int, int], dict[str, str]] | None = None
 
@@ -36,9 +36,9 @@ def _warn_once(key: tuple[Path, str], message: str) -> None:
 def _mode_warning(path: Path, mode: int) -> str | None:
     """The complaint to make when the credentials file is not chmod 600, if any.
 
-    The module docstring asks for 600; this checks it instead of trusting it. It
-    only warns, because the file belongs to the user and refusing to read one that
-    works today would be the worse trade. The message names the path and the mode,
+    The module docstring asks for 600; this verifies it. It only warns, because the
+    file belongs to the user and refusing to read one that works today would be the
+    worse trade. The message names the path and the mode,
     never the contents.
     """
     if os.name != "posix" or not mode & 0o077:
@@ -52,8 +52,7 @@ def _mode_warning(path: Path, mode: int) -> str | None:
 def _load_file() -> dict[str, str]:
     """Parse the credentials file, re-reading it only once it changes.
 
-    Keyed on mtime and size rather than cached for the life of the process, so a
-    rotated token is still picked up without a restart.
+    Keyed on mtime and size, so a rotated token is picked up without a restart.
     """
     global _file_cache
     try:
@@ -69,8 +68,8 @@ def _load_file() -> dict[str, str]:
         return {}
     except OSError as err:
         # Usually permissions, on the file itself or a directory above it. Warn
-        # rather than raise: the environment may already carry the credentials, in
-        # which case this file is irrelevant and failing here would be wrong.
+        # and carry on: the environment may already carry the credentials, in which
+        # case this file is irrelevant and failing here would be wrong.
         _warn_once((_CONFIG_FILE, "unreadable"), f"could not read {_CONFIG_FILE}: {err}")
         return {}
 

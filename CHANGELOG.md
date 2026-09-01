@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented here.
 
+## [1.1.0]
+
+### Added
+
+- `bulk_create_tasks` (project_id, tasks), which creates a batch of tasks in one
+  atomic request that keeps the order it was given. Each entry takes the same fields
+  as `create_task`, and an unrecognised key is refused.
+  Vikunja caps a batch at 100.
+
+  Vikunja added the endpoint in 2.5.0 on v2 only, so the tool fails on an `/api/v1`
+  URL. There is no fallback to one request per task.
+
+### Changed
+
+- Tool descriptions, comments and this change log reworded throughout. MCP clients
+  read the tool descriptions, so the text an agent sees when it calls Altiplano has
+  changed. No tool, argument, default or return shape has.
+
 ## [1.0.0]
 
 Stable. The tool surface is settled, and SemVer applies from here: tool names, their
@@ -39,7 +57,7 @@ Known issue: `list_bucket_tasks` fails on v2 with an API token; see 0.12.0.
   `remove_label` detaching it from a single task.
 - `create_bucket` (project_id, title, view_id?, limit?) and `delete_bucket`
   (project_id, bucket_id, view_id?). Deleting a column moves its tasks to the default
-  column rather than deleting them, and a view keeps at least one column.
+  column, leaving them intact, and a view keeps at least one column.
 
 ## [0.13.0]
 
@@ -70,7 +88,7 @@ Known issue: `list_bucket_tasks` fails on v2 with an API token; see 0.12.0.
 - Kanban tools: `list_kanban_views`, `list_buckets`, `list_bucket_tasks`,
   `list_task_buckets` and `move_task_to_bucket`.
 
-  Buckets belong to a view rather than to a project, so each tool resolves one first.
+  Buckets belong to a view, so each tool resolves one first.
   `view_id` is optional and the first kanban view is used, which is the only one most
   projects have.
 
@@ -91,7 +109,7 @@ Known issue: `list_bucket_tasks` fails on v2 with an API token; see 0.12.0.
 - `list_bucket_tasks` does not work on v2 with an API token on Vikunja 2.5.0. That
   route answers 401 while every sibling accepts the same token, which suggests a token
   predating the route and lacking permission for it. The 401 is reported with that
-  explanation rather than Vikunja's claim that the token is invalid, and `/api/v1`
+  explanation, in place of Vikunja's claim that the token is invalid, and `/api/v1`
   serves the same data.
 
 ## [0.11.0]
@@ -102,7 +120,7 @@ Known issue: `list_bucket_tasks` fails on v2 with an API token; see 0.12.0.
   and `update_task`.
 
   `percent_done` is a fraction despite the name: a quarter done is 0.25. Nothing
-  validates it, so 50 is stored as 50 rather than read as 50 percent.
+  validates it, so 50 is stored as 50 and never read as 50 percent.
 
   `repeat_after` is a number of seconds, and a repeating task reopens itself when
   marked done, so one with no dates cannot be closed. `repeat_mode` is 0 to advance by
@@ -145,20 +163,19 @@ Known issue: `list_bucket_tasks` fails on v2 with an API token; see 0.12.0.
 
 ### Changed
 
-- Errors carry what the server objected to rather than only a status code: v1's
+- Errors carry what the server objected to alongside the status code: v1's
   `message`, or v2's RFC 9457 `detail` and numeric code. Still an
   `httpx.HTTPStatusError`, so branching on `response.status_code` is unaffected.
 
-  Any non-2xx now raises, so a redirect fails instead of being decoded as a result,
-  and the message names the `Location` it was sent to.
+  Any non-2xx now raises, so a redirect fails and the message names the `Location`
+  it was sent to.
 
 - A description change on v2 sends the ETag from its read back as `If-Match`, so a
-  task modified in between fails with a message to read it again rather than being
+  task modified in between fails with a message to read it again. It is never
   silently overwritten. Sent only when the read supplied an ETag.
 
-- The credentials file is parsed once per change to it rather than once per lookup,
-  keyed on its mtime and size, so a rotated token is still picked up without a
-  restart.
+- The credentials file is parsed once per change to it, keyed on its mtime and size,
+  so a rotated token is still picked up without a restart.
 
 ### Fixed
 
@@ -171,7 +188,7 @@ Known issue: `list_bucket_tasks` fails on v2 with an API token; see 0.12.0.
   description is involved. v1 cannot detect a concurrent edit, having no ETag to send.
 
 - A credentials file that cannot be read warns once, naming the path and the error but
-  never the contents, instead of raising an `OSError` from inside `_base`.
+  never the contents. It used to raise an `OSError` from inside `_base`.
 
 - `_replace_task` refuses to build a replace out of a response that is not a task. A
   bodyless response arrives as a status dict, and replacing a task with that would
@@ -193,16 +210,16 @@ Known issue: `list_bucket_tasks` fails on v2 with an API token; see 0.12.0.
   `github-script` runs on node20. `codecov-action` is now v7.0.0, whose nested
   pin runs on node24.
 
-  A major bump rather than a patch, because the v5 line holds Node 20 on purpose.
+  A major bump, because the v5 line holds Node 20 on purpose.
   v5.5.3 bumped `github-script` to 8.x, v5.5.4 reverted it and said v6 would
-  carry the bump instead, and v6.0.0 shipped it with a warning about requiring
+  carry the bump, and v6.0.0 shipped it with a warning about requiring
   node24. So v5 is the line for runners without node24, and v5.5.5, newer by date
   than v7.0.0, contains only a signing-key change. v7.0.0 and v6.0.2 are the same
   code; v6.0.2 exists as a copy to ease upgrades.
 
-  Worth fixing now rather than when it breaks: Node 20 is due to leave the
-  runners in September 2026, and because `publish.yml` reuses this workflow, an
-  unfixed pin would fail in the release path.
+  Worth fixing ahead of the breakage: Node 20 is due to leave the runners in
+  September 2026, and because `publish.yml` reuses this workflow, an unfixed pin
+  would fail in the release path.
 
   `actions/checkout` v7.0.1 and `astral-sh/setup-uv` v9.0.0 were checked at the
   same time. Both run on node24 and nest no actions, so nothing else here is
@@ -233,15 +250,15 @@ Known issue: `list_bucket_tasks` fails on v2 with an API token; see 0.12.0.
   `httpx2 2.12.0` introduces one new name to the tree, `httpx2-jsfetch`. It is
   gated behind `sys_platform == 'emscripten'`, a Pyodide fetch backend, so it is
   recorded in the lock and installed on no platform this project runs on.
-- The publish workflow now passes the reused CI workflow only `CODECOV_TOKEN`
-  instead of `secrets: inherit`. Inherit handed the test job every repository
-  secret, `PYPI_API_TOKEN` among them, when the one it declares is the coverage
-  token, and only the publish job itself needs the publishing credential.
+- The publish workflow now passes the reused CI workflow only `CODECOV_TOKEN`. It
+  used `secrets: inherit`, which handed the test job every repository secret,
+  `PYPI_API_TOKEN` among them, when the one it declares is the coverage token, and
+  only the publish job itself needs the publishing credential.
 - Reading the credentials file now warns once when its mode lets group or others
   read or write it, naming the path and the mode but never the contents. The
   module has always asked for `chmod 600`; asking without checking meant a loose
-  file stayed quietly loose. It warns rather than refuses, because the file
-  belongs to whoever set it up.
+  file stayed quietly loose. It warns and carries on, because the file belongs to
+  whoever set it up.
 
 ## [0.8.3]
 
@@ -256,8 +273,8 @@ Known issue: `list_bucket_tasks` fails on v2 with an API token; see 0.12.0.
   gate cannot depend on it: this catches anyone who has not enabled it. It is a
   separate job because linting does not vary by Python version.
 - Ruff configuration. `TRY004` is ignored: it wants `_items` to raise
-  `TypeError`, but that guard validates an API response rather than a caller's
-  argument, and the exception type is part of a contract the tests assert.
+  `TypeError`, but that guard validates an API response, and the exception type is
+  part of a contract the tests assert.
 
 ### Fixed
 
@@ -271,7 +288,7 @@ Known issue: `list_bucket_tasks` fails on v2 with an API token; see 0.12.0.
 
 - Coverage reporting to Codecov from CI, uploaded from the Python 3.13 leg only
   since both legs produce identical figures.
-- `codecov.yml`, configuring Codecov to report rather than gate. Both statuses are
+- `codecov.yml`, configuring Codecov to report without gating. Both statuses are
   marked informational, so they show what happened to coverage without ever
   turning a pull request red. Coverage arrives as a comment and as inline
   annotations on uncovered lines in the diff.
@@ -359,21 +376,21 @@ Known issue: `list_bucket_tasks` fails on v2 with an API token; see 0.12.0.
 
 ### Changed
 
-- A description change on v2 now reads the task and writes it back whole, rather
-  than sending a partial update. This is not gratuitous: v2 honours the Markdown
-  parameter on create and on replace but silently ignores it on `PATCH`, returning
-  200 while storing the Markdown verbatim into a field rendered as HTML. A partial
-  update would therefore have corrupted the field rather than failing. Updates
-  that carry no description are untouched and remain a single request.
+- A description change on v2 now reads the task and writes it back whole. The
+  reason: v2 honours the Markdown parameter on create and on replace but silently
+  ignores it on `PATCH`, returning 200 while storing the Markdown verbatim into a
+  field rendered as HTML. A partial update would therefore have corrupted the field
+  and reported success. Updates that carry no description are untouched and remain
+  a single request.
 
   The cost is one extra request when a description changes, and a lost update if
   something else writes to the same task in between. Reading first was verified
   lossless across labels, assignees, reminders, dates, colour, priority and
   percent done.
 
-- `update_comment` uses `PUT` on v2 instead of `PATCH`, for the same reason. A
-  comment has a single writable field, so replacing and updating it are the same
-  operation, and only the replace converts Markdown.
+- `update_comment` uses `PUT` on v2, for the same reason. A comment has a single
+  writable field, so replacing and updating it are the same operation, and only the
+  replace converts Markdown.
 
 ## [0.6.0]
 
@@ -396,10 +413,9 @@ Known issue: `list_bucket_tasks` fails on v2 with an API token; see 0.12.0.
 ### Changed
 
 - `_items` unwraps a v2 pagination envelope as well as a v1 bare array. It
-  branches on the shape of the response rather than the configured version, so a
-  mismatch between the two degrades gracefully instead of breaking, and the
-  protection added in 0.5.4 against treating a bodyless response as an empty
-  collection still holds.
+  branches on the shape of the response, leaving the configured version out of it,
+  so a mismatch between the two degrades gracefully, and the protection added in
+  0.5.4 against treating a bodyless response as an empty collection still holds.
 
 ## [0.5.6]
 
@@ -409,8 +425,8 @@ Known issue: `list_bucket_tasks` fails on v2 with an API token; see 0.12.0.
   workaround. That endpoint was broken server-side on Vikunja v2.3.0 and works on
   v2.5.0, so the workaround now costs more than it saves: fetching the whole task
   to read a short user list transferred 3604 bytes where the dedicated endpoint
-  returns 157. It also returns `[]` rather than omitting the field when a task has
-  no assignees, so the empty case needs no special handling.
+  returns 157. It also always returns `[]` for a task with no assignees, so the
+  empty case needs no special handling.
 
   The tradeoff is that `list_assignees` fails again on the affected Vikunja
   versions. That failure is server-side and the fix is to upgrade; carrying a
@@ -458,9 +474,9 @@ Known issue: `list_bucket_tasks` fails on v2 with an API token; see 0.12.0.
   and body, and the response-shaping helpers are now exercised. Requests are
   intercepted at the httpx transport boundary, so URL joining, header assembly,
   status handling and JSON decoding remain genuine.
-- A coverage floor of 90 percent, enforced by `pytest` configuration rather than
-  a workflow flag so a local run and CI apply the identical gate. Dropping below
-  it fails the run, and therefore fails the pull request.
+- A coverage floor of 90 percent, enforced by `pytest` configuration, so a local
+  run and CI apply the identical gate. Dropping below it fails the run, and
+  therefore fails the pull request.
 - `test_every_tool_is_covered_by_a_routing_case` fails if a tool is added without
   a corresponding wire-contract test, so coverage cannot quietly regress as the
   tool surface grows.
@@ -477,13 +493,11 @@ Known issue: `list_bucket_tasks` fails on v2 with an API token; see 0.12.0.
 
 ### Changed
 
-- The publish workflow now calls the CI workflow instead of carrying its own copy
-  of the test job, so the release gate and the pull request gate cannot drift
-  apart.
-- The publish step names both artefacts explicitly rather than relying on
-  `uv publish`'s default of uploading everything in `dist/`. The upload is now
-  bounded to the version being released, and fails loudly if either file is
-  missing or misnamed.
+- The publish workflow now calls the CI workflow, having dropped its own copy of
+  the test job, so the release gate and the pull request gate cannot drift apart.
+- The publish step names both artefacts explicitly, leaving `uv publish`'s default
+  of uploading everything in `dist/` unused. The upload is now bounded to the
+  version being released, and fails loudly if either file is missing or misnamed.
 
 ## [0.5.1]
 
@@ -492,7 +506,7 @@ Known issue: `list_bucket_tasks` fails on v2 with an API token; see 0.12.0.
 - A manually triggered GitHub Actions workflow that publishes to PyPI. It runs
   the tests on Python 3.10 and 3.13, refuses to republish a version that already
   exists on PyPI, builds with `--no-sources`, and imports the built wheel before
-  uploading, so a packaging mistake fails the run instead of reaching users.
+  uploading, so a packaging mistake fails the run and never reaches users.
 - A smoke test suite covering module import, tool registration, console script
   resolution, and version agreement between `pyproject.toml` and `__init__.py`.
   0.4.0 shipped an import error that broke every launch; these are the checks
