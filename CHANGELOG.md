@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented here.
 
+## [1.2.0]
+
+### Added
+
+- An MCP prompt, `altiplano_guide`, carrying the usage guidance that spans several
+  tools: resolving ids by name, the sequences a caller has to follow, the calls that
+  cannot be undone, and what differs between the two API versions. Clients that
+  surface prompts list it as `Using Altiplano`.
+
+- `AGENTS.md`, covering the commands, layout and conventions for working on
+  Altiplano, with `CLAUDE.md` importing it for Claude Code.
+
 ## [1.1.0]
 
 ### Added

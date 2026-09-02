@@ -101,6 +101,12 @@ Bucket behaviour:
 
 </details>
 
+## Guidance
+
+The server ships one prompt, `altiplano_guide`, holding the usage guidance an agent needs before it starts writing: how to resolve ids by name, which sequences span several tools, which calls cannot be undone, and what differs between the two API versions. Clients that surface prompts list it as `Using Altiplano`.
+
+`AGENTS.md` in this repository carries a summary of the same material, along with the commands and layout for working on Altiplano itself. `CLAUDE.md` imports that file, since Claude Code reads only its own.
+
 ## Credentials
 
 Altiplano checks these sources in order:
@@ -221,11 +227,12 @@ uvx --refresh-package altiplano altiplano@latest      # current PyPI release
 
 ```text
 src/altiplano/
-  app.py       MCP instance imported by the tool modules
+  app.py       MCP instance imported by the tool and prompt modules
   config.py    Credential resolution and credential-file parsing
   api.py       API-version handling, requests, and response shaping
+  prompts.py   The usage guidance, served as a prompt
   tools/       One module for each tool group
-  server.py    Tool registration and the main entry point
+  server.py    Registration and the main entry point
 ```
 
 Register a tool group by adding its module and importing it from `server.py`. Add its tools to the routing-table test and the smoke test's exact list.

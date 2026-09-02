@@ -4,17 +4,20 @@ Filtering and sorting are passed straight to the Vikunja API (server-side), so
 there is no client-side filtering engine to get wrong.
 
 There is no logic here. Importing the tool modules registers their tools,
-since `@mcp.tool()` runs at import time, and `main` serves them. The parts are:
+since `@mcp.tool()` runs at import time, and `main` serves them. The prompt
+module registers the same way. The parts are:
 
   `app`      the MCP instance the tools decorate
   `config`   where credentials come from
   `api`      the version differences, the request layer, response shaping
   `tools/`   one module per section, as listed in the README
+  `prompts`  the usage guidance, served as a prompt
 
 Credentials are resolved without storing secrets in a shared mcp.json; see
 `config` for the order they are looked up in.
 """
 
+from altiplano import prompts
 from altiplano.app import mcp
 from altiplano.tools import (
     assignees,
@@ -36,6 +39,7 @@ __all__ = [
     "main",
     "mcp",
     "projects",
+    "prompts",
     "relations",
     "tasks",
 ]
