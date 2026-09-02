@@ -24,6 +24,9 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- CI runs on a push to `main` as well as on a pull request, so every commit landing
+  on `main` uploads coverage and Codecov has a current base for the next comparison.
+
 - Tool descriptions, comments and this change log reworded throughout. MCP clients
   read the tool descriptions, so the text an agent sees when it calls Altiplano has
   changed. No tool, argument, default or return shape has.
