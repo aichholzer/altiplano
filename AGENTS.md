@@ -1,7 +1,22 @@
 # Working on Altiplano
 
-An MCP server exposing Vikunja as tools. Python, `uv`, no runtime dependencies
-beyond `mcp` and `httpx`.
+Altiplano is an MCP server exposing Vikunja as tools. Python, `uv`, no runtime
+dependencies beyond `mcp` and `httpx`.
+
+This file is for an agent working inside a checkout. The wheel contains
+`src/altiplano` alone, so an agent that only calls the tools gets its guidance
+from the handshake instructions and the `altiplano_guide` prompt.
+
+## Installing it for someone
+
+If the job is to get Altiplano running for a user, follow `## Install` in
+`README.md`: `uv`, a Vikunja API token, a credentials file, the client's MCP
+entry, then one `list_projects()` call to confirm.
+
+Three things go wrong there. `VIKUNJA_URL` has to end in `/api/v1` or `/api/v2`,
+because that suffix alone selects the version. The token belongs in the
+credentials file, which leaves the MCP entry free of secrets. And a terminal run
+of `uvx altiplano` prints nothing and waits, since it speaks MCP over stdio.
 
 ## Commands
 
@@ -31,7 +46,7 @@ src/altiplano/
 Adding a tool means three edits beyond the tool itself: import its module from
 `server.py`, add a routing case in `tests/test_tools.py`, and add the name to the
 exact set in `tests/test_smoke.py`. Both tests fail on an unregistered or
-undocumented tool, which is deliberate.
+undocumented tool.
 
 ## Conventions
 
@@ -56,8 +71,10 @@ A tool module should not branch on the version unless the endpoint itself differ
 ## Driving the tools
 
 The server ships the full runtime guidance as an MCP prompt named
-`altiplano_guide`. Load it before making calls; it covers id resolution,
-cross-tool sequencing, and the operations that cannot be undone.
+`altiplano_guide`. Load it before making calls: clients list it in a prompt picker
+as `Using Altiplano`, and an agent can fetch it directly with a `prompts/get` call
+for that name. It covers id resolution, cross-tool sequencing, the calls that
+cannot be undone, and the v1 and v2 differences.
 
 Three rules matter before anything else, because they are where an agent goes
 wrong first:
@@ -66,5 +83,4 @@ wrong first:
   the matching list or search tool, then carry the id.
 - `delete_task()`, `delete_label()` and `delete_bucket()` cannot be undone
   through this API. Confirm the target id first.
-- Moving a task between kanban buckets changes whether it is done, so a bucket
-  move writes task state.
+- Moving a task between kanban buckets changes whether it is done.

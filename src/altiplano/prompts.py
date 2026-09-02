@@ -1,14 +1,11 @@
 """The usage guidance, served as an MCP prompt.
 
-Each tool description covers one tool. None of them can cover which tool to reach
-for, the order calls have to happen in, or the calls that do more than they appear
-to. `GUIDE` holds that, and it is the authoritative copy: `AGENTS.md` carries a
-summary and points here.
+`GUIDE` covers what a single tool description cannot: which tool to reach for, the
+order calls happen in, and the calls that do more than they appear to.
 
-Every tool reference in the text is written with parentheses, `list_buckets()`, so
-`tests/test_prompts.py` can extract them and check each one against the registry.
-Parameter and field names never take parentheses, which keeps the extraction
-unambiguous. Renaming a tool without updating the guidance fails that test.
+Tool references carry parentheses, `list_buckets()`, so `tests/test_guidance.py`
+can extract them and check each against the registry. Parameter names never take
+parentheses.
 """
 
 from altiplano.app import mcp
@@ -16,14 +13,14 @@ from altiplano.app import mcp
 GUIDE = """\
 # Using Altiplano
 
-Altiplano exposes a Vikunja instance as MCP tools. Below is the part the
-individual tool descriptions cannot carry: which tool to reach for, the order
-calls happen in, and where a call does more than it appears to.
+Altiplano exposes a Vikunja instance as MCP tools. This covers what the individual
+tool descriptions cannot: which tool to reach for, the order calls happen in, and
+where a call does more than it appears to.
 
 ## Resolve ids before using them
 
-Every id is volatile. Treat one you remember as a cache that may have expired,
-and resolve names through the API:
+Every id is volatile. Resolve names through the API, and re-resolve anything
+remembered from an earlier session:
 
 - Projects: `list_projects()`, matching on title. `parent_project_id` shows
   sub-project nesting.
@@ -85,8 +82,8 @@ refuses the entire request, and nothing changes.
 
 A task holds a position in every kanban view of its project, so a project with
 two boards puts that task in two columns. `list_task_buckets()` reports them all.
-Read any other way, a task's `bucket_id` is `0`, because the field only carries
-meaning inside a view.
+Read any other way, a task's `bucket_id` is `0`, because the field only means
+something inside a view.
 
 `move_task_to_bucket()` does more than move a card:
 
@@ -104,7 +101,7 @@ columns is unavailable.
 
 `list_bucket_tasks()` reports `task_count` as the column's true size, which can
 exceed the tasks returned, because Vikunja caps how many it sends per column.
-Pass `filter` to narrow the result, which works where paging does not.
+Pass `filter` to narrow the result.
 
 `delete_bucket()` keeps the tasks it held: Vikunja moves them to the default
 column. A view always keeps one column, so the last one cannot be deleted.
@@ -112,7 +109,7 @@ column. A view always keeps one column, so the last one cannot be deleted.
 ## Labels
 
 `remove_label()` takes a label off one task. `delete_label()` destroys the label
-everywhere, stripping it from every task carrying it. Confirm which of the two is
+everywhere, stripping it from every task that has it. Confirm which of the two is
 wanted before calling the second.
 
 ## Moving and copying
@@ -131,7 +128,7 @@ on arrival, because it derives from the project the task sits in.
 being related to it. That direction decides the asymmetric kinds: `subtask` makes
 the other task a child of the base. `remove_relation()` needs the same
 `relation_kind` the relation was created with, and `get_task()` reports the kinds
-a task currently carries.
+a task currently has.
 
 ## Calls that cannot be undone
 
