@@ -17,7 +17,7 @@ import altiplano
 from altiplano.server import mcp
 
 # The full public surface. Update this when adding or removing a tool; the
-# exact-match assertion below is what stops a tool silently disappearing.
+# exact-match assertion below stops a tool silently disappearing.
 EXPECTED_TOOLS = {
     "list_projects",
     "create_project",

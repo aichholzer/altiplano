@@ -1,7 +1,7 @@
 """Markdown exchange on v2, and its absence on v1.
 
 Vikunja stores descriptions and comments as HTML. v2 will convert to and from
-Markdown when asked, which is what lets callers stop writing HTML by hand. The
+Markdown when asked, so callers never hand-write HTML. The
 awkward part, and the reason for the shape of these tests, is that v2 honours the
 parameter on reads, creates and replaces but silently ignores it on a partial
 update: PATCH returns 200 and stores the Markdown verbatim into a field that is
@@ -83,7 +83,7 @@ def test_v2_description_update_reads_then_replaces(api, run, api_version):
 
 @pytest.mark.parametrize("api_version", [2])
 def test_v2_replace_preserves_fields_it_was_not_given(api, run, api_version):
-    """The whole point of reading first: an unrelated field must survive."""
+    """Reading first exists so an unrelated field survives the replace."""
     api.returns({"id": 7, "title": "Existing", "description": "old", "priority": 4, "done": True})
     run(tasks.update_task(7, description=MD))
 
@@ -116,11 +116,11 @@ def test_v2_update_without_a_description_stays_a_single_partial_update(api, run,
 
 @pytest.mark.parametrize("api_version", [1])
 def test_v1_reads_first_too_but_never_for_markdown(api, run, api_version):
-    """v1 reads before writing for a different reason than v2 does.
+    """v1 also reads before writing, to protect the fields it was not given.
 
-    It cannot convert Markdown at all, so the read is not about that: its update
-    endpoint is a replace, and reading first is what stops the write wiping the
-    fields it was not given. Neither request asks for a format v1 does not have.
+    It cannot convert Markdown at all. Its update endpoint is a replace, so reading
+    first stops the write wiping everything omitted. Neither request asks for a
+    format v1 does not have.
     """
     api.returns({"id": 7, "description": "<p>old</p>"})
     run(tasks.update_task(7, description="<p>html</p>"))
@@ -160,7 +160,7 @@ def test_v2_replace_omits_if_match_when_the_read_offered_no_etag(api, run, api_v
 
 @pytest.mark.parametrize("api_version", [2])
 def test_v2_replace_turns_a_precondition_failure_into_something_actionable(api, run, api_version):
-    """412 is the whole point of the header, and "Precondition Failed" on its own
+    """The header exists to produce this 412, and "Precondition Failed" on its own
     tells an agent nothing about what to do next."""
     api.returns_in_order(
         httpx.Response(200, json={"id": 7, "description": "old"}, headers={"ETag": '"abc123"'}),

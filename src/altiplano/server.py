@@ -3,7 +3,7 @@
 Filtering and sorting are passed straight to the Vikunja API (server-side), so
 there is no client-side filtering engine to get wrong.
 
-There is no logic here. Importing the tool modules is what registers their tools,
+There is no logic here. Importing the tool modules registers their tools,
 since `@mcp.tool()` runs at import time, and `main` serves them. The parts are:
 
   `app`      the MCP instance the tools decorate

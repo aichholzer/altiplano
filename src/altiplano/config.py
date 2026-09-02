@@ -6,7 +6,7 @@ Resolved without storing secrets in a shared mcp.json:
      override with ALTIPLANO_CONFIG). Keep it chmod 600.
 
 Nothing is resolved at import time. Every value is read when a request needs it,
-which is what lets a rotated token take effect without a restart.
+so a rotated token takes effect without a restart.
 """
 
 import os
@@ -79,8 +79,8 @@ def _load_file() -> dict[str, str]:
         if not line or line.startswith("#") or "=" not in line:
             continue
         k, v = line.split("=", 1)
-        # setdefault, so a duplicated key keeps the first occurrence, which is what
-        # the earlier line-by-line scan did.
+        # setdefault, so a duplicated key keeps the first occurrence. The earlier
+        # line-by-line scan behaved the same way.
         values.setdefault(k.strip(), v.strip().strip('"').strip("'"))
     _file_cache = (stamp, values)
     return values

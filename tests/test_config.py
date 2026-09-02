@@ -134,8 +134,8 @@ def test_warns_when_others_can_read_the_file_but_still_reads_it(config_file):
     message = str(caught[0].message)
     assert str(config_file) in message
     assert "0644" in message
-    # The whole point of the warning is the token. Leaking it into a log to say
-    # so would be its own finding.
+    # The warning exists to protect the token. Leaking it into a log to say so
+    # would be its own finding.
     assert "tk_secret" not in message
 
 

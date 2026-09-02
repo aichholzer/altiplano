@@ -21,8 +21,8 @@ _NO_DATE = "0001-01-01T00:00:00Z"
 
 # Vikunja 2.4.0 added a v2 API alongside v1. Paths are identical for everything
 # this server does, but the verbs for create and update differ, so the version is
-# taken from the URL the user configured. Nothing is probed, so pointing
-# VIKUNJA_URL at /api/v2 is the whole opt-in.
+# taken from the URL the user configured. Nothing is probed, and there is no
+# separate setting: a VIKUNJA_URL ending in /api/v2 selects v2.
 # `replace` is the third action because three places need a whole-resource write:
 # the task replace, a comment edit, and placing a task in a bucket. v1 spells that
 # the same way it spells an update, which is the root of the hazard _replace_task

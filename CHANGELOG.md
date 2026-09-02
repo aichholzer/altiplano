@@ -14,6 +14,14 @@ All notable changes to this project are documented here.
   Vikunja added the endpoint in 2.5.0 on v2 only, so the tool fails on an `/api/v1`
   URL. There is no fallback to one request per task.
 
+- The publish workflow now creates the GitHub release once the upload to PyPI
+  succeeds, tagging the published commit and taking the body from this file's
+  section for that version. A release therefore means the version is on PyPI.
+
+  It skips a version already released, and it cannot revise the notes on one that
+  exists. A failure to create the release leaves the run green, because the package
+  has already shipped by that point; the run summary says what happened.
+
 ### Changed
 
 - Tool descriptions, comments and this change log reworded throughout. MCP clients
@@ -159,7 +167,7 @@ Known issue: `list_bucket_tasks` fails on v2 with an API token; see 0.12.0.
 - `update_task` takes `due_date`, which `create_task` already had.
 - Dates can be cleared, by passing an empty string to `due_date`, `start_date` or
   `end_date` on either tool. Vikunja has no null for a date: an unset one is the zero
-  time, `0001-01-01T00:00:00Z`, and that is what gets written.
+  time, `0001-01-01T00:00:00Z`, and Altiplano writes exactly that.
 
 ### Changed
 
@@ -321,8 +329,8 @@ Known issue: `list_bucket_tasks` fails on v2 with an API token; see 0.12.0.
   description, priority and dates. v2 is unaffected, using `PATCH`.
 
   `update_task` previously claimed "Only the fields you pass are changed", which
-  was true on v2 and false on v1. Since the docstring is what an agent reads
-  before calling, that made it the most load-bearing place to correct.
+  was true on v2 and false on v1. An agent reads the docstring before calling,
+  which made it the most load-bearing place to correct.
 
   `set_reminders` carries the same hazard and was not previously known to: it
   sends a partial body to the same endpoint, and was confirmed to reset description
@@ -407,8 +415,8 @@ Known issue: `list_bucket_tasks` fails on v2 with an API token; see 0.12.0.
   the update verb (`POST` on v1, `PATCH` on v2), the collection envelope that v2
   wraps results in, and the user search parameter, renamed from `s` to `q`.
 
-  Paths are identical across the two versions for everything this server does,
-  which is what keeps the change small.
+  Paths are identical across the two versions for everything this server does, so
+  no request path needed a version branch.
 
 ### Changed
 

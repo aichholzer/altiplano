@@ -347,7 +347,7 @@ def test_create_task_includes_every_supplied_field(api, run):
 
 def test_update_task_includes_every_supplied_field(api, run):
     # A description routes through the read-then-replace path on both versions, so
-    # the canned task is what these changes get merged into.
+    # these changes get merged into the canned task.
     api.returns({"id": 7})
     run(
         tasks.update_task(
@@ -690,8 +690,8 @@ def test_search_tasks_passes_a_filter_and_sort_through(api, run):
 
 
 def test_bulk_update_names_the_fields_separately_from_the_values(api, run):
-    """This endpoint writes only the fields it is told to, which is what makes it a
-    real partial update even on v1."""
+    """This endpoint writes only the fields it is told to, so it is a real partial
+    update even on v1."""
     run(tasks.bulk_update_tasks([7, 9], done=True, priority=4))
     assert body(api.last) == {
         "task_ids": [7, 9],
@@ -912,7 +912,7 @@ def test_move_task_goes_through_the_same_write_path_as_an_update(api, run):
 
 
 def test_v1_refuses_to_replace_from_a_read_that_is_not_a_task(api, run):
-    """The read is what makes the write safe, so a read that returned no task must
+    """The read makes the write safe, so a read that returned no task must
     not be turned into a replace: that would wipe the task."""
     api.returns_raw(204)
     with pytest.raises(RuntimeError, match="did not return task 7"):
