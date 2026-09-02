@@ -1,8 +1,8 @@
 """Shared fixtures.
 
-Requests are intercepted at the transport boundary rather than by replacing
-`_request`, so real httpx machinery still runs: URL joining, header assembly,
-status handling and JSON decoding are all genuine, and only the socket is fake.
+Requests are intercepted at the transport boundary, leaving `_request` untouched,
+so real httpx machinery still runs: URL joining, header assembly, status handling
+and JSON decoding are all genuine, and only the socket is fake.
 """
 
 import asyncio
@@ -75,8 +75,8 @@ def api(api_version: int, monkeypatch: pytest.MonkeyPatch) -> RecordingAPI:
     def with_mock_transport(**kwargs: Any) -> httpx.AsyncClient:
         return real_client(transport=httpx.MockTransport(recorder._handle), **kwargs)
 
-    # Patched on httpx itself rather than through the module that calls it, so it
-    # holds wherever the client is built and does not care which module that is.
+    # Patched on httpx itself, so it holds wherever the client is built and does
+    # not care which module builds it.
     monkeypatch.setattr(httpx, "AsyncClient", with_mock_transport)
     return recorder
 

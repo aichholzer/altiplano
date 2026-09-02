@@ -1,6 +1,6 @@
 [project]
 name = "altiplano"
-version = "1.0.0"
+version = "1.1.0"
 description = "Minimal MCP server for Vikunja (server-side filtering, no fluff)"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -33,7 +33,7 @@ dev = [
 [tool.ruff]
 # Matches the width the code is already written to. Ruff's linter does not
 # enforce line length by default; this is here so `ruff format` would agree with
-# the existing style rather than reflowing every file.
+# the existing style and leave every file unreflowed.
 line-length = 120
 
 [tool.ruff.lint]
@@ -46,7 +46,7 @@ ignore = [
 ]
 
 [tool.pytest.ini_options]
-# The coverage gate lives here rather than in the workflow so a local run and CI
+# The coverage gate lives here, out of the workflow, so a local run and CI
 # enforce the identical floor.
 addopts = "--cov=altiplano --cov-branch --cov-report=term-missing --cov-fail-under=90"
 

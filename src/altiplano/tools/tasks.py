@@ -1,8 +1,8 @@
 """Task tools, and the write paths the API version dictates.
 
-`_replace_task` and `_write_task` live here rather than in `api`, because the
-read-then-merge they implement is a fact about tasks specifically: no other
-resource has a field that only converts on a full replace.
+`_replace_task` and `_write_task` live here, because the read-then-merge they
+implement is a fact about tasks specifically: no other resource has a field that
+only converts on a full replace.
 """
 
 from typing import Any
@@ -85,6 +85,39 @@ async def get_task(task_id: int) -> dict:
     return await _request("GET", f"/tasks/{task_id}", params=_md_params())
 
 
+# The optional fields a new task takes. `create_task` accepts them as arguments and
+# `bulk_create_tasks` accepts them per entry, so they are named once here: a second
+# list would drift, and a field missing from it would be dropped in silence.
+_NEW_TASK_FIELDS = (
+    "description",
+    "priority",
+    "due_date",
+    "start_date",
+    "end_date",
+    "percent_done",
+    "is_favorite",
+    "repeat_after",
+    "repeat_mode",
+)
+_DATE_FIELDS = frozenset({"due_date", "start_date", "end_date"})
+
+
+def _new_task(title: str, fields: dict[str, Any]) -> dict[str, Any]:
+    """The body for one new task: its title, plus whichever fields were given.
+
+    `None` means leave the field out. Any other falsy value is kept, because 0 and
+    False are how percent_done, is_favorite and the repeat fields are turned off,
+    and a truthiness check here would drop exactly those.
+    """
+    payload: dict[str, Any] = {"title": title}
+    for name in _NEW_TASK_FIELDS:
+        value = fields.get(name)
+        if value is None:
+            continue
+        payload[name] = _date(value) if name in _DATE_FIELDS else value
+    return payload
+
+
 @mcp.tool()
 async def create_task(
     project_id: int,
@@ -112,32 +145,83 @@ async def create_task(
     `repeat_after` is a number of seconds, and repeating happens when the task is
     marked done: it reopens itself and moves its due date and reminders forward.
     `repeat_mode` is 0 to advance by `repeat_after`, 1 to repeat monthly and ignore
-    `repeat_after`, or 2 to count from the day it was completed rather than from its
-    previous dates. Give a repeating task a `due_date`: it reopens whether or not
-    there is a date to advance, so one with no dates cannot be closed at all.
+    `repeat_after`, or 2 to count from the day it was completed. Give a repeating
+    task a `due_date`: it reopens whether or not there is a date to advance, so one
+    with no dates cannot be closed at all.
     """
-    payload: dict[str, Any] = {"title": title}
-    if description is not None:
-        payload["description"] = description
-    if priority is not None:
-        payload["priority"] = priority
-    if due_date is not None:
-        payload["due_date"] = _date(due_date)
-    if start_date is not None:
-        payload["start_date"] = _date(start_date)
-    if end_date is not None:
-        payload["end_date"] = _date(end_date)
-    if percent_done is not None:
-        payload["percent_done"] = percent_done
-    if is_favorite is not None:
-        payload["is_favorite"] = is_favorite
-    if repeat_after is not None:
-        payload["repeat_after"] = repeat_after
-    if repeat_mode is not None:
-        payload["repeat_mode"] = repeat_mode
+    payload = _new_task(
+        title,
+        {
+            "description": description,
+            "priority": priority,
+            "due_date": due_date,
+            "start_date": start_date,
+            "end_date": end_date,
+            "percent_done": percent_done,
+            "is_favorite": is_favorite,
+            "repeat_after": repeat_after,
+            "repeat_mode": repeat_mode,
+        },
+    )
     return await _request(
         _verb("create"), f"/projects/{project_id}/tasks", params=_md_params(), json=payload
     )
+
+
+def _bulk_entry(index: int, entry: Any) -> dict[str, Any]:
+    """One entry of a bulk create, checked while its position is still known."""
+    if not isinstance(entry, dict):
+        raise ValueError(f"tasks[{index}] is not an object")
+    unsupported = sorted(set(entry) - {"title", *_NEW_TASK_FIELDS})
+    if unsupported:
+        raise ValueError(f"tasks[{index}] has unsupported fields: {', '.join(unsupported)}")
+    title = entry.get("title")
+    if not title:
+        raise ValueError(f"tasks[{index}] has no title")
+    return _new_task(title, entry)
+
+
+@mcp.tool()
+async def bulk_create_tasks(project_id: int, tasks: list[dict[str, Any]]) -> list[dict]:
+    """Create several tasks in one project, in one request. Needs the v2 API.
+
+    Vikunja creates the batch atomically: if one entry is invalid then none are
+    created, and the error names the entry that failed. They also keep the order
+    they were given, which is the reason to use this over a loop of `create_task`
+    calls: those race each other, so a numbered plan can come back shuffled, and a
+    failure halfway through leaves the rest uncreated.
+
+    Each entry is an object taking the same fields as `create_task`. `title` is
+    required; `description`, `priority`, `due_date`, `start_date`, `end_date`,
+    `percent_done`, `is_favorite`, `repeat_after` and `repeat_mode` are optional and
+    mean what they do there, including an empty string to clear a date. Any other
+    key is refused, because a dropped one reads as a task created with a date or a
+    priority it never got. Vikunja caps a batch at 100.
+
+    Returns a summary per created task, in creation order. Call `get_task` for the
+    full detail of one.
+    """
+    if _version() == 1:
+        raise RuntimeError(
+            "bulk_create_tasks needs the v2 API: Vikunja added this endpoint in 2.5.0 and it "
+            "exists on v2 only. Point VIKUNJA_URL at /api/v2, or create the tasks one at a "
+            "time with create_task."
+        )
+    if not tasks:
+        raise ValueError("No tasks to create")
+    body = [_bulk_entry(i, entry) for i, entry in enumerate(tasks)]
+    data = await _request(
+        _verb("create"),
+        f"/projects/{project_id}/tasks/bulk",
+        params=_md_params(),
+        json={"tasks": body},
+    )
+    created = data.get("tasks") if isinstance(data, dict) else None
+    if not isinstance(created, list):
+        # A bodyless response arrives as a status dict. The tasks were most likely
+        # created, so reporting none of them would be worse than saying so.
+        raise RuntimeError("the API did not return the created tasks, so they cannot be listed")
+    return [_task_summary(t) for t in created]
 
 
 @mcp.tool()
@@ -169,9 +253,9 @@ async def update_task(
     25. Vikunja does not validate it: 50 is stored as 50, not read as 50 percent.
 
     `repeat_after` is a number of seconds, and setting it changes what `done` means
-    for this task, which will reopen itself with its dates moved forward instead of
-    staying closed. `repeat_mode` is 0 to advance by `repeat_after`, 1 to repeat
-    monthly and ignore `repeat_after`, or 2 to count from the day it was completed.
+    for this task, which will reopen itself with its dates moved forward.
+    `repeat_mode` is 0 to advance by `repeat_after`, 1 to repeat monthly and ignore
+    `repeat_after`, or 2 to count from the day it was completed.
     A repeating task with no dates cannot be closed: it reopens regardless.
 
     One wrinkle in what comes back: on v2 a partial update returns the description
@@ -292,13 +376,12 @@ async def _replace_task(task_id: int, changes: dict[str, Any]) -> dict:
     a cheap partial update.
 
     The read asks for Markdown too, so a description we are not touching is written
-    back in the form it came in rather than being double-converted. Verified
-    lossless across labels, assignees, reminders, dates, colour, priority and
-    percent_done.
+    back in the form it came in, with no second conversion. Verified lossless
+    across labels, assignees, reminders, dates, colour, priority and percent_done.
 
     The lost update this opens is caught where the server allows it: v2 returns an
     ETag on a single-resource read and honours If-Match, so a task that changed in
-    between fails with 412 instead of being silently overwritten. v1 offers no
+    between fails with 412 and is never silently overwritten. v1 offers no
     ETag, so no precondition is sent and that window stays open there.
     """
     read = await _send("GET", f"/tasks/{task_id}", params=_md_params())

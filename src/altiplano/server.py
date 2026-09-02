@@ -3,7 +3,7 @@
 Filtering and sorting are passed straight to the Vikunja API (server-side), so
 there is no client-side filtering engine to get wrong.
 
-There is no logic here. Importing the tool modules is what registers their tools,
+There is no logic here. Importing the tool modules registers their tools,
 since `@mcp.tool()` runs at import time, and `main` serves them. The parts are:
 
   `app`      the MCP instance the tools decorate
@@ -26,9 +26,8 @@ from altiplano.tools import (
     tasks,
 )
 
-# Named so the imports above read as deliberate rather than accidental. They are
-# here for the registration side effect, and a linter would otherwise call them
-# unused.
+# Named so the imports above read as deliberate. They are here for the registration
+# side effect, and a linter would otherwise call them unused.
 __all__ = [
     "assignees",
     "comments",

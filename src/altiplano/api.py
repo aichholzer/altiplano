@@ -4,8 +4,8 @@ Three things live here because the tool modules should not each have to know the
 which API version is in play and how its verbs differ, how a request is sent and
 how a failure is reported, and how a response is unwrapped and trimmed.
 
-The leading underscores mean internal to the package rather than to the module. Tool
-modules import these; nothing outside `altiplano` should.
+The leading underscores mark these as package-private, so the tool modules import
+them freely. Nothing outside `altiplano` should.
 """
 
 from typing import Any
@@ -21,12 +21,12 @@ _NO_DATE = "0001-01-01T00:00:00Z"
 
 # Vikunja 2.4.0 added a v2 API alongside v1. Paths are identical for everything
 # this server does, but the verbs for create and update differ, so the version is
-# taken from the URL the user configured rather than probed. Pointing
-# VIKUNJA_URL at /api/v2 is the whole opt-in.
-# `replace` is the third action because three places need a whole-resource write
-# rather than a partial one: the task replace, a comment edit, and placing a task in
-# a bucket. v1 spells that the same way it spells an update, which is the root of
-# the hazard _replace_task exists to work around.
+# taken from the URL the user configured. Nothing is probed, and there is no
+# separate setting: a VIKUNJA_URL ending in /api/v2 selects v2.
+# `replace` is the third action because three places need a whole-resource write:
+# the task replace, a comment edit, and placing a task in a bucket. v1 spells that
+# the same way it spells an update, which is the root of the hazard _replace_task
+# exists to work around.
 _VERBS = {
     1: {"create": "PUT", "update": "POST", "replace": "POST"},
     2: {"create": "POST", "update": "PATCH", "replace": "PUT"},
@@ -47,8 +47,8 @@ def _md_params() -> dict[str, str]:
     """Ask v2 to exchange rich-text fields as Markdown. v1 has no such option.
 
     Descriptions and comments are stored as HTML. v2 will convert in both
-    directions, which is what lets callers write Markdown instead of hand-rolling
-    HTML. On v1 this is empty and the fields stay HTML.
+    directions, so callers can write Markdown and leave the HTML to the server. On
+    v1 this is empty and the fields stay HTML.
     """
     return {"format": "markdown"} if _version() == 2 else {}
 
@@ -73,8 +73,7 @@ def _error_detail(r: httpx.Response) -> str:
     """
     where = f"{r.status_code} {r.reason_phrase} for {r.request.method} {r.request.url}"
     if r.has_redirect_location:
-        # Nearly always a VIKUNJA_URL that is wrong rather than a real redirect,
-        # so name where it was sent instead.
+        # Nearly always a wrong VIKUNJA_URL, so name where the request was sent.
         return f"{where}: redirected to {r.headers['Location']}"
     try:
         payload = r.json()
@@ -92,8 +91,8 @@ def _error_detail(r: httpx.Response) -> str:
 async def _send(method: str, path: str, **kwargs: Any) -> httpx.Response:
     """One request. Raises on any non-2xx, carrying the server's own explanation.
 
-    `is_success` rather than `is_error`, so a redirect is still a failure: it means
-    the configured URL is wrong, and decoding its body as a result would hide that.
+    The check is `is_success`, so a redirect counts as a failure: it means the
+    configured URL is wrong, and decoding its body as a result would hide that.
     """
     async with httpx.AsyncClient(base_url=_base(), headers=_headers(), timeout=30) as client:
         r = await client.request(method, path, **kwargs)
@@ -116,13 +115,13 @@ def _items(data: Any) -> list:
     """Normalise a collection response across both API versions.
 
     v1 returns a bare array, or a literal `null` for some empty collections. v2
-    wraps every collection in a pagination envelope. The check is on shape rather
-    than the configured version, so a mismatch between the two cannot break it.
+    wraps every collection in a pagination envelope. The check is on shape, so a
+    mismatch with the configured version cannot break it.
 
     Anything else means the response was not a collection at all: most likely a
-    bodyless response, which `_request` reports as a status dict. That is an error
-    rather than an empty result, because reporting it as empty is
-    indistinguishable from genuinely having no items.
+    bodyless response, which `_request` reports as a status dict. That is an error,
+    because reporting it as empty is indistinguishable from genuinely having no
+    items.
     """
     if data is None:
         return []

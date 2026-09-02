@@ -1,7 +1,6 @@
 """Kanban tools: views, their buckets, and which bucket a task sits in.
 
-Buckets belong to a view rather than to a project, which is why every tool here
-resolves one first.
+Buckets belong to a view, which is why every tool here resolves one first.
 """
 
 from typing import Any
@@ -15,10 +14,9 @@ from altiplano.app import mcp
 async def _kanban_view(project_id: int, view_id: int | None = None) -> dict:
     """Resolve which kanban view to act on.
 
-    Buckets belong to a view rather than to the project, so every bucket tool needs
-    one. Most projects have exactly one kanban view, so `view_id` is optional and
-    the first kanban view is used. Views arrive ordered by position, which makes
-    "first" the leftmost tab rather than an arbitrary pick.
+    Buckets belong to a view, so every bucket tool needs one. Most projects have
+    exactly one kanban view, so `view_id` is optional and the first kanban view is
+    used. Views arrive ordered by position, which makes "first" the leftmost tab.
     """
     views = _items(await _request("GET", f"/projects/{project_id}/views"))
     if view_id is None:
@@ -138,8 +136,8 @@ async def list_bucket_tasks(
     """List a kanban view's buckets with the tasks in them.
 
     `task_count` is the bucket's true size, which can exceed the tasks returned:
-    Vikunja caps how many it sends per bucket. Narrow with `filter`, the same
-    server-side syntax `list_tasks` takes, rather than paging.
+    Vikunja caps how many it sends per bucket. To reach the rest, narrow with
+    `filter`, the same server-side syntax `list_tasks` takes.
     """
     view = await _kanban_view(project_id, view_id)
     params = {"filter": filter} if filter else {}
@@ -197,14 +195,14 @@ async def move_task_to_bucket(task_id: int, bucket_id: int, view_id: int | None 
 
     - Moving into the done bucket marks the task done, and moving it out un-marks it.
     - A repeating task moved into the done bucket is reopened and sent to the default
-      bucket instead, since being done is not a state it stays in.
+      bucket, since being done is not a state it stays in.
     - A bucket at its task limit refuses the move.
 
     Only meaningful when the view's `bucket_configuration_mode` is `manual`. In
-    `filter` mode a task's bucket follows the filters, not you.
+    `filter` mode the filters decide which bucket a task sits in.
 
-    The project is read from the task rather than passed in, which costs a request
-    and removes an argument that could contradict the task it was given.
+    The project is read from the task, which costs a request and removes an
+    argument that could contradict the task it was given.
     """
     task = await _request("GET", f"/tasks/{task_id}")
     project_id = task.get("project_id") if isinstance(task, dict) else None

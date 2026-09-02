@@ -1,7 +1,7 @@
 """Every tool's wire contract: verb, path, query and body.
 
 Vikunja inverts the usual REST convention, using PUT to create and POST to
-update, so the verb assertions here are load bearing rather than incidental.
+update, so the verb assertions here are load bearing.
 """
 
 import json
@@ -30,9 +30,8 @@ def body(request) -> dict:
 def route(name, call, verbs, path, body, response=None):
     """One routing case, named so failures point at the tool.
 
-    `verbs` is {1: verb, 2: verb}. Both are written out as literals rather than
-    derived from the server's own mapping, so the test cannot agree with a wrong
-    implementation.
+    `verbs` is {1: verb, 2: verb}. Both are written out as literals, never derived
+    from the server's own mapping, so the test cannot agree with a wrong one.
 
     `body` is the expected request body, or a {1: body, 2: body} mapping where the
     two versions differ. `response` overrides what the fake returns, which the two
@@ -45,6 +44,9 @@ READ = {1: "GET", 2: "GET"}
 CREATE = {1: "PUT", 2: "POST"}
 UPDATE = {1: "POST", 2: "PATCH"}
 REMOVE = {1: "DELETE", 2: "DELETE"}
+# No verb on v1 means the tool refuses that version before sending anything, which
+# is a routing fact worth stating in the same table as the verbs.
+CREATE_V2_ONLY = {1: None, 2: "POST"}
 # v2 honours ?format=markdown on a replace but not on a partial update, so writes
 # that carry rich text go through PUT there.
 REPLACE = {1: "POST", 2: "PUT"}
@@ -81,6 +83,14 @@ ROUTES = [
         response=READ_BACK,
     ),
     route("duplicate_task", lambda: tasks.duplicate_task(7), CREATE, "/tasks/7/duplicate", {}),
+    route(
+        "bulk_create_tasks",
+        lambda: tasks.bulk_create_tasks(3, [{"title": "First"}, {"title": "Second"}]),
+        CREATE_V2_ONLY,
+        "/projects/3/tasks/bulk",
+        {"tasks": [{"title": "First"}, {"title": "Second"}]},
+        response={"tasks": []},
+    ),
     route(
         "bulk_update_tasks",
         lambda: tasks.bulk_update_tasks([7, 9], done=True),
@@ -230,6 +240,13 @@ def test_tool_uses_the_expected_verb_path_and_body(
 ):
     if response is not None:
         api.returns(response)
+    if verbs[api_version] is None:
+        # A tool with no verb for this version must say so before reaching the
+        # network. The server has no route for it, so nothing should be sent.
+        with pytest.raises(RuntimeError, match="needs the v2 API"):
+            run(call())
+        assert api.requests == []
+        return
     run(call())
     assert api.last.method == verbs[api_version]
     # A path or a body may be given per version, for the handful of tools where the
@@ -261,7 +278,7 @@ def test_version_comes_from_the_configured_url(api, api_version):
         ("https://vikunja.test/api/v2", 2),
         # A trailing slash is stripped by _base before the check.
         ("https://vikunja.test/api/v2/", 2),
-        # Anything unrecognised falls back to v1 rather than guessing.
+        # Anything unrecognised falls back to v1. There is no guessing.
         ("https://vikunja.test/api", 1),
         ("https://vikunja.test/api/v3", 1),
     ],
@@ -274,8 +291,7 @@ def test_version_falls_back_to_v1_for_anything_but_an_explicit_v2_url(monkeypatc
 @pytest.mark.parametrize("api_version", [1, 2])
 def test_listings_unwrap_whichever_collection_shape_arrives(api, run, api_version):
     """v1 sends a bare array, v2 a pagination envelope. Both must work, and the
-    check is on shape, so a version mismatch degrades gracefully rather than
-    breaking."""
+    check is on shape, so a version mismatch degrades gracefully."""
     api.returns([{"id": 1, "title": "Home"}])
     assert run(projects.list_projects())[0]["title"] == "Home"
 
@@ -331,7 +347,7 @@ def test_create_task_includes_every_supplied_field(api, run):
 
 def test_update_task_includes_every_supplied_field(api, run):
     # A description routes through the read-then-replace path on both versions, so
-    # the canned task is what these changes get merged into.
+    # these changes get merged into the canned task.
     api.returns({"id": 7})
     run(
         tasks.update_task(
@@ -445,8 +461,8 @@ TWO_KANBAN_VIEWS = [
 
 
 def test_the_first_kanban_view_is_used_when_none_is_named(api, run):
-    """Views arrive ordered by position, so the first kanban one is the leftmost tab
-    rather than whichever the server happened to list first."""
+    """Views arrive ordered by position, so the first kanban one is the leftmost
+    tab, whatever order the server happened to send them in."""
     api.returns(TWO_KANBAN_VIEWS)
     run(kanban.list_buckets(3))
     assert api.last.url.path.endswith("/projects/3/views/48/buckets")
@@ -460,7 +476,7 @@ def test_a_named_view_is_used_instead(api, run):
 
 def test_a_view_that_is_not_kanban_is_refused(api, run):
     """Only kanban views have buckets, so pointing at a list view is a mistake worth
-    naming rather than a confusing failure from the buckets endpoint."""
+    naming here, before the buckets endpoint answers with something confusing."""
     api.returns(TWO_KANBAN_VIEWS)
     with pytest.raises(ValueError, match="is a list view"):
         run(kanban.list_buckets(3, view_id=45))
@@ -617,9 +633,8 @@ def test_a_401_elsewhere_is_left_alone(api, run, api_version):
 
 
 def test_moving_to_a_bucket_takes_the_project_from_the_task(api, run):
-    """The project is derived rather than passed, so it cannot contradict the task.
-    A caller-supplied one that disagreed would build a path that looks valid and
-    404s."""
+    """The project is derived, so it cannot contradict the task. A caller-supplied
+    one that disagreed would build a path that looks valid and 404s."""
     api.returns_in_order(
         httpx.Response(200, json={"id": 7, "project_id": 3}),
         httpx.Response(200, json=KANBAN_VIEW),
@@ -675,8 +690,8 @@ def test_search_tasks_passes_a_filter_and_sort_through(api, run):
 
 
 def test_bulk_update_names_the_fields_separately_from_the_values(api, run):
-    """This endpoint writes only the fields it is told to, which is what makes it a
-    real partial update even on v1."""
+    """This endpoint writes only the fields it is told to, so it is a real partial
+    update even on v1."""
     run(tasks.bulk_update_tasks([7, 9], done=True, priority=4))
     assert body(api.last) == {
         "task_ids": [7, 9],
@@ -698,6 +713,85 @@ def test_bulk_update_rejects_an_empty_payload(api, run):
     with pytest.raises(ValueError, match="No fields to update"):
         run(tasks.bulk_update_tasks([7]))
     assert api.requests == []
+
+
+# --- bulk create ------------------------------------------------------------
+# v2 only, so every case here runs there. The routing table covers the v1 refusal.
+@pytest.mark.parametrize("api_version", [2])
+def test_bulk_create_gives_each_entry_the_same_fields_as_a_single_create(api, run, api_version):
+    api.returns({"tasks": []})
+    run(
+        tasks.bulk_create_tasks(
+            3,
+            [
+                {"title": "First", "description": "why", "priority": 4, "due_date": ""},
+                {"title": "Second", **OFF_VALUES},
+            ],
+        )
+    )
+    assert body(api.last) == {
+        "tasks": [
+            {
+                "title": "First",
+                "description": "why",
+                "priority": 4,
+                "due_date": "0001-01-01T00:00:00Z",
+            },
+            {"title": "Second", **OFF_VALUES},
+        ]
+    }
+
+
+@pytest.mark.parametrize("api_version", [2])
+def test_bulk_create_asks_for_markdown_like_a_single_create_does(api, run, api_version):
+    api.returns({"tasks": []})
+    run(tasks.bulk_create_tasks(3, [{"title": "First"}]))
+    assert dict(api.last.url.params) == {"format": "markdown"}
+
+
+@pytest.mark.parametrize("api_version", [2])
+def test_bulk_create_returns_a_summary_per_task_in_creation_order(api, run, api_version):
+    api.returns(
+        {
+            "tasks": [
+                {"id": 8, "identifier": "#1", "title": "First", "done": False, "priority": 0},
+                {"id": 9, "identifier": "#2", "title": "Second", "description": "dropped"},
+            ]
+        }
+    )
+    assert run(tasks.bulk_create_tasks(3, [{"title": "First"}, {"title": "Second"}])) == [
+        {"id": 8, "identifier": "#1", "title": "First", "done": False, "priority": 0},
+        {"id": 9, "identifier": "#2", "title": "Second", "done": None, "priority": None},
+    ]
+
+
+@pytest.mark.parametrize("api_version", [2])
+@pytest.mark.parametrize(
+    ("entries", "message"),
+    [
+        ([], "No tasks to create"),
+        (["First"], r"tasks\[0\] is not an object"),
+        ([{"title": "First"}, {}], r"tasks\[1\] has no title"),
+        ([{"title": "First", "name": "x", "done": True}], r"tasks\[0\].*done, name"),
+    ],
+    ids=["empty", "not an object", "no title", "unsupported fields"],
+)
+def test_bulk_create_refuses_a_batch_it_cannot_send_faithfully(api, run, entries, message, api_version):
+    """An unsupported key is refused: a caller told the task was created would
+    otherwise never learn the date or priority went nowhere."""
+    with pytest.raises(ValueError, match=message):
+        run(tasks.bulk_create_tasks(3, entries))
+    assert api.requests == []
+
+
+@pytest.mark.parametrize("api_version", [2])
+@pytest.mark.parametrize("reply", [{"ok": True}, []], ids=["no tasks key", "not an object"])
+def test_bulk_create_rejects_a_response_without_the_created_tasks(api, run, reply, api_version):
+    """The tasks were most likely created, so reporting none of them would be a
+    worse answer than saying the reply could not be read."""
+    api.returns(reply)
+    with pytest.raises(RuntimeError, match="did not return the created tasks"):
+        run(tasks.bulk_create_tasks(3, [{"title": "First"}]))
 
 
 def test_create_bucket_carries_an_optional_limit(api, run):
@@ -807,8 +901,8 @@ def test_v1_set_reminders_merges_into_the_task_it_read_first(api, run):
 
 
 def test_move_task_goes_through_the_same_write_path_as_an_update(api, run):
-    """Moving is an update that sets project_id, so on v1 it must merge like one
-    rather than replacing the task with a single field."""
+    """Moving is an update that sets project_id, so on v1 it must merge like one:
+    a single-field body there replaces the whole task."""
     api.returns(V1_TASK)
     run(tasks.move_task(7, 5))
 
@@ -818,8 +912,8 @@ def test_move_task_goes_through_the_same_write_path_as_an_update(api, run):
 
 
 def test_v1_refuses_to_replace_from_a_read_that_is_not_a_task(api, run):
-    """The read is what makes the write safe, so a read that returned no task must
-    not be turned into a replace: that would wipe the task instead of updating it."""
+    """The read makes the write safe, so a read that returned no task must
+    not be turned into a replace: that would wipe the task."""
     api.returns_raw(204)
     with pytest.raises(RuntimeError, match="did not return task 7"):
         run(tasks.update_task(7, done=True))
@@ -930,7 +1024,7 @@ every_listing = pytest.mark.parametrize(
 
 @every_listing
 def test_listings_return_empty_when_the_api_sends_null(api, run, listing):
-    # Vikunja sends a literal `null` rather than `[]` for some empty collections.
+    # Vikunja sends a literal `null` for some empty collections, never `[]`.
     # Passed as raw bytes because httpx cannot distinguish `json=None` from no
     # body at all.
     api.returns_raw(200, b"null")

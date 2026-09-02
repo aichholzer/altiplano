@@ -6,15 +6,16 @@
 
 coverage:
   status:
-    # `informational` is the whole point of this file. Without it these statuses
-    # post a failing check when the target is missed, which reads as a broken
-    # pull request. With it, Codecov still evaluates the targets and reports the
-    # numbers, but the check always passes.
+    # `informational` on both statuses below. Without it they post a failing check
+    # when the target is missed, which reads as a broken pull request. With it,
+    # Codecov still evaluates the targets and reports the numbers, and the check
+    # always passes.
     project:
       default:
         # `auto` compares against the base commit, and a zero threshold means any
-        # drop at all gets reported. Strict on purpose: it is what makes a
-        # regression visible, and it costs nothing when it cannot fail anything.
+        # drop at all gets reported. Strict on purpose: a zero threshold surfaces
+        # every regression, and strictness costs nothing when it cannot fail
+        # anything.
         target: auto
         threshold: 0%
         informational: true
