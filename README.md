@@ -68,7 +68,7 @@ Bucket behaviour:
 - `add_relation(task_id, other_task_id, relation_kind="related")`
 - `remove_relation(task_id, other_task_id, relation_kind="related")`: use the same kind that created the relation.
 
-`get_task` returns `related_tasks`, grouped by kind. Supported kinds are `subtask`, `parenttask`, `related`, `duplicateof`, `duplicates`, `blocking`, `blocked`, `precedes`, `follows`, `copiedfrom`, and `copiedto`.
+> `get_task` returns `related_tasks`, grouped by kind. Supported kinds are `subtask`, `parenttask`, `related`, `duplicateof`, `duplicates`, `blocking`, `blocked`, `precedes`, `follows`, `copiedfrom`, and `copiedto`.
 
 > `add_relation(task_id, other_task_id, "subtask")` makes `other_task_id` a child of `task_id`.
 
