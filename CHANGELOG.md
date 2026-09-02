@@ -2,6 +2,28 @@
 
 All notable changes to this project are documented here.
 
+## [1.2.0]
+
+### Added
+
+- An MCP prompt, `altiplano_guide`, with the usage guidance that spans several
+  tools: resolving ids by name, the sequences a caller has to follow, the calls that
+  cannot be undone, and what differs between the two API versions. Clients that
+  surface prompts list it as `Using Altiplano`.
+
+- Server instructions in the handshake, holding the short list of rules that
+  prevent a wrong write, and naming the prompt above for everything else. Clients
+  that read the field inject it into the session on connect.
+
+- `AGENTS.md`, covering the commands, layout and conventions for working on
+  Altiplano, with `CLAUDE.md` importing it for Claude Code.
+
+### Changed
+
+- The README opens with an `Install` section: `uv`, an API token, credentials, the
+  MCP entry, then one call to confirm. The `Credentials` section is gone, folded into
+  the credentials step.
+
 ## [1.1.0]
 
 ### Added

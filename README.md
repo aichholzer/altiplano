@@ -13,6 +13,60 @@ Named after the Andean altiplano, the high plateau that is the Vicuña's native 
 
 Requires Python 3.10 or later.
 
+## Install
+
+### 1. Install uv
+
+`uv` provides `uvx`, which runs Altiplano without a checkout. See [installation guide](https://docs.astral.sh/uv/getting-started/installation/).
+
+### 2. Vikunja API token
+
+In Vikunja, open Settings from the menu under your username, then API Tokens. See [Vikunja's API documentation](https://vikunja.io/docs/api-documentation/).
+
+Give the token scopes covering the tools you intend to call.
+
+### 3. Store the credentials
+
+```bash
+mkdir -p ~/.config/altiplano
+printf 'VIKUNJA_URL=https://todo.example.com/api/v2\nVIKUNJA_API_TOKEN=tk_xxx\n' > ~/.config/altiplano/env
+chmod 600 ~/.config/altiplano/env
+```
+
+> `VIKUNJA_URL` must end in `/api/v1` or `/api/v2`, the suffix selects the version (eg.: `https://todo.example.com/api/v2`)
+
+> Vikunja 2.4.0 introduced `/api/v2`. Altiplano strips trailing slashes and enables v2 only for a URL ending in `/api/v2`; every other URL keeps its configured path and uses v1 request verbs. Use `/api/v2` when the server supports it.
+
+Altiplano checks these sources in order:
+
+1. `VIKUNJA_URL` and `VIKUNJA_API_TOKEN` environment variables.
+2. A file containing `KEY=VALUE` pairs, defaulting to `~/.config/altiplano/env`.
+
+Set `ALTIPLANO_CONFIG` before starting Altiplano to use a different file. Use absolute paths; `~` is not expanded in custom paths.
+
+> Permissions broader than `600` produce a warning (on POSIX) but do not prevent startup. An unreadable file is ignored after a warning.
+
+### 4. Add the MCP server entry
+
+In your client's MCP configuration:
+
+```json
+{
+  "altiplano": {
+    "command": "uvx",
+    "args": ["--refresh-package", "altiplano", "altiplano@latest"]
+  }
+}
+```
+
+> `--refresh-package altiplano` checks PyPI for a current release; if an older version still starts, close the client and run `uv cache clean altiplano`.
+
+### 5. Verify with one call
+
+Restart the client so it launches the server, then call `list_projects()`. Any list, an empty one included, means the install works.
+
+> Altiplano speaks MCP over stdio, so `uvx altiplano` prints nothing and waits for a client. That silence is the expected behaviour.
+
 ## Tools
 
 <details>
@@ -101,43 +155,13 @@ Bucket behaviour:
 
 </details>
 
-## Credentials
+## Guidance
 
-Altiplano checks these sources in order:
+Altiplano documents its own use in three places.
 
-1. `VIKUNJA_URL` and `VIKUNJA_API_TOKEN` environment variables.
-2. A file containing `KEY=VALUE` pairs, defaulting to `~/.config/altiplano/env`.
-
-Set `ALTIPLANO_CONFIG` before starting Altiplano to use another file. Use an absolute path; `~` is not expanded in custom paths.
-
-`VIKUNJA_URL` must include the API prefix, such as `https://todo.example.com/api/v2`.
-
-> Vikunja 2.4.0 introduced `/api/v2`. `VIKUNJA_URL` should end in `/api/v1` or `/api/v2`. Altiplano strips trailing slashes and enables v2 only for a URL ending in `/api/v2`; every other URL keeps its configured path and uses v1 request verbs. Use `/api/v2` when the server supports it.
-
-```bash
-mkdir -p ~/.config/altiplano
-printf 'VIKUNJA_URL=https://todo.example.com/api/v2\nVIKUNJA_API_TOKEN=tk_xxx\n' > ~/.config/altiplano/env
-chmod 600 ~/.config/altiplano/env
-```
-
-Permissions broader than `600` produce a warning (on POSIX) but do not prevent startup. An unreadable file is ignored after a warning.
-
-MCP server entry (without credentials):
-
-```json
-{
-  "altiplano": {
-    "command": "uvx",
-    "args": ["--refresh-package", "altiplano", "altiplano@latest"]
-  }
-}
-```
-
-`--refresh-package altiplano` checks PyPI for a current release. If an older version still starts, close the MCP client and run:
-
-```bash
-uv cache clean altiplano
-```
+- The handshake sends usage rules: resolve ids by name, which calls cannot be undone, how to close a task. Clients apply them on connect.
+- The `altiplano_guide` prompt has the full version, adding cross-tool sequencing and the v1 and v2 differences. Clients list it as `Using Altiplano`.
+- `AGENTS.md` covers working on this repository, and installing Altiplano for someone else. `CLAUDE.md`, because Claude Code needs its own file.
 
 ## Task behaviour
 
@@ -221,11 +245,12 @@ uvx --refresh-package altiplano altiplano@latest      # current PyPI release
 
 ```text
 src/altiplano/
-  app.py       MCP instance imported by the tool modules
+  app.py       MCP instance imported by the tool and prompt modules
   config.py    Credential resolution and credential-file parsing
   api.py       API-version handling, requests, and response shaping
+  prompts.py   The usage guidance, served as a prompt
   tools/       One module for each tool group
-  server.py    Tool registration and the main entry point
+  server.py    Registration and the main entry point
 ```
 
 Register a tool group by adding its module and importing it from `server.py`. Add its tools to the routing-table test and the smoke test's exact list.
