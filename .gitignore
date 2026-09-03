@@ -11,3 +11,4 @@ build/
 .env
 .uv/
 .ash/
+.kiro/

@@ -2,31 +2,31 @@
 
 Every tool module needs `@mcp.tool()`, and `server` needs to import every tool
 module so that decorator runs. Were the instance defined in `server`, those two
-facts would be a circular import. Nothing of ours is imported here, so there is no
-cycle to reason about.
+facts would be a circular import. Nothing of ours is imported here, and there is
+no cycle to reason about.
 """
 
 from mcp.server.mcpserver import MCPServer
 
 from altiplano import __version__
 
-# Sent in the handshake, so a client can inject it on connect.
+# Sent in the handshake. A client can inject it on connect.
 # `tests/test_guidance.py` caps its length.
 INSTRUCTIONS = """\
 Altiplano exposes a Vikunja instance as MCP tools.
 
 Before writing anything:
 
-- Ids are volatile. Resolve a project, label, kanban view, column or user by name
+- Ids are volatile. Resolve a project, label, kanban view, column, or user by name
   with the matching list or search tool, then carry the id through the session.
   Never guess an id, and re-resolve one remembered from an earlier session.
 - `search_tasks()` finds a task when its project is unknown. `list_tasks()` needs
   one.
-- `delete_task()`, `delete_label()` and `delete_comment()` cannot be undone
+- `delete_task()`, `delete_label()`, and `delete_comment()` cannot be undone
   through this API. Confirm the target with `get_task()` first.
 - `move_task_to_bucket()` writes state: the done column marks a task done, and
   moving it out reopens it. To close a task, call `update_task()` with `done: true`.
-- `create_task()` takes no `done` parameter, so recording finished work means a
+- `create_task()` takes no `done` parameter. Recording finished work means a
   `create_task()` call followed by an `update_task()` call.
 - `filter` and `sort_by` take Vikunja's server-side syntax, for example
   `done = false && priority >= 4`.

@@ -15,10 +15,10 @@ async def add_relation(task_id: int, other_task_id: int, relation_kind: str = "r
     Kinds: subtask, parenttask, related, duplicateof, duplicates, blocking,
     blocked, precedes, follows, copiedfrom, copiedto.
 
-    `task_id` is the base task and `other_task_id` is the one being related to it,
-    which is the direction that matters for the asymmetric kinds: `subtask` makes
-    the other task a child of this one. Needs write access to the base task and
-    read access to the other; they do not have to be in the same project.
+    `task_id` is the base task and `other_task_id` is the one being related to it.
+    That direction decides the asymmetric kinds: `subtask` makes the other task a
+    child of this one. Needs write access to the base task and read access to the
+    other; they do not have to be in the same project.
     """
     return await _request(
         _verb("create"),
@@ -34,7 +34,7 @@ async def remove_relation(task_id: int, other_task_id: int, relation_kind: str =
     The kind has to match the one the relation was created with; see
     `add_relation` for the list. `get_task` reports what a task currently has.
     """
-    # The path carries all three values, and the API documents a body as required
+    # The path holds all three values, and the API documents a body as required
     # here as well. Both are sent, built from the same arguments so they cannot
     # disagree with each other.
     return await _request(

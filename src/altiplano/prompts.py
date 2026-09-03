@@ -3,8 +3,8 @@
 `GUIDE` covers what a single tool description cannot: which tool to reach for, the
 order calls happen in, and the calls that do more than they appear to.
 
-Tool references carry parentheses, `list_buckets()`, so `tests/test_guidance.py`
-can extract them and check each against the registry. Parameter names never take
+Tool references carry parentheses, `list_buckets()`. `tests/test_guidance.py`
+extracts them and checks each against the registry. Parameter names never take
 parentheses.
 """
 
@@ -35,19 +35,19 @@ before writing anything.
 
 ## Finding tasks
 
-`list_tasks()` needs a project. `search_tasks()` does not, so reach for it when
-the location is unknown.
+`list_tasks()` needs a project. `search_tasks()` does not. Reach for the second
+when the location is unknown.
 
 Both take `filter` and `sort_by`, which are Vikunja's own server-side syntax, for
 example `filter="done = false && priority >= 4"`. Vikunja filters first and
-paginates second, so a filtered result is complete at any page size.
+paginates second. A filtered result is complete at any page size.
 
 `search_tasks()` also takes `query`, a text search over titles and descriptions.
-Vikunja documents `query` as incompatible with `filter`, so use one of the two.
+Vikunja documents `query` as incompatible with `filter`. Use one of the two.
 
 ## Creating and closing tasks
 
-`create_task()` takes no `done` parameter, so a task cannot arrive completed.
+`create_task()` takes no `done` parameter, and a task cannot arrive completed.
 Recording finished work takes two calls: `create_task()`, then `update_task()`
 with `done: true` and the dates the work actually happened.
 
@@ -59,19 +59,19 @@ Dates: `due_date` is the deadline, while `start_date` and `end_date` are the
 window you plan to work in. All three take ISO 8601 datetimes, and an empty
 string clears one.
 
-`percent_done` is a fraction despite the name, so a quarter done is `0.25`.
-Vikunja stores `50` as `50` and never clamps it.
+`percent_done` is a fraction despite the name. A quarter done is `0.25`. Vikunja
+stores `50` as `50` and never clamps it.
 
-A repeating task, meaning one with `repeat_after` set in seconds, reopens itself
-when marked done and moves its dates forward. Give one a `due_date`: with no
-dates it still reopens, so it can never be closed.
+A repeating task, one with `repeat_after` set in seconds, reopens itself when
+marked done and moves its dates forward. Give one a `due_date`: with no dates it
+still reopens, and can never be closed.
 
 ## Batching
 
 `bulk_create_tasks()` creates many tasks in one project in a single atomic
-request, and the tasks keep the order they were given, so a numbered plan comes
-back numbered. A loop of `create_task()` calls races and can come back shuffled,
-and a failure halfway leaves the rest uncreated. This tool needs the v2 API and
+request, and the tasks keep the order they were given. A numbered plan comes back
+numbered. A loop of `create_task()` calls races, and can come back shuffled with
+a failure halfway leaving the rest uncreated. This tool needs the v2 API and
 refuses on v1. Vikunja caps a batch at 100.
 
 `bulk_update_tasks()` sets `done` or `priority` across many tasks in one request,
@@ -80,10 +80,10 @@ refuses the entire request, and nothing changes.
 
 ## Kanban
 
-A task holds a position in every kanban view of its project, so a project with
-two boards puts that task in two columns. `list_task_buckets()` reports them all.
-Read any other way, a task's `bucket_id` is `0`, because the field only means
-something inside a view.
+A task holds a position in every kanban view of its project. A project with two
+boards puts that task in two columns, and `list_task_buckets()` reports them all.
+Read any other way, a task's `bucket_id` is `0`. The field only means something
+inside a view.
 
 `move_task_to_bucket()` does more than move a card:
 
@@ -100,11 +100,11 @@ mode Vikunja derives each column from its filters, and moving a task between
 columns is unavailable.
 
 `list_bucket_tasks()` reports `task_count` as the column's true size, which can
-exceed the tasks returned, because Vikunja caps how many it sends per column.
-Pass `filter` to narrow the result.
+exceed the tasks returned. Vikunja caps how many it sends per column. Pass
+`filter` to narrow the result.
 
 `delete_bucket()` keeps the tasks it held: Vikunja moves them to the default
-column. A view always keeps one column, so the last one cannot be deleted.
+column. A view always keeps one column, and the last one cannot be deleted.
 
 ## Labels
 
@@ -115,11 +115,11 @@ wanted before calling the second.
 ## Moving and copying
 
 `move_task()` writes the task's `project_id`. Labels, assignees, comments,
-relations and dates travel with it. The project-local `identifier` is reassigned
-on arrival, because it derives from the project the task sits in.
+relations, and dates travel with it. The project-local `identifier` is reassigned
+on arrival. That value derives from the project the task sits in.
 
 `duplicate_task()` copies into the same project and links the copy back with a
-`copiedfrom` relation. Vikunja has no cross-project duplicate, so follow it with
+`copiedfrom` relation. Vikunja has no cross-project duplicate. Follow it with
 `move_task()` to place the copy elsewhere.
 
 ## Relations
@@ -132,14 +132,14 @@ a task currently has.
 
 ## Calls that cannot be undone
 
-`delete_task()` takes the task's comments, labels and assignees with it. Vikunja
+`delete_task()` takes the task's comments, labels, and assignees with it. Vikunja
 soft-deletes and documents a 30 day retention window, while exposing no endpoint
-to list or restore anything deleted, so through this API the call is permanent.
+to list or restore anything deleted. Through this API the call is permanent.
 Confirm the id with `get_task()` first. `delete_label()` and `delete_comment()`
 are equally final.
 
-`set_reminders()` replaces the task's reminders with the list given, so an
-existing reminder survives only by being passed again. An empty list clears them.
+`set_reminders()` replaces the task's reminders with the list given. An existing
+reminder survives only by being passed again. An empty list clears them.
 
 `update_comment()` replaces the comment text outright.
 
@@ -150,8 +150,8 @@ anything else uses v1. Descriptions are written as Markdown on both. What differ
 
 - `bulk_create_tasks()` needs v2 and refuses on v1.
 - `get_task()` returns the description as Markdown on v2.
-- A partial `update_task()` on v2 returns the description as stored HTML, because
-  v2 does not convert on a PATCH. Call `get_task()` when Markdown is wanted.
+- A partial `update_task()` on v2 returns the description as stored HTML. v2 does
+  not convert on a PATCH. Call `get_task()` when Markdown is wanted.
 """
 
 

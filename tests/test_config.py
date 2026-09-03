@@ -12,7 +12,7 @@ from altiplano.api import _request
 
 @pytest.fixture(autouse=True)
 def _forget_module_state():
-    """Clear the warn-once record and the parse cache, so each test sees a fresh
+    """Clear the warn-once record and the parse cache. Each test then sees a fresh
     module, free of a neighbour's leftovers."""
     config._warned_about.clear()
     config._file_cache = None
@@ -23,8 +23,8 @@ def config_file(tmp_path, monkeypatch):
     """Point the module at a throwaway config file and return a writer for it.
 
     Created at 0600 so it matches the posture the module documents. write_text
-    truncates without touching the mode, so it stays 0600 for every test that
-    does not deliberately loosen it.
+    truncates without touching the mode. It stays 0600 for every test that does not
+    deliberately loosen it.
     """
     path = tmp_path / "env"
     path.touch(mode=0o600)
@@ -65,17 +65,17 @@ def test_returns_none_when_the_file_does_not_exist(tmp_path, monkeypatch):
 
 
 def test_a_duplicated_key_keeps_the_first_occurrence(config_file):
-    """The parse replaced a first-match scan, so it must not start preferring the
-    last line instead."""
+    """The parse replaced a first-match scan. It has to keep preferring the first
+    line."""
     config_file.write_text(
         "VIKUNJA_URL=https://first.test/api/v1\nVIKUNJA_URL=https://second.test/api/v1\n"
     )
     assert config._from_file("VIKUNJA_URL") == "https://first.test/api/v1"
 
 
-def test_the_file_is_read_once_per_change_not_once_per_lookup(config_file, monkeypatch):
+def test_the_file_is_read_once_per_change(config_file, monkeypatch):
     """A single tool call resolves config three or four times, by way of _base,
-    _headers and _version. That used to be a read and a parse each time."""
+    _headers, and _version. That used to be a read and a parse each time."""
     config_file.write_text("VIKUNJA_URL=https://one.test/api/v1\n")
 
     reads = []
@@ -93,10 +93,10 @@ def test_the_file_is_read_once_per_change_not_once_per_lookup(config_file, monke
     assert config._from_file("VIKUNJA_URL") == "https://one.test/api/v1"
     assert len(reads) == 1
 
-    # A rotated token still has to be picked up, which is why the cache is keyed on
-    # the file and expires with it. The replacement is the same length as the
-    # original, so size cannot be what invalidates it, and mtime is bumped
-    # explicitly, because the clock may not have moved.
+    # A rotated token still has to be picked up. The cache is keyed on the file and
+    # expires with it. The replacement is the same length as the original, and size
+    # cannot be what invalidates it. mtime is bumped explicitly: the clock may not
+    # have moved.
     config_file.write_text("VIKUNJA_URL=https://two.test/api/v1\n")
     bumped = config_file.stat().st_mtime_ns + 10**9
     os.utime(config_file, ns=(bumped, bumped))
@@ -109,8 +109,8 @@ def test_the_file_is_read_once_per_change_not_once_per_lookup(config_file, monke
 def test_warns_once_and_carries_on_when_the_file_cannot_be_read(config_file):
     """An unreadable file used to escape as a raw OSError from inside _base.
 
-    It warns and carries on, because the environment may already carry the
-    credentials, in which case this file does not matter.
+    It warns and carries on: the environment may already hold the credentials, in
+    which case this file does not matter.
     """
     config_file.write_text("VIKUNJA_URL=https://from.file/api/v1\n")
     config_file.chmod(0o000)
@@ -148,12 +148,12 @@ def test_does_not_warn_when_only_the_owner_can_read_the_file(config_file):
         assert config._from_file("VIKUNJA_API_TOKEN") == "tk_secret"
 
 
-def test_warns_once_per_file_not_once_per_read(config_file):
+def test_warns_once_per_file(config_file):
     config_file.write_text("VIKUNJA_API_TOKEN=tk_secret\n")
     config_file.chmod(0o644)
 
-    # "always" defeats Python's own per-message dedupe, so what this counts is
-    # the module's own warn-once guard, with the warnings registry out of the way.
+    # "always" defeats Python's own per-message dedupe. What this counts is the
+    # module's own warn-once guard, with the warnings registry out of the way.
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         config._from_file("VIKUNJA_API_TOKEN")
@@ -246,14 +246,14 @@ def test_request_raises_on_an_error_status(api, run):
     ],
     ids=["v1-message", "v2-problem-json", "title-only"],
 )
-def test_an_error_carries_what_the_server_objected_to(api, run, payload, expected):
+def test_an_error_reports_what_the_server_objected_to(api, run, payload, expected):
     api.returns(payload, status=404)
     with pytest.raises(httpx.HTTPStatusError) as caught:
         run(_request("GET", "/tasks/999"))
     message = str(caught.value)
     assert expected in message
-    # The status line survives alongside the detail, and the type is unchanged, so
-    # a caller can still branch on response.status_code.
+    # The status line survives alongside the detail, and the type is unchanged. A
+    # caller can still branch on response.status_code.
     assert "404" in message
     assert caught.value.response.status_code == 404
 
@@ -272,8 +272,8 @@ def test_an_error_falls_back_to_the_status_line_when_the_body_explains_nothing(a
 def test_a_redirect_is_an_error_and_names_where_it_was_sent(api, run):
     """Nearly always a VIKUNJA_URL missing its https or its /api/vN prefix.
 
-    Worth pinning: a redirect is not a 4xx or a 5xx, so treating only those as
-    failures would decode the redirect body as a result instead.
+    Worth pinning: a redirect is not a 4xx or a 5xx. Treating only those as failures
+    would decode the redirect body as a result.
     """
     api.returns_raw(301, headers={"Location": "https://vikunja.test/api/v1/projects"})
     with pytest.raises(httpx.HTTPStatusError, match="redirected to"):

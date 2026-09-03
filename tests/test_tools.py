@@ -1,7 +1,7 @@
 """Every tool's wire contract: verb, path, query and body.
 
-Vikunja inverts the usual REST convention, using PUT to create and POST to
-update, so the verb assertions here are load bearing.
+Vikunja inverts the usual REST convention, using PUT to create and POST to update.
+The verb assertions here are load bearing.
 """
 
 import json
@@ -31,11 +31,11 @@ def route(name, call, verbs, path, body, response=None):
     """One routing case, named so failures point at the tool.
 
     `verbs` is {1: verb, 2: verb}. Both are written out as literals, never derived
-    from the server's own mapping, so the test cannot agree with a wrong one.
+    from the server's own mapping. The test cannot agree with a wrong one.
 
     `body` is the expected request body, or a {1: body, 2: body} mapping where the
-    two versions differ. `response` overrides what the fake returns, which the two
-    tools that read the task before writing it need.
+    two versions differ. `response` overrides what the fake returns. The two tools
+    that read the task before writing it need that.
     """
     return pytest.param(call, verbs, path, body, response, id=name)
 
@@ -44,19 +44,19 @@ READ = {1: "GET", 2: "GET"}
 CREATE = {1: "PUT", 2: "POST"}
 UPDATE = {1: "POST", 2: "PATCH"}
 REMOVE = {1: "DELETE", 2: "DELETE"}
-# No verb on v1 means the tool refuses that version before sending anything, which
-# is a routing fact worth stating in the same table as the verbs.
+# No verb on v1 means the tool refuses that version before sending anything. That is
+# a routing fact worth stating in the same table as the verbs.
 CREATE_V2_ONLY = {1: None, 2: "POST"}
-# v2 honours ?format=markdown on a replace but not on a partial update, so writes
-# that carry rich text go through PUT there.
+# v2 honours ?format=markdown on a replace but not on a partial update. Writes
+# holding rich text go through PUT there.
 REPLACE = {1: "POST", 2: "PUT"}
 
 # What the fake hands back to the two tools that read the task before writing it.
-# On v1 the write is that task with the change merged in, because v1's update
-# endpoint is a replace; on v2 it is the change alone.
+# On v1 the write is that task with the change merged in: v1's update endpoint is
+# a replace. On v2 it is the change alone.
 READ_BACK = {"id": 7, "title": "Existing"}
 
-# Buckets belong to a view, so every bucket tool resolves one first.
+# Buckets belong to a view. Every bucket tool resolves one first.
 KANBAN_VIEW = [
     {
         "id": 48,
@@ -137,13 +137,13 @@ ROUTES = [
         lambda: relations.remove_relation(7, 9),
         REMOVE,
         "/tasks/7/relations/related/9",
-        # The path carries all three values and the API documents the body as
-        # required anyway, so both go out.
+        # The path holds all three values and the API documents the body as
+        # required anyway. Both go out.
         {"other_task_id": 9, "relation_kind": "related"},
     ),
-    # The bucket tools resolve a view first, so the fake has to answer that with
+    # The bucket tools resolve a view first. The fake has to answer that with
     # something kanban-shaped. The same canned response serves the second request,
-    # which these cases do not assert on beyond verb, path and body.
+    # and these cases assert nothing there beyond verb, path, and body.
     route(
         "list_kanban_views",
         lambda: kanban.list_kanban_views(3),
@@ -200,7 +200,7 @@ ROUTES = [
         "/projects/3/views/48/buckets/41/tasks",
         {"task_id": 7},
         # Read first for the task's project, then for the view. One canned response
-        # serves both: a dict carrying project_id for the task read, wrapped in the
+        # serves both: a dict holding project_id for the task read, wrapped in the
         # pagination envelope so `_items` finds the view in it.
         response={"project_id": 3, "items": KANBAN_VIEW},
     ),
@@ -242,7 +242,7 @@ def test_tool_uses_the_expected_verb_path_and_body(
         api.returns(response)
     if verbs[api_version] is None:
         # A tool with no verb for this version must say so before reaching the
-        # network. The server has no route for it, so nothing should be sent.
+        # network. The server has no route for it, and nothing should be sent.
         with pytest.raises(RuntimeError, match="needs the v2 API"):
             run(call())
         assert api.requests == []
@@ -251,7 +251,7 @@ def test_tool_uses_the_expected_verb_path_and_body(
     assert api.last.method == verbs[api_version]
     # A path or a body may be given per version, for the handful of tools where the
     # two versions differ. A real path is a string and a real JSON body never has
-    # integer keys, so neither check can collide with a genuine value.
+    # integer keys. Neither check can collide with a genuine value.
     assert api.last.url.path.endswith(path[api_version] if isinstance(path, dict) else path)
     expected = expected_body[api_version] if set(expected_body) == {1, 2} else expected_body
     assert body(api.last) == expected
@@ -283,15 +283,15 @@ def test_version_comes_from_the_configured_url(api, api_version):
         ("https://vikunja.test/api/v3", 1),
     ],
 )
-def test_version_falls_back_to_v1_for_anything_but_an_explicit_v2_url(monkeypatch, url, expected):
+def test_version_falls_back_to_v1_without_an_explicit_v2_url(monkeypatch, url, expected):
     monkeypatch.setenv("VIKUNJA_URL", url)
     assert _version() == expected
 
 
 @pytest.mark.parametrize("api_version", [1, 2])
 def test_listings_unwrap_whichever_collection_shape_arrives(api, run, api_version):
-    """v1 sends a bare array, v2 a pagination envelope. Both must work, and the
-    check is on shape, so a version mismatch degrades gracefully."""
+    """v1 sends a bare array, v2 a pagination envelope. Both must work. The check is
+    on shape, and a version mismatch degrades gracefully."""
     api.returns([{"id": 1, "title": "Home"}])
     assert run(projects.list_projects())[0]["title"] == "Home"
 
@@ -346,8 +346,8 @@ def test_create_task_includes_every_supplied_field(api, run):
 
 
 def test_update_task_includes_every_supplied_field(api, run):
-    # A description routes through the read-then-replace path on both versions, so
-    # these changes get merged into the canned task.
+    # A description routes through the read-then-replace path on both versions.
+    # These changes get merged into the canned task.
     api.returns({"id": 7})
     run(
         tasks.update_task(
@@ -375,21 +375,21 @@ def test_update_task_includes_every_supplied_field(api, run):
 
 # The remaining payload tests run on v2, where an update is a genuine partial
 # update and the body on the wire is exactly the fields that were passed. v1
-# merges into the task it read first, which the routing table and the replace
-# tests below cover instead.
+# merges into the task it read first. The routing table and the replace tests
+# below cover that.
 @pytest.mark.parametrize("api_version", [2])
 def test_update_task_can_set_a_due_date(api, run, api_version):
-    """`create_task` always took a deadline; `update_task` did not, so a deadline
-    could be given at creation and never changed afterwards."""
+    """`create_task` always took a deadline; `update_task` did not. A deadline could
+    be given at creation and never changed afterwards."""
     run(tasks.update_task(7, due_date="2026-08-21T09:00:00+10:00"))
     assert body(api.last) == {"due_date": "2026-08-21T09:00:00+10:00"}
 
 
 # --- clearing dates ---------------------------------------------------------
 # Vikunja has no null for a date: an unset one is Go's zero time, on the wire and
-# in the database, so clearing means writing that value. An empty string is the
-# caller's way of asking, since None already means "leave it out of the payload"
-# and "" is not a datetime Vikunja parses.
+# in the database. Clearing means writing that value. An empty string is the
+# caller's way of asking: None already means "leave it out of the payload", and ""
+# is not a datetime Vikunja parses.
 @pytest.mark.parametrize("api_version", [2])
 @pytest.mark.parametrize("field", ["due_date", "start_date", "end_date"])
 def test_update_task_clears_a_date_given_an_empty_string(api, run, field, api_version):
@@ -403,7 +403,7 @@ def test_create_task_clears_a_date_given_an_empty_string(api, run, field):
     assert body(api.last) == {"title": "Task", field: "0001-01-01T00:00:00Z"}
 
 
-# --- progress, favourite and repeating --------------------------------------
+# --- progress, favourite, and repeating -------------------------------------
 PROGRESS_FIELDS = {
     "percent_done": 0.25,
     "is_favorite": True,
@@ -412,19 +412,19 @@ PROGRESS_FIELDS = {
 }
 
 
-def test_create_task_carries_the_progress_and_repeat_fields(api, run):
+def test_create_task_sends_the_progress_and_repeat_fields(api, run):
     run(tasks.create_task(3, "Task", **PROGRESS_FIELDS))
     assert body(api.last) == {"title": "Task", **PROGRESS_FIELDS}
 
 
 @pytest.mark.parametrize("api_version", [2])
-def test_update_task_carries_the_progress_and_repeat_fields(api, run, api_version):
+def test_update_task_sends_the_progress_and_repeat_fields(api, run, api_version):
     run(tasks.update_task(7, **PROGRESS_FIELDS))
     assert body(api.last) == PROGRESS_FIELDS
 
 
-# Every one of these means something and every one is falsy, so a truthiness check
-# in the payload builder would drop exactly the values that turn a feature off.
+# Every one of these means something and every one is falsy. A truthiness check in
+# the payload builder would drop exactly the values that turn a feature off.
 OFF_VALUES = {
     "percent_done": 0.0,
     "is_favorite": False,
@@ -434,16 +434,14 @@ OFF_VALUES = {
 
 
 @pytest.mark.parametrize(("field", "value"), OFF_VALUES.items())
-def test_create_task_sends_a_falsy_value_rather_than_dropping_it(api, run, field, value):
+def test_create_task_keeps_a_falsy_value(api, run, field, value):
     run(tasks.create_task(3, "Task", **{field: value}))
     assert body(api.last) == {"title": "Task", field: value}
 
 
 @pytest.mark.parametrize("api_version", [2])
 @pytest.mark.parametrize(("field", "value"), OFF_VALUES.items())
-def test_update_task_sends_a_falsy_value_rather_than_dropping_it(
-    api, run, field, value, api_version
-):
+def test_update_task_keeps_a_falsy_value(api, run, field, value, api_version):
     run(tasks.update_task(7, **{field: value}))
     assert body(api.last) == {field: value}
 
@@ -461,8 +459,8 @@ TWO_KANBAN_VIEWS = [
 
 
 def test_the_first_kanban_view_is_used_when_none_is_named(api, run):
-    """Views arrive ordered by position, so the first kanban one is the leftmost
-    tab, whatever order the server happened to send them in."""
+    """Views arrive ordered by position. The first kanban one is the leftmost tab,
+    whatever order the server happened to send them in."""
     api.returns(TWO_KANBAN_VIEWS)
     run(kanban.list_buckets(3))
     assert api.last.url.path.endswith("/projects/3/views/48/buckets")
@@ -475,7 +473,7 @@ def test_a_named_view_is_used_instead(api, run):
 
 
 def test_a_view_that_is_not_kanban_is_refused(api, run):
-    """Only kanban views have buckets, so pointing at a list view is a mistake worth
+    """Only kanban views have buckets. Pointing at a list view is a mistake worth
     naming here, before the buckets endpoint answers with something confusing."""
     api.returns(TWO_KANBAN_VIEWS)
     with pytest.raises(ValueError, match="is a list view"):
@@ -556,7 +554,7 @@ def test_list_buckets_flags_the_default_and_done_columns(api, run):
 
 def test_an_unset_default_bucket_means_the_leftmost_one(api, run):
     """Vikunja leaves `default_bucket_id` at 0 to mean "the leftmost bucket", and
-    buckets arrive in board order, so that is the first."""
+    buckets arrive in board order. That is the first."""
     api.returns_in_order(
         httpx.Response(200, json=[dict(KANBAN_VIEW[0], default_bucket_id=0)]),
         httpx.Response(200, json=BUCKETS),
@@ -574,7 +572,7 @@ def test_list_buckets_survives_a_view_with_no_buckets(api, run):
 
 
 def test_list_bucket_tasks_reports_the_true_size_beside_the_tasks(api, run):
-    """Vikunja caps the tasks it sends per bucket, so `task_count` and the length of
+    """Vikunja caps the tasks it sends per bucket. `task_count` and the length of
     `tasks` are different questions."""
     api.returns_in_order(
         httpx.Response(200, json=KANBAN_VIEW),
@@ -611,7 +609,7 @@ def test_list_bucket_tasks_passes_a_filter_to_the_server(api, run):
 @pytest.mark.parametrize("api_version", [2])
 def test_a_401_on_the_v2_board_explains_itself(api, run, api_version):
     """Observed on 2.5.0: this one route rejects an API token that works everywhere
-    else, so the stock "invalid token" would send someone hunting the wrong problem.
+    else. The stock "invalid token" would send someone hunting the wrong problem.
     """
     api.returns_in_order(
         httpx.Response(200, json=KANBAN_VIEW),
@@ -623,7 +621,7 @@ def test_a_401_on_the_v2_board_explains_itself(api, run, api_version):
 
 @pytest.mark.parametrize("api_version", [1])
 def test_a_401_elsewhere_is_left_alone(api, run, api_version):
-    """The explanation is specific to the v2 route, so v1 must keep the real error."""
+    """The explanation is specific to the v2 route. v1 must keep the real error."""
     api.returns_in_order(
         httpx.Response(200, json=KANBAN_VIEW),
         httpx.Response(401, json={"message": "invalid token provided"}),
@@ -633,7 +631,7 @@ def test_a_401_elsewhere_is_left_alone(api, run, api_version):
 
 
 def test_moving_to_a_bucket_takes_the_project_from_the_task(api, run):
-    """The project is derived, so it cannot contradict the task. A caller-supplied
+    """The project is derived, and it cannot contradict the task. A caller-supplied
     one that disagreed would build a path that looks valid and 404s."""
     api.returns_in_order(
         httpx.Response(200, json={"id": 7, "project_id": 3}),
@@ -655,7 +653,7 @@ def test_moving_to_a_bucket_refuses_when_the_project_cannot_be_read(api, run):
     assert [r.url.path.split("/")[-1] for r in api.requests] == ["7"]
 
 
-# --- searching, bulk and labels ----------------------------------------------
+# --- searching, bulk, and labels ---------------------------------------------
 @pytest.mark.parametrize(("api_version", "param"), [(1, "s"), (2, "q")])
 def test_search_tasks_uses_the_search_param_the_version_expects(api, run, param):
     """Same rename as search_users: sending the wrong one is not an error, it just
@@ -690,8 +688,8 @@ def test_search_tasks_passes_a_filter_and_sort_through(api, run):
 
 
 def test_bulk_update_names_the_fields_separately_from_the_values(api, run):
-    """This endpoint writes only the fields it is told to, so it is a real partial
-    update even on v1."""
+    """This endpoint writes only the fields it is told to. That makes it a real
+    partial update on v1 too."""
     run(tasks.bulk_update_tasks([7, 9], done=True, priority=4))
     assert body(api.last) == {
         "task_ids": [7, 9],
@@ -700,7 +698,7 @@ def test_bulk_update_names_the_fields_separately_from_the_values(api, run):
     }
 
 
-def test_bulk_update_sends_done_false_rather_than_dropping_it(api, run):
+def test_bulk_update_keeps_done_false(api, run):
     run(tasks.bulk_update_tasks([7], done=False))
     assert body(api.last) == {
         "task_ids": [7],
@@ -716,7 +714,7 @@ def test_bulk_update_rejects_an_empty_payload(api, run):
 
 
 # --- bulk create ------------------------------------------------------------
-# v2 only, so every case here runs there. The routing table covers the v1 refusal.
+# v2 only. Every case here runs there, and the routing table covers the v1 refusal.
 @pytest.mark.parametrize("api_version", [2])
 def test_bulk_create_gives_each_entry_the_same_fields_as_a_single_create(api, run, api_version):
     api.returns({"tasks": []})
@@ -787,14 +785,14 @@ def test_bulk_create_refuses_a_batch_it_cannot_send_faithfully(api, run, entries
 @pytest.mark.parametrize("api_version", [2])
 @pytest.mark.parametrize("reply", [{"ok": True}, []], ids=["no tasks key", "not an object"])
 def test_bulk_create_rejects_a_response_without_the_created_tasks(api, run, reply, api_version):
-    """The tasks were most likely created, so reporting none of them would be a
-    worse answer than saying the reply could not be read."""
+    """The tasks were most likely created. Reporting none of them would be a worse
+    answer than saying the reply could not be read."""
     api.returns(reply)
     with pytest.raises(RuntimeError, match="did not return the created tasks"):
         run(tasks.bulk_create_tasks(3, [{"title": "First"}]))
 
 
-def test_create_bucket_carries_an_optional_limit(api, run):
+def test_create_bucket_sends_an_optional_limit(api, run):
     api.returns(KANBAN_VIEW)
     run(kanban.create_bucket(3, "Doing", limit=3))
     assert body(api.last) == {"title": "Doing", "limit": 3}
@@ -832,7 +830,7 @@ def test_list_task_buckets_asks_for_the_buckets_to_be_expanded(api, run):
     assert dict(api.last.url.params) == {"expand": "buckets"}
 
 
-def test_add_relation_carries_a_non_default_kind_in_the_body(api, run):
+def test_add_relation_puts_a_non_default_kind_in_the_body(api, run):
     run(relations.add_relation(7, 9, "blocking"))
     assert body(api.last) == {"other_task_id": 9, "relation_kind": "blocking"}
 
@@ -843,8 +841,8 @@ def test_remove_relation_puts_the_kind_in_the_path(api, run):
 
 
 @pytest.mark.parametrize("api_version", [2])
-def test_update_task_sends_done_false_rather_than_dropping_it(api, run, api_version):
-    """`done=False` is falsy, so a truthiness check here would silently lose it."""
+def test_update_task_keeps_done_false(api, run, api_version):
+    """`done=False` is falsy. A truthiness check here would silently lose it."""
     run(tasks.update_task(7, done=False))
     assert body(api.last) == {"done": False}
 
@@ -862,10 +860,10 @@ def test_set_reminders_accepts_an_empty_list_to_clear(api, run, api_version):
 
 
 # --- v1 has no partial update -----------------------------------------------
-# POST /tasks/{id} replaces the task on v1, so a body carrying only the changed
-# fields resets everything else. That was documented and left armed in 0.8.1, and
-# it had already destroyed one task's description by then, so these are the
-# regression tests for both tools that send through that endpoint.
+# POST /tasks/{id} replaces the task on v1, and a body carrying only the changed
+# fields resets everything else. That was documented and left armed in 0.8.1,
+# having already destroyed one task's description by then. These are the regression
+# tests for both tools that send through that endpoint.
 V1_TASK = {
     "id": 7,
     "title": "Existing",
@@ -886,8 +884,8 @@ def test_v1_update_merges_into_the_task_it_read_first(api, run):
 
 
 def test_v1_set_reminders_merges_into_the_task_it_read_first(api, run):
-    """Same endpoint, same hazard. This one went unnoticed until 0.8.1, because a
-    reminders payload looks self-contained."""
+    """Same endpoint, same hazard. This one went unnoticed until 0.8.1: a reminders
+    payload looks self-contained."""
     api.returns(V1_TASK)
     run(tasks.set_reminders(7, ["2026-08-21T09:00:00+10:00"]))
 
@@ -901,8 +899,8 @@ def test_v1_set_reminders_merges_into_the_task_it_read_first(api, run):
 
 
 def test_move_task_goes_through_the_same_write_path_as_an_update(api, run):
-    """Moving is an update that sets project_id, so on v1 it must merge like one:
-    a single-field body there replaces the whole task."""
+    """Moving is an update that sets project_id. On v1 it must merge like one: a
+    single-field body there replaces the whole task."""
     api.returns(V1_TASK)
     run(tasks.move_task(7, 5))
 
@@ -912,8 +910,8 @@ def test_move_task_goes_through_the_same_write_path_as_an_update(api, run):
 
 
 def test_v1_refuses_to_replace_from_a_read_that_is_not_a_task(api, run):
-    """The read makes the write safe, so a read that returned no task must
-    not be turned into a replace: that would wipe the task."""
+    """The read makes the write safe. A read that returned no task must never become
+    a replace: that would wipe the task."""
     api.returns_raw(204)
     with pytest.raises(RuntimeError, match="did not return task 7"):
         run(tasks.update_task(7, done=True))
@@ -938,8 +936,8 @@ def test_list_tasks_passes_filter_and_sort_through_to_the_server(api, run):
 
 @pytest.mark.parametrize(("api_version", "param"), [(1, "s"), (2, "q")])
 def test_search_users_uses_the_search_param_the_version_expects(api, run, param):
-    """v1 names it `s`, v2 renamed it to `q`. Sending the wrong one is not an
-    error, it silently returns nothing, which is why this is pinned."""
+    """v1 names it `s`, v2 renamed it to `q`. Sending the wrong one is not an error:
+    it silently returns nothing. That is what this pins."""
     run(assignees.search_users("stefan"))
     assert dict(api.last.url.params) == {param: "stefan"}
 
@@ -958,7 +956,7 @@ def test_list_projects_exposes_nesting_and_defaults_missing_fields(api, run):
     ]
 
 
-def test_list_tasks_returns_a_summary_not_the_full_task(api, run):
+def test_list_tasks_returns_a_summary(api, run):
     api.returns(
         [
             {
@@ -1006,8 +1004,8 @@ def test_list_assignees_returns_id_and_username(api, run):
     assert run(assignees.list_assignees(7)) == [{"id": 1, "username": "stefan"}]
 
 
-# Applied to each collection-shape test below, so all six listings are held to
-# the same contract.
+# Applied to each collection-shape test below. All six listings are held to the
+# same contract.
 every_listing = pytest.mark.parametrize(
     "listing",
     [
@@ -1042,9 +1040,9 @@ def test_listings_reject_a_response_that_is_not_a_collection(api, run, listing):
     """An empty body is not an empty collection.
 
     `_request` reports a bodyless response as a status dict, which is right for a
-    delete but is not a listing. Returning [] here would be indistinguishable
-    from genuinely having no items, so an agent would confidently report that
-    nothing exists when the response was actually swallowed upstream.
+    delete and is not a listing. Returning [] here would be indistinguishable from
+    genuinely having no items. An agent would confidently report that nothing
+    exists when the response was actually swallowed upstream.
     """
     api.returns_raw(204)
     with pytest.raises(RuntimeError, match="expected a list from the API, got dict"):

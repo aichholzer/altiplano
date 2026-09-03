@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
     branches: [main]
-  # Every commit that lands on main uploads coverage, so Codecov has a base to
+  # Every commit that lands on main uploads coverage, and Codecov has a base to
   # compare the next pull request against. Without this, a merge commit gets no
   # run, and Codecov falls back to whichever older commit it still holds a report
   # for.

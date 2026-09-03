@@ -1,8 +1,8 @@
 """Task tools, and the write paths the API version dictates.
 
-`_replace_task` and `_write_task` live here, because the read-then-merge they
-implement is a fact about tasks specifically: no other resource has a field that
-only converts on a full replace.
+`_replace_task` and `_write_task` live here. The read-then-merge they implement is
+a fact about tasks specifically: no other resource has a field that only converts
+on a full replace.
 """
 
 from typing import Any
@@ -38,7 +38,7 @@ async def list_tasks(
 
     `filter` and `sort_by` are passed to Vikunja and applied server-side, e.g.
     filter="done = false && priority >= 4", sort_by="priority". Vikunja filters
-    then paginates, so results are complete regardless of page size.
+    then paginates. Results are complete at any page size.
     """
     params: dict[str, Any] = {"page": page, "per_page": per_page}
     if filter:
@@ -59,13 +59,12 @@ async def search_tasks(
 ) -> list[dict]:
     """Search tasks across every project you can see.
 
-    `list_tasks` needs to be told a project. This does not, which makes it the tool
-    for "find this task, I do not remember where it lives". Results carry
-    `project_id` for the same reason.
+    `list_tasks` needs to be told a project. This is the tool for "find this task,
+    I do not remember where it lives", and every result reports its `project_id`.
 
     `query` is a text search over titles and descriptions. `filter` and `sort_by` are
     the same server-side syntax `list_tasks` takes. Vikunja documents the text search
-    as not combinable with a filter, so use one or the other.
+    as incompatible with a filter. Use one or the other.
     """
     params: dict[str, Any] = {"page": page, "per_page": per_page}
     if query:
@@ -86,7 +85,7 @@ async def get_task(task_id: int) -> dict:
 
 
 # The optional fields a new task takes. `create_task` accepts them as arguments and
-# `bulk_create_tasks` accepts them per entry, so they are named once here: a second
+# `bulk_create_tasks` accepts them per entry. They are named once here: a second
 # list would drift, and a field missing from it would be dropped in silence.
 _NEW_TASK_FIELDS = (
     "description",
@@ -105,9 +104,9 @@ _DATE_FIELDS = frozenset({"due_date", "start_date", "end_date"})
 def _new_task(title: str, fields: dict[str, Any]) -> dict[str, Any]:
     """The body for one new task: its title, plus whichever fields were given.
 
-    `None` means leave the field out. Any other falsy value is kept, because 0 and
-    False are how percent_done, is_favorite and the repeat fields are turned off,
-    and a truthiness check here would drop exactly those.
+    `None` means leave the field out. Any other falsy value is kept: 0 and False
+    are how percent_done, is_favorite, and the repeat fields are turned off, and a
+    truthiness check here would drop exactly those.
     """
     payload: dict[str, Any] = {"title": title}
     for name in _NEW_TASK_FIELDS:
@@ -138,16 +137,15 @@ async def create_task(
     plan to work on the task (start work / finish work), distinct from
     `due_date` (the deadline).
 
-    `percent_done` is a fraction despite the name, so a quarter done is 0.25 and not
-    25. Vikunja does not validate it: 50 is stored as 50, not read as 50 percent and
-    not clamped.
+    `percent_done` is a fraction despite the name. A quarter done is 0.25. Vikunja
+    does not validate it, and 50 is stored as 50.
 
     `repeat_after` is a number of seconds, and repeating happens when the task is
     marked done: it reopens itself and moves its due date and reminders forward.
     `repeat_mode` is 0 to advance by `repeat_after`, 1 to repeat monthly and ignore
     `repeat_after`, or 2 to count from the day it was completed. Give a repeating
-    task a `due_date`: it reopens whether or not there is a date to advance, so one
-    with no dates cannot be closed at all.
+    task a `due_date`. It reopens whether or not there is a date to advance, and one
+    with no dates can never be closed.
     """
     payload = _new_task(
         title,
@@ -186,17 +184,16 @@ async def bulk_create_tasks(project_id: int, tasks: list[dict[str, Any]]) -> lis
     """Create several tasks in one project, in one request. Needs the v2 API.
 
     Vikunja creates the batch atomically: if one entry is invalid then none are
-    created, and the error names the entry that failed. They also keep the order
-    they were given, which is the reason to use this over a loop of `create_task`
-    calls: those race each other, so a numbered plan can come back shuffled, and a
-    failure halfway through leaves the rest uncreated.
+    created, and the error names the entry that failed. The tasks also keep the
+    order they were given. A loop of `create_task` calls races: a numbered plan can
+    come back shuffled, and a failure halfway through leaves the rest uncreated.
 
     Each entry is an object taking the same fields as `create_task`. `title` is
     required; `description`, `priority`, `due_date`, `start_date`, `end_date`,
-    `percent_done`, `is_favorite`, `repeat_after` and `repeat_mode` are optional and
-    mean what they do there, including an empty string to clear a date. Any other
-    key is refused, because a dropped one reads as a task created with a date or a
-    priority it never got. Vikunja caps a batch at 100.
+    `percent_done`, `is_favorite`, `repeat_after`, and `repeat_mode` are optional
+    and mean what they do there, including an empty string to clear a date.
+    Anything else is refused. A dropped key would read as a task created with a
+    date or a priority it never got. Vikunja caps a batch at 100.
 
     Returns a summary per created task, in creation order. Call `get_task` for the
     full detail of one.
@@ -219,8 +216,8 @@ async def bulk_create_tasks(project_id: int, tasks: list[dict[str, Any]]) -> lis
     created = data.get("tasks") if isinstance(data, dict) else None
     if not isinstance(created, list):
         # A bodyless response arrives as a status dict. The tasks were most likely
-        # created, so reporting none of them would be worse than saying so.
-        raise RuntimeError("the API did not return the created tasks, so they cannot be listed")
+        # created. Reporting none of them would be the worse answer.
+        raise RuntimeError("the API did not return the created tasks. They cannot be listed.")
     return [_task_summary(t) for t in created]
 
 
@@ -241,7 +238,7 @@ async def update_task(
 ) -> dict:
     """Update a task. Only the fields you pass change. Use `done` to open/close it.
 
-    v1 has no partial update, so there this reads the task and writes it back with
+    v1 has no partial update. There, this reads the task and writes it back with
     your changes merged in, at the cost of one extra request. v2 is a single PATCH
     unless a description is involved.
 
@@ -249,18 +246,18 @@ async def update_task(
     marking the window you plan to work on the task (start work / finish work).
     Pass an empty string to any of the three to clear it.
 
-    `percent_done` is a fraction despite the name, so a quarter done is 0.25 and not
-    25. Vikunja does not validate it: 50 is stored as 50, not read as 50 percent.
+    `percent_done` is a fraction despite the name. A quarter done is 0.25. Vikunja
+    does not validate it, and 50 is stored as 50.
 
-    `repeat_after` is a number of seconds, and setting it changes what `done` means
-    for this task, which will reopen itself with its dates moved forward.
-    `repeat_mode` is 0 to advance by `repeat_after`, 1 to repeat monthly and ignore
-    `repeat_after`, or 2 to count from the day it was completed.
-    A repeating task with no dates cannot be closed: it reopens regardless.
+    `repeat_after` is a number of seconds. Setting it changes what `done` means for
+    this task: it reopens itself with its dates moved forward. `repeat_mode` is 0 to
+    advance by `repeat_after`, 1 to repeat monthly and ignore `repeat_after`, or 2 to
+    count from the day it was completed. A repeating task with no dates can never be
+    closed: it reopens regardless.
 
     One wrinkle in what comes back: on v2 a partial update returns the description
-    as the stored HTML, because v2 will not convert on a PATCH. Call `get_task` if
-    you need it as Markdown.
+    as the stored HTML. v2 does not convert on a PATCH. Call `get_task` if you need
+    it as Markdown.
     """
     payload: dict[str, Any] = {}
     if title is not None:
@@ -298,11 +295,11 @@ async def _write_task(task_id: int, payload: dict[str, Any]) -> dict:
     # partial update.
     if _version() == 1 or "description" in payload:
         return await _replace_task(task_id, payload)
-    # No ?format=markdown here. v2 ignores it on a PATCH in both directions, not
-    # just for the request body, so the task this returns carries its description as
-    # the stored HTML. Verified against 2.5.0 by asking and getting HTML back
-    # regardless. Sending a parameter the server discards would only suggest a
-    # guarantee that does not hold.
+    # No ?format=markdown here. v2 ignores it on a PATCH in both directions, the
+    # response included, and the task this returns holds its description as the
+    # stored HTML. Verified against 2.5.0 by asking and getting HTML back regardless.
+    # Sending a parameter the server discards would suggest a guarantee that does
+    # not hold.
     return await _request(_verb("update"), f"/tasks/{task_id}", json=payload)
 
 
@@ -311,22 +308,21 @@ async def move_task(task_id: int, project_id: int) -> dict:
     """Move a task to another project. Needs write access to the target.
 
     Vikunja has no endpoint for this. A task's `project_id` is writable and setting
-    it is the move, so this costs what an update costs: two requests on v1, one on
-    v2.
+    it is the move. This costs what an update costs: two requests on v1, one on v2.
 
-    Labels, assignees, comments, relations and dates all come along. The task's
-    project-local `identifier` does not: that is derived from the project it is in,
-    so it is reassigned on arrival.
+    Labels, assignees, comments, relations, and dates all come along. The
+    project-local `identifier` derives from the project the task is in, and is
+    reassigned on arrival.
     """
     return await _write_task(task_id, {"project_id": project_id})
 
 
 @mcp.tool()
 async def duplicate_task(task_id: int) -> dict:
-    """Copy a task, with its labels, assignees, attachments and reminders.
+    """Copy a task, with its labels, assignees, attachments, and reminders.
 
-    The copy lands in the same project as the original and carries a `copiedfrom`
-    relation back to it. Vikunja offers no way to duplicate straight into another
+    The copy lands in the same project as the original and links back to it with a
+    `copiedfrom` relation. Vikunja offers no way to duplicate straight into another
     project; call `move_task` on the copy for that.
     """
     return await _request(_verb("create"), f"/tasks/{task_id}/duplicate")
@@ -339,8 +335,8 @@ async def bulk_update_tasks(
     """Set `done` or `priority` on many tasks in one request.
 
     Only the fields you pass are written, on either API version. This endpoint takes
-    the field names separately from the values, which makes it a genuine partial
-    update even on v1, where updating a single task is not.
+    the field names separately from the values. That makes it a genuine partial
+    update on v1 too, where updating a single task is a replace.
 
     You need write access to every project involved. If it is missing on even one,
     the whole request is refused and nothing changes.
@@ -364,32 +360,32 @@ async def _replace_task(task_id: int, changes: dict[str, Any]) -> dict:
 
     There is a reason per API version to go the long way round.
 
-    On v1 there is no partial update at all. `POST /tasks/{id}` is a replace, so a
-    body carrying only the changed fields resets every other field to its zero
-    value: passing `priority` blanks the description, and closing a task with
-    `done` discards its description, priority and dates. Reading first and merging
-    is the only way to change one field without destroying the rest.
+    On v1 there is no partial update at all. `POST /tasks/{id}` is a replace: a body
+    carrying only the changed fields resets every other field to its zero value, so
+    passing `priority` blanks the description and closing a task with `done`
+    discards its description, priority, and dates. Reading first and merging is the
+    only way to change one field while the rest survive.
 
-    On v2 there is `PATCH`, but it silently ignores ?format=markdown, returning 200
-    while storing the Markdown verbatim into a field rendered as HTML. So a
-    description still has to go through a replace there, and everything else stays
-    a cheap partial update.
+    On v2 there is `PATCH`. It silently ignores ?format=markdown: the response is
+    200 and the Markdown lands verbatim in a field rendered as HTML. A description
+    therefore goes through a replace there too, and everything else stays a cheap
+    partial update.
 
-    The read asks for Markdown too, so a description we are not touching is written
-    back in the form it came in, with no second conversion. Verified lossless
-    across labels, assignees, reminders, dates, colour, priority and percent_done.
+    The read asks for Markdown too. A description we are not touching is written
+    back in the form it came in, with no second conversion. Verified lossless across
+    labels, assignees, reminders, dates, colour, priority, and percent_done.
 
-    The lost update this opens is caught where the server allows it: v2 returns an
-    ETag on a single-resource read and honours If-Match, so a task that changed in
-    between fails with 412 and is never silently overwritten. v1 offers no
-    ETag, so no precondition is sent and that window stays open there.
+    The lost update this opens is caught where the server allows it. v2 returns an
+    ETag on a single-resource read and honours If-Match: a task that changed in
+    between fails with 412 and is never silently overwritten. v1 offers no ETag, no
+    precondition is sent, and that window stays open there.
     """
     read = await _send("GET", f"/tasks/{task_id}", params=_md_params())
     current = _decode(read)
     if not isinstance(current, dict) or "id" not in current:
-        # A bodyless response arrives as a status dict. Replacing a task with that
-        # would wipe it, which is worse than refusing.
-        raise RuntimeError(f"the API did not return task {task_id}, so it was not updated")
+        # A bodyless response arrives as a status dict. A replace built from that
+        # would wipe the task.
+        raise RuntimeError(f"the API did not return task {task_id}. It was not updated.")
     body = {k: v for k, v in current.items() if k != "$schema"}
     body.update(changes)
 
@@ -408,7 +404,7 @@ async def _replace_task(task_id: int, changes: dict[str, Any]) -> dict:
     except httpx.HTTPStatusError as err:
         if err.response.status_code == 412:
             raise RuntimeError(
-                f"task {task_id} changed while this update was being prepared, so nothing was "
+                f"task {task_id} changed while this update was being prepared. Nothing was "
                 "written. Read it again and retry."
             ) from err
         raise
@@ -418,9 +414,9 @@ async def _replace_task(task_id: int, changes: dict[str, Any]) -> dict:
 async def set_reminders(task_id: int, reminders: list[str]) -> dict:
     """Replace a task's reminders with the given ISO 8601 datetimes. Empty list clears them.
 
-    Nothing else about the task changes. On v1 that costs an extra request, because
-    its update endpoint is a replace and the task has to be read and written back
-    whole; on v2 it is a single partial update.
+    Nothing else about the task changes. On v1 that costs an extra request: its
+    update endpoint is a replace, and the task has to be read and written back
+    whole. On v2 it is a single partial update.
     """
     payload: dict[str, Any] = {"reminders": [{"reminder": r} for r in reminders]}
     # Same replace hazard as update_task, through the same endpoint. This one went
@@ -435,9 +431,9 @@ async def delete_task(task_id: int) -> dict:
     """Delete a task. There is no way to undo this through the API.
 
     Vikunja soft-deletes, and documents deleted tasks as retained for 30 days
-    before permanent removal, but it exposes no endpoint to list or restore them.
-    So the row outlives the task while being unreachable from here. Treat this as
-    irreversible and confirm the id first, because deleting a task also takes its
-    comments, labels and assignees with it.
+    before permanent removal, while exposing no endpoint to list or restore them.
+    The row outlives the task and stays unreachable from here. Treat this as
+    irreversible and confirm the id first. Deleting a task also takes its comments,
+    labels, and assignees with it.
     """
     return await _request("DELETE", f"/tasks/{task_id}")

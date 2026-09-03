@@ -33,7 +33,7 @@ printf 'VIKUNJA_URL=https://todo.example.com/api/v2\nVIKUNJA_API_TOKEN=tk_xxx\n'
 chmod 600 ~/.config/altiplano/env
 ```
 
-> `VIKUNJA_URL` must end in `/api/v1` or `/api/v2`, the suffix selects the version (eg.: `https://todo.example.com/api/v2`)
+> `VIKUNJA_URL` must end in `/api/v1` or `/api/v2`. That suffix selects the version, for example `https://todo.example.com/api/v2`.
 
 > Vikunja 2.4.0 introduced `/api/v2`. Altiplano strips trailing slashes and enables v2 only for a URL ending in `/api/v2`; every other URL keeps its configured path and uses v1 request verbs. Use `/api/v2` when the server supports it.
 
@@ -65,15 +65,15 @@ In your client's MCP configuration:
 
 Restart the client so it launches the server, then call `list_projects()`. Any list, an empty one included, means the install works.
 
-> Altiplano speaks MCP over stdio, so `uvx altiplano` prints nothing and waits for a client. That silence is the expected behaviour.
+> Altiplano speaks MCP over stdio. `uvx altiplano` prints nothing and waits for a client.
 
 ## Tools
 
 <details>
 <summary>Projects</summary>
 
-- `list_projects()`: includes `parent_project_id` for subprojects.
-- `create_project(title, parent_project_id?, description?)`: pass `parent_project_id` to create a subproject.
+- `list_projects()`: includes `parent_project_id` for sub-projects.
+- `create_project(title, parent_project_id?, description?)`: pass `parent_project_id` to create a sub-project.
 
 </details>
 
@@ -160,8 +160,8 @@ Bucket behaviour:
 Altiplano documents its own use in three places.
 
 - The handshake sends usage rules: resolve ids by name, which calls cannot be undone, how to close a task. Clients apply them on connect.
-- The `altiplano_guide` prompt has the full version, adding cross-tool sequencing and the v1 and v2 differences. Clients list it as `Using Altiplano`.
-- `AGENTS.md` covers working on this repository, and installing Altiplano for someone else. `CLAUDE.md`, because Claude Code needs its own file.
+- The `altiplano_guide` prompt holds the full version, with cross-tool sequencing and the v1 and v2 differences. Clients list it as `Using Altiplano`.
+- `AGENTS.md` covers working on this repository, and installing Altiplano for someone else. `CLAUDE.md` imports it, for Claude Code.
 
 ## Task behaviour
 
@@ -180,7 +180,7 @@ When a v2 read includes an ETag, Altiplano sends it in `If-Match` during the rep
 - Priorities use Vikunja's scale: `0` Unset, `1` Low, `2` Medium, `3` High, `4` Urgent, and `5` DO NOW.
 - Dates are ISO 8601 datetimes. `start_date` and `end_date` define the work window; `due_date` is the deadline.
 - An empty string clears a date by writing Vikunja's zero time, `0001-01-01T00:00:00Z`.
-- `percent_done` is a fraction. A quarter complete is `0.25`. Vikunja does not clamp the value, so `50` remains `50`.
+- `percent_done` is a fraction. A quarter complete is `0.25`. Vikunja does not clamp the value, and `50` remains `50`.
 
 ### Repeating tasks
 
@@ -220,7 +220,7 @@ Tested with Vikunja 2.5.0 against `/api/v1` and `/api/v2`.
 
 Identified issues:
 
-- On Vikunja 2.5.0, the v2 grouped-bucket route used by `list_bucket_tasks` may return HTTP 401 when the token works elsewhere. Try a new full-permission token or `/api/v1`. The same diagnosis is returned for every v2 HTTP 401 from that route, so verify the token itself too.
+- On Vikunja 2.5.0, the v2 grouped-bucket route used by `list_bucket_tasks` may return HTTP 401 when the token works elsewhere. Try a new full-permission token or `/api/v1`. The same diagnosis is returned for every v2 HTTP 401 from that route. Verify the token itself too.
 - On Vikunja 2.3.0, `list_assignees` returns HTTP 500. The endpoint worked on 2.5.0.
 
 ## Contributing
@@ -255,7 +255,7 @@ src/altiplano/
 
 Register a tool group by adding its module and importing it from `server.py`. Add its tools to the routing-table test and the smoke test's exact list.
 
-> **Pull requests are always welcome!**
+> Pull requests are always welcome.
 
 ## Licence
 
@@ -263,7 +263,7 @@ Register a tool group by adding its module and importing it from `server.py`. Ad
 
 ## Support
 
-RTFM, then RTFC... If you are still stuck or just need an additional feature, file an [issue](https://github.com/aichholzer/altiplano/issues).
+[RTFM](https://en.wikipedia.org/wiki/RTFM), then RTFS. If you are still stuck, or just need an additional feature, file an [issue](https://github.com/aichholzer/altiplano/issues).
 
 <div align="center">
 ✌🏼

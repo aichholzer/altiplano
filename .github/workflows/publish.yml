@@ -17,8 +17,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: test
 
-    # The workflow token is read-only, so creating the release and its tag needs
-    # the grant here. This job is the only one that writes through the API, and
+    # The workflow token is read-only. Creating the release and its tag needs the
+    # grant here. This job is the only one that writes through the API, and
     # contents is the narrowest scope covering a release.
     permissions:
       contents: write
@@ -57,15 +57,15 @@ jobs:
             "dist/altiplano-${PKG_VERSION}.tar.gz" \
             "dist/altiplano-${PKG_VERSION}-py3-none-any.whl"
 
-      # Only reached when the publish above succeeded, since a failing step ends
-      # the job. A release therefore exists only for a version that reached PyPI.
+      # Only reached when the publish above succeeded. A failing step ends the job.
+      # A release therefore exists only for a version that reached PyPI.
       #
       # continue-on-error because the package has already shipped by the time this
       # runs. Failing to write the release is bookkeeping, and a red run would say
       # the publish failed. The step reports itself in the log and the summary.
       #
-      # Idempotent, so re-running against a version already released does nothing.
-      # It also cannot revise the notes on a release that exists: edit those on
+      # Idempotent. Re-running against a version already released does nothing. It
+      # also cannot revise the notes on a release that exists: edit those on
       # GitHub, or delete the release and re-run.
       - name: Release
         id: release
@@ -80,10 +80,10 @@ jobs:
 
           NOTES="${RUNNER_TEMP}/release-notes.md"
 
-          # The body is this version's change log section, which is written per
-          # release and reads better than anything generated from commit subjects.
-          # Found by heading, so a version that is no longer the top-most section
-          # still resolves, and matched as an exact string so the brackets in
+          # The body is this version's change log section. It is written per
+          # release, and reads better than anything generated from commit subjects.
+          # Found by heading: a version that is no longer the top-most section
+          # still resolves. The match is an exact string, and the brackets in
           # `## [1.2.3]` need no escaping. Blank lines at both ends are trimmed.
           awk -v ver="$PKG_VERSION" '
             $0 == "## [" ver "]" { found = 1; next }
@@ -97,7 +97,7 @@ jobs:
           ' CHANGELOG.md > "$NOTES"
 
           if [[ ! -s "$NOTES" ]]; then
-            MSG="CHANGELOG.md has no '## [${PKG_VERSION}]' section, so the release"
+            MSG="CHANGELOG.md has no '## [${PKG_VERSION}]' section. The release"
             MSG="$MSG would have no notes. Add the section, then create the release"
             MSG="$MSG by hand."
             echo "::error::$MSG"
@@ -123,13 +123,13 @@ jobs:
             echo "- PyPI: https://pypi.org/project/altiplano/${PKG_VERSION}/"
             if [[ "${{ steps.release.outcome }}" == "failure" ]]; then
               echo ""
-              echo "The GitHub release was **not** created. The publish itself"
-              echo "succeeded, so ${PKG_VERSION} is on PyPI and must not be"
+              echo "The GitHub release was not created. The publish itself"
+              echo "succeeded: ${PKG_VERSION} is on PyPI and must not be"
               echo "rebuilt. See the Release step for why, then create the"
               echo "release by hand."
             elif [[ -n "${RELEASE_URL:-}" ]]; then
               echo "- Release: ${RELEASE_URL}"
             else
-              echo "- Release: ${PKG_VERSION} was already released, so nothing was created."
+              echo "- Release: ${PKG_VERSION} was already released. Nothing was created."
             fi
           } >> "$GITHUB_STEP_SUMMARY"

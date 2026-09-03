@@ -1,11 +1,11 @@
 """Minimal Vikunja MCP server: the entry point.
 
-Filtering and sorting are passed straight to the Vikunja API (server-side), so
-there is no client-side filtering engine to get wrong.
+Filtering and sorting are passed straight to the Vikunja API (server-side). There
+is no client-side filtering engine to get wrong.
 
-There is no logic here. Importing the tool modules registers their tools,
-since `@mcp.tool()` runs at import time, and `main` serves them. The prompt
-module registers the same way. The parts are:
+There is no logic here. Importing the tool modules registers their tools, because
+`@mcp.tool()` runs at import time, and `main` serves them. The prompt module
+registers the same way. The parts are:
 
   `app`      the MCP instance the tools decorate
   `config`   where credentials come from

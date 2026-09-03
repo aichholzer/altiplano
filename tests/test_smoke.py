@@ -1,9 +1,9 @@
 """Smoke tests guarding the failure modes that have actually shipped.
 
-0.4.0 reached PyPI with an import error that broke every launch, so the checks
-here are deliberately shallow and cheap: the module imports, every tool
-registers, the console script resolves, and the two places the version lives
-agree with each other.
+0.4.0 reached PyPI with an import error that broke every launch. The checks here
+are deliberately shallow and cheap: the module imports, every tool registers, the
+console script resolves, and the two places the version lives agree with each
+other.
 
 Two constraints shape these tests. They never call `main()`, which starts the
 server and never returns. And they need no Vikunja credentials, because
@@ -70,7 +70,7 @@ def test_console_script_resolves():
 
 def test_version_is_consistent():
     # `version()` reads the built distribution metadata, which hatchling takes
-    # from pyproject.toml, so this catches drift between pyproject and __init__.
+    # from pyproject.toml. This catches drift between pyproject and __init__.
     assert altiplano.__version__ == version("altiplano")
 
 
@@ -78,8 +78,8 @@ def test_the_handshake_reports_the_running_version():
     """Without this, a stale `uvx` cache is invisible.
 
     The only other way to tell which version a client actually launched is to
-    provoke a behaviour that changed between releases, which is a poor diagnostic
-    and cost several restart cycles before this was declared.
+    provoke a behaviour that changed between releases. That is a poor diagnostic,
+    and it cost several restart cycles before this was declared.
     """
     options = mcp._lowlevel_server.create_initialization_options()
     assert options.server_name == "altiplano"

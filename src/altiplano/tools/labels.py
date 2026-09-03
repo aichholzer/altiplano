@@ -31,9 +31,9 @@ async def create_label(
 
 @mcp.tool()
 async def delete_label(label_id: int) -> dict:
-    """Delete a label everywhere. It comes off every task that carries it.
+    """Delete a label everywhere. It comes off every task that has it.
 
-    To take a label off one task without destroying it, use `remove_label`.
+    `remove_label` takes a label off one task and leaves the label itself alone.
     """
     return await _request("DELETE", f"/labels/{label_id}")
 

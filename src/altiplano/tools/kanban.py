@@ -1,6 +1,6 @@
 """Kanban tools: views, their buckets, and which bucket a task sits in.
 
-Buckets belong to a view, which is why every tool here resolves one first.
+Buckets belong to a view. Every tool here resolves one first.
 """
 
 from typing import Any
@@ -14,9 +14,9 @@ from altiplano.app import mcp
 async def _kanban_view(project_id: int, view_id: int | None = None) -> dict:
     """Resolve which kanban view to act on.
 
-    Buckets belong to a view, so every bucket tool needs one. Most projects have
-    exactly one kanban view, so `view_id` is optional and the first kanban view is
-    used. Views arrive ordered by position, which makes "first" the leftmost tab.
+    Buckets belong to a view, and every bucket tool needs one. Most projects have
+    exactly one kanban view. `view_id` is optional, and the first kanban view is
+    used. Views arrive ordered by position, and the first is the leftmost tab.
     """
     views = _items(await _request("GET", f"/projects/{project_id}/views"))
     if view_id is None:
@@ -55,8 +55,8 @@ async def list_kanban_views(project_id: int) -> list[dict]:
     to target a specific one.
 
     `bucket_configuration_mode` is `manual` when you arrange tasks yourself, or
-    `filter` when Vikunja builds a bucket per filter, in which case moving a task
-    between buckets is not a thing you can do.
+    `filter` when Vikunja builds a bucket per filter. In `filter` mode, moving a
+    task between buckets is unavailable.
     """
     data = await _request("GET", f"/projects/{project_id}/views")
     return [
@@ -77,13 +77,13 @@ async def list_buckets(project_id: int, view_id: int | None = None) -> list[dict
     """List the columns of a project's kanban view, in board order.
 
     `limit` is the most tasks the bucket accepts, where 0 means no limit; a move into
-    a full bucket is refused. Task counts are not here, because Vikunja does not
-    populate them on this endpoint: `list_bucket_tasks` reports them.
+    a full bucket is refused. Vikunja does not populate task counts on this endpoint.
+    `list_bucket_tasks` reports them.
     """
     view = await _kanban_view(project_id, view_id)
     buckets = _items(await _request("GET", f"/projects/{project_id}/views/{view['id']}/buckets"))
-    # An unset default means the leftmost bucket, and these arrive ordered by
-    # position, so that is the first one.
+    # An unset default means the leftmost bucket. Buckets arrive ordered by
+    # position, and the first one is that bucket.
     default_id = view.get("default_bucket_id") or (buckets[0]["id"] if buckets else None)
     return [
         {
@@ -120,8 +120,8 @@ async def create_bucket(
 async def delete_bucket(project_id: int, bucket_id: int, view_id: int | None = None) -> dict:
     """Delete a column from a project's kanban view.
 
-    The tasks in it are not deleted: Vikunja moves them to the default bucket. A view
-    keeps at least one column, so the last one cannot be removed.
+    Vikunja moves the tasks it held to the default bucket, leaving them intact. A
+    view keeps at least one column, and the last one cannot be removed.
     """
     view = await _kanban_view(project_id, view_id)
     return await _request(
@@ -148,9 +148,9 @@ async def list_bucket_tasks(
             raise RuntimeError(
                 "Vikunja rejected the API token for the v2 buckets-with-tasks route, "
                 "though it accepts the same token everywhere else and the v2 spec says "
-                "this route takes one too. A token created before the route existed "
-                "will not carry permission for it, so try a token created with full "
-                "permissions. Failing that, /api/v1 serves the same data. Observed on "
+                "this route takes one too. A token predating the route holds no "
+                "permission for it. Try a token created with full permissions. "
+                "Failing that, /api/v1 serves the same data. Observed on "
                 "Vikunja 2.5.0."
             ) from err
         raise
@@ -169,11 +169,11 @@ async def list_bucket_tasks(
 async def list_task_buckets(task_id: int) -> list[dict]:
     """Report which bucket a task sits in, one entry per kanban view.
 
-    A task holds a position in every kanban view of its project, so a project with
-    two boards puts the task in two buckets. Usually there is one.
+    A task holds a position in every kanban view of its project. A project with two
+    boards puts the task in two buckets. Usually there is one.
 
-    The `bucket_id` on a task read any other way is 0, because that field is only
-    meaningful inside a view, which is why this exists.
+    The `bucket_id` on a task read any other way is 0. That field only means
+    something inside a view.
     """
     task = await _request("GET", f"/tasks/{task_id}", params={"expand": "buckets"})
     return [
@@ -195,20 +195,20 @@ async def move_task_to_bucket(task_id: int, bucket_id: int, view_id: int | None 
 
     - Moving into the done bucket marks the task done, and moving it out un-marks it.
     - A repeating task moved into the done bucket is reopened and sent to the default
-      bucket, since being done is not a state it stays in.
+      bucket.
     - A bucket at its task limit refuses the move.
 
     Only meaningful when the view's `bucket_configuration_mode` is `manual`. In
     `filter` mode the filters decide which bucket a task sits in.
 
-    The project is read from the task, which costs a request and removes an
-    argument that could contradict the task it was given.
+    The project is read from the task. That costs a request and removes an argument
+    that could contradict the task it was given.
     """
     task = await _request("GET", f"/tasks/{task_id}")
     project_id = task.get("project_id") if isinstance(task, dict) else None
     if not project_id:
         raise RuntimeError(
-            f"could not read which project task {task_id} is in, so it was not moved"
+            f"could not read which project task {task_id} is in. It was not moved."
         )
     view = await _kanban_view(project_id, view_id)
     return await _request(

@@ -39,15 +39,15 @@ line-length = 120
 [tool.ruff.lint]
 ignore = [
   # Flags the isinstance guard in `_items` for not raising TypeError. That guard
-  # validates an API response, not a caller's argument, so the rule's assumption
-  # does not hold: RuntimeError is the honest type, and it is a documented part
-  # of the contract the tests assert.
+  # validates an API response. The rule assumes it is validating a caller's
+  # argument. RuntimeError is the honest type here, and it is a documented part of
+  # the contract the tests assert.
   "TRY004",
 ]
 
 [tool.pytest.ini_options]
-# The coverage gate lives here, out of the workflow, so a local run and CI
-# enforce the identical floor.
+# The coverage gate lives here, out of the workflow. A local run and CI enforce
+# the identical floor.
 addopts = "--cov=altiplano --cov-branch --cov-report=term-missing --cov-fail-under=90"
 
 [tool.coverage.report]

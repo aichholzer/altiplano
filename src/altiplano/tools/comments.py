@@ -27,7 +27,7 @@ async def update_comment(task_id: int, comment_id: int, comment: str) -> dict:
     """Replace the text of an existing comment. Get `comment_id` from `list_comments`."""
     # v2 honours ?format=markdown on a replace but silently ignores it on PATCH,
     # storing the Markdown verbatim in a field the UI renders as HTML. A comment has
-    # one writable field, so replacing it and updating it are the same thing, and
+    # one writable field. Replacing it and updating it are the same operation, and
     # replace is the variant that converts.
     return await _request(
         _verb("replace"),

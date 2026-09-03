@@ -1,11 +1,11 @@
 """Markdown exchange on v2, and its absence on v1.
 
 Vikunja stores descriptions and comments as HTML. v2 will convert to and from
-Markdown when asked, so callers never hand-write HTML. The
-awkward part, and the reason for the shape of these tests, is that v2 honours the
-parameter on reads, creates and replaces but silently ignores it on a partial
-update: PATCH returns 200 and stores the Markdown verbatim into a field that is
-rendered as HTML. So a description change has to go through a full replace.
+Markdown when asked, and callers never hand-write HTML. The awkward part, and the
+reason for the shape of these tests, is that v2 honours the parameter on reads,
+creates, and replaces but silently ignores it on a partial update: PATCH returns 200
+and stores the Markdown verbatim into a field that is rendered as HTML. So a
+description change has to go through a full replace.
 """
 
 import httpx
@@ -24,7 +24,7 @@ def fmt(request) -> str | None:
     return dict(request.url.params).get("format")
 
 
-# Tools whose payload or result carries rich text, so they must ask for Markdown.
+# Tools whose payload or result holds rich text. Each must ask for Markdown.
 RICH_TEXT_CALLS = [
     pytest.param(lambda: tasks.get_task(7), id="get_task"),
     pytest.param(lambda: comments.list_comments(7), id="list_comments"),
@@ -45,7 +45,7 @@ def test_v2_asks_for_markdown(api, run, call, api_version):
 @pytest.mark.parametrize("api_version", [1])
 @pytest.mark.parametrize("call", RICH_TEXT_CALLS)
 def test_v1_never_asks_for_markdown(api, run, call, api_version):
-    """v1 has no format parameter, so sending one would be noise at best."""
+    """v1 has no format parameter. Sending one would be noise at best."""
     run(call())
     assert fmt(api.last) is None
 
@@ -58,8 +58,8 @@ def test_v2_partial_updates_do_not_ask_for_markdown(api, run, api_version):
     0.10.0 asked for Markdown here, on the theory that v2 ignored the parameter only
     for the request body. It ignores it for the response too: asking against 2.5.0
     returned `<p><strong>Bold</strong></p>` regardless. The parameter is therefore
-    not sent, because one that the server discards implies a guarantee that does not
-    hold. `get_task` is the way to read a description as Markdown.
+    not sent: one the server discards implies a guarantee that does not hold.
+    `get_task` is the way to read a description as Markdown.
     """
     run(tasks.update_task(7, priority=3))
     assert fmt(api.last) is None
@@ -70,7 +70,7 @@ def test_v2_partial_updates_do_not_ask_for_markdown(api, run, api_version):
 
 @pytest.mark.parametrize("api_version", [2])
 def test_v2_description_update_reads_then_replaces(api, run, api_version):
-    """PATCH would not convert, so a description change becomes read then replace."""
+    """PATCH would not convert. A description change becomes read then replace."""
     api.returns({"id": 7, "title": "Existing", "description": "old", "priority": 4})
     run(tasks.update_task(7, description=MD))
 
@@ -115,10 +115,10 @@ def test_v2_update_without_a_description_stays_a_single_partial_update(api, run,
 
 
 @pytest.mark.parametrize("api_version", [1])
-def test_v1_reads_first_too_but_never_for_markdown(api, run, api_version):
+def test_v1_reads_first_too_and_never_asks_for_markdown(api, run, api_version):
     """v1 also reads before writing, to protect the fields it was not given.
 
-    It cannot convert Markdown at all. Its update endpoint is a replace, so reading
+    It cannot convert Markdown at all. Its update endpoint is a replace, and reading
     first stops the write wiping everything omitted. Neither request asks for a
     format v1 does not have.
     """
@@ -130,7 +130,7 @@ def test_v1_reads_first_too_but_never_for_markdown(api, run, api_version):
 
 @pytest.mark.parametrize("api_version", [2])
 def test_set_reminders_stays_a_partial_update(api, run, api_version):
-    """Reminders carry no rich text, so they must not trigger a replace."""
+    """Reminders hold no rich text. They must not trigger a replace."""
     run(tasks.set_reminders(7, ["2026-08-21T09:00:00+10:00"]))
     assert [r.method for r in api.requests] == ["PATCH"]
 
@@ -138,8 +138,7 @@ def test_set_reminders_stays_a_partial_update(api, run, api_version):
 # --- the read-then-replace race ---------------------------------------------
 # Reading before writing opens a window where something else can write in between,
 # and the replace would then silently discard that edit. v2 returns an ETag on a
-# single-resource read and honours If-Match, so the window can be made to fail
-# loudly instead.
+# single-resource read and honours If-Match. The window can be made to fail loudly.
 @pytest.mark.parametrize("api_version", [2])
 def test_v2_replace_sends_the_etag_back_as_if_match(api, run, api_version):
     api.returns_in_order(

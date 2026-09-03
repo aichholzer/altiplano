@@ -4,8 +4,8 @@ Three things live here because the tool modules should not each have to know the
 which API version is in play and how its verbs differ, how a request is sent and
 how a failure is reported, and how a response is unwrapped and trimmed.
 
-The leading underscores mark these as package-private, so the tool modules import
-them freely. Nothing outside `altiplano` should.
+The leading underscores mark these as package-private. The tool modules import them
+freely, and nothing outside `altiplano` should.
 """
 
 from typing import Any
@@ -15,18 +15,18 @@ import httpx
 from altiplano.config import _base, _headers
 
 # Vikunja has no null for a date. An unset one is Go's zero time, both on the
-# wire and in the database, so writing this value back is how a date is cleared.
+# wire and in the database. Writing this value back is how a date is cleared.
 _NO_DATE = "0001-01-01T00:00:00Z"
 
 
 # Vikunja 2.4.0 added a v2 API alongside v1. Paths are identical for everything
-# this server does, but the verbs for create and update differ, so the version is
-# taken from the URL the user configured. Nothing is probed, and there is no
-# separate setting: a VIKUNJA_URL ending in /api/v2 selects v2.
+# this server does, but the verbs for create and update differ. The version comes
+# from the URL the user configured. Nothing is probed, and there is no separate
+# setting: a VIKUNJA_URL ending in /api/v2 selects v2.
 # `replace` is the third action because three places need a whole-resource write:
 # the task replace, a comment edit, and placing a task in a bucket. v1 spells that
-# the same way it spells an update, which is the root of the hazard _replace_task
-# exists to work around.
+# the same way it spells an update. That collision is the hazard `_replace_task`
+# works around.
 _VERBS = {
     1: {"create": "PUT", "update": "POST", "replace": "POST"},
     2: {"create": "POST", "update": "PATCH", "replace": "PUT"},
@@ -47,8 +47,8 @@ def _md_params() -> dict[str, str]:
     """Ask v2 to exchange rich-text fields as Markdown. v1 has no such option.
 
     Descriptions and comments are stored as HTML. v2 will convert in both
-    directions, so callers can write Markdown and leave the HTML to the server. On
-    v1 this is empty and the fields stay HTML.
+    directions, and callers write Markdown and leave the HTML to the server. On v1
+    this is empty and the fields stay HTML.
     """
     return {"format": "markdown"} if _version() == 2 else {}
 
@@ -58,7 +58,7 @@ def _date(value: str) -> str:
 
     Dates can otherwise only be overwritten, never cleared: `None` means "leave
     this out of the payload", and an empty string is not a datetime Vikunja will
-    parse. There is no null to send, so clearing one means writing the zero time.
+    parse. There is no null to send. Clearing one means writing the zero time.
     """
     return _NO_DATE if value == "" else value
 
@@ -66,14 +66,14 @@ def _date(value: str) -> str:
 def _error_detail(r: httpx.Response) -> str:
     """A message that says what the server actually objected to.
 
-    httpx's own message stops at the status code, which for a rejected filter
-    expression or a validation failure leaves an agent nothing to act on. Vikunja
-    explains itself in the body: v2 follows RFC 9457 (`detail`, alongside a numeric
-    `code`), v1 uses `message`.
+    httpx's own message stops at the status code. For a rejected filter expression
+    or a validation failure, that leaves an agent nothing to act on. Vikunja explains
+    itself in the body: v2 follows RFC 9457 (`detail`, alongside a numeric `code`),
+    v1 uses `message`.
     """
     where = f"{r.status_code} {r.reason_phrase} for {r.request.method} {r.request.url}"
     if r.has_redirect_location:
-        # Nearly always a wrong VIKUNJA_URL, so name where the request was sent.
+        # Nearly always a wrong VIKUNJA_URL. Name where the request was sent.
         return f"{where}: redirected to {r.headers['Location']}"
     try:
         payload = r.json()
@@ -89,10 +89,10 @@ def _error_detail(r: httpx.Response) -> str:
 
 
 async def _send(method: str, path: str, **kwargs: Any) -> httpx.Response:
-    """One request. Raises on any non-2xx, carrying the server's own explanation.
+    """One request. Raises on any non-2xx, with the server's own explanation attached.
 
-    The check is `is_success`, so a redirect counts as a failure: it means the
-    configured URL is wrong, and decoding its body as a result would hide that.
+    The check is `is_success`, and a redirect counts as a failure. A redirect means
+    the configured URL is wrong, and decoding its body as a result would hide that.
     """
     async with httpx.AsyncClient(base_url=_base(), headers=_headers(), timeout=30) as client:
         r = await client.request(method, path, **kwargs)
@@ -115,13 +115,12 @@ def _items(data: Any) -> list:
     """Normalise a collection response across both API versions.
 
     v1 returns a bare array, or a literal `null` for some empty collections. v2
-    wraps every collection in a pagination envelope. The check is on shape, so a
+    wraps every collection in a pagination envelope. The check is on shape. A
     mismatch with the configured version cannot break it.
 
     Anything else means the response was not a collection at all: most likely a
-    bodyless response, which `_request` reports as a status dict. That is an error,
-    because reporting it as empty is indistinguishable from genuinely having no
-    items.
+    bodyless response, which `_request` reports as a status dict. That is an error.
+    Reporting it as empty is indistinguishable from genuinely having no items.
     """
     if data is None:
         return []

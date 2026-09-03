@@ -4,8 +4,8 @@ Altiplano is an MCP server exposing Vikunja as tools. Python, `uv`, no runtime
 dependencies beyond `mcp` and `httpx`.
 
 This file is for an agent working inside a checkout. The wheel contains
-`src/altiplano` alone, so an agent that only calls the tools gets its guidance
-from the handshake instructions and the `altiplano_guide` prompt.
+`src/altiplano` alone. An agent that only calls the tools takes its guidance from
+the handshake instructions and the `altiplano_guide` prompt.
 
 ## Installing it for someone
 
@@ -14,9 +14,9 @@ If the job is to get Altiplano running for a user, follow `## Install` in
 entry, then one `list_projects()` call to confirm.
 
 Three things go wrong there. `VIKUNJA_URL` has to end in `/api/v1` or `/api/v2`,
-because that suffix alone selects the version. The token belongs in the
-credentials file, which leaves the MCP entry free of secrets. And a terminal run
-of `uvx altiplano` prints nothing and waits, since it speaks MCP over stdio.
+and that suffix alone selects the version. The token belongs in the credentials
+file. The MCP entry then holds no secrets. And a terminal run of `uvx altiplano`
+prints nothing and waits. It speaks MCP over stdio.
 
 ## Commands
 
@@ -27,9 +27,9 @@ uvx ruff@0.16.4 check src tests     # lint, the pinned version CI uses
 uv run altiplano                    # run the server from a checkout
 ```
 
-The coverage floor lives in `pyproject.toml` as `--cov-fail-under`, so a local
-run and CI enforce the same number. Enable the pre-commit hook once per clone
-with `git config core.hooksPath hooks`; it runs the lint and the tests above.
+The coverage floor lives in `pyproject.toml` as `--cov-fail-under`. A local run
+and CI enforce the same number. Enable the pre-commit hook once per clone with
+`git config core.hooksPath hooks`; it runs the lint and the tests above.
 
 ## Layout
 
@@ -51,13 +51,16 @@ undocumented tool.
 ## Conventions
 
 - Tool docstrings are shipped text. MCP clients read them as tool descriptions,
-  so a wrong one misleads every caller, silently.
+  and a wrong one misleads every caller, silently.
 - One concern per commit, and no task tracker references in commit messages.
 - Every change bumps the version across `pyproject.toml`,
-  `src/altiplano/__init__.py` and `uv.lock`, with a `CHANGELOG.md` entry under the
+  `src/altiplano/__init__.py`, and `uv.lock`, with a `CHANGELOG.md` entry under the
   matching heading. A new tool is a minor bump.
-- Australian spelling in prose. No em dashes.
-- Never describe something by what it is not. Write the mechanism instead.
+- Australian spelling in prose. No em dashes, and no emoji.
+- Oxford comma in every list.
+- Never describe something by what it is not. Write the mechanism.
+- Nothing hangs off the end of a finished sentence. A trailing clause opening with
+  `so`, `because`, `since`, or `which means` becomes its own sentence, or goes.
 
 ## Two API versions
 
@@ -76,11 +79,10 @@ as `Using Altiplano`, and an agent can fetch it directly with a `prompts/get` ca
 for that name. It covers id resolution, cross-tool sequencing, the calls that
 cannot be undone, and the v1 and v2 differences.
 
-Three rules matter before anything else, because they are where an agent goes
-wrong first:
+Three rules matter before anything else. They are where an agent goes wrong first:
 
-- Never guess an id. Resolve a project, label, bucket, view or user by name with
+- Never guess an id. Resolve a project, label, bucket, view, or user by name with
   the matching list or search tool, then carry the id.
-- `delete_task()`, `delete_label()` and `delete_bucket()` cannot be undone
+- `delete_task()`, `delete_label()`, and `delete_bucket()` cannot be undone
   through this API. Confirm the target id first.
 - Moving a task between kanban buckets changes whether it is done.

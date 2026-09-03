@@ -7,7 +7,7 @@
 coverage:
   status:
     # `informational` on both statuses below. Without it they post a failing check
-    # when the target is missed, which reads as a broken pull request. With it,
+    # when the target is missed. That reads as a broken pull request. With it,
     # Codecov still evaluates the targets and reports the numbers, and the check
     # always passes.
     project:
@@ -27,11 +27,11 @@ coverage:
         informational: true
 
 comment:
-  # Comment only when the diff actually moves coverage, so unrelated pull
-  # requests are not padded with a table saying nothing changed.
+  # Comment only when the diff actually moves coverage. An unrelated pull request
+  # is then not padded with a table saying nothing changed.
   require_changes: true
 
 github_checks:
-  # Marks uncovered lines inline in the Files Changed view, which is the most
-  # direct way to see what a diff failed to cover.
+  # Marks uncovered lines inline in the Files Changed view. That is the most direct
+  # way to see what a diff failed to cover.
   annotations: true
