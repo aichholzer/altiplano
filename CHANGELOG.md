@@ -27,14 +27,36 @@ All notable changes to this project are documented here.
   a Cloudflare tunnel. The README keeps the transport, the settings, and the client
   tokens.
 
+- `altiplano-http --check` prints the resolved settings, the client count, and
+  whether authentication is on, then exits without opening a socket. Both HTTP
+  commands take `--version`.
+
+- `ALTIPLANO_HTTP_ALLOW_UNAUTHENTICATED` serves with no token, for local
+  development. It is refused on any bind address other than loopback.
+
 ### Security
 
-- The HTTP transport refuses to start when bound to a non-loopback address with an
-  empty client store. Without a token every caller would act as the configured
-  Vikunja identity, with every write and delete tool reachable.
+- Authentication is always on. Every HTTP request needs a registered token. An
+  empty store denies every request, and an unreadable store refuses to start. The
+  policy is independent of the contents of the store, and
+  `ALTIPLANO_HTTP_ALLOW_UNAUTHENTICATED` is the only way to turn it off.
+- Binding a non-loopback address with an empty client store is refused at startup.
 - A request with no recognised token gets `401` with
-  `WWW-Authenticate: Bearer realm="altiplano"`. No OAuth metadata is advertised,
-  and no client is sent looking for an authorisation server.
+  `WWW-Authenticate: Bearer realm="altiplano"`, and no OAuth metadata is
+  advertised. Clients configured to send the header directly are the supported
+  path.
+- Client key changes hold an exclusive lock on a sibling `clients.lock` for the
+  whole read-modify-write. An add overlapping a revoke can no longer write back a
+  snapshot that resurrects the revoked token.
+- A client label is limited to 1 to 64 characters of letters, digits, `.`, `_`, and
+  `-`, starting alphanumeric. A label carrying a line break could previously store
+  a record that read back under a different label, leaving a live token that could
+  not be revoked by name.
+- A stored digest must be exactly 64 hexadecimal characters. A malformed record is
+  skipped with a warning naming the line. One non-ASCII digest previously made
+  comparison raise and locked out every client whose record followed it.
+- The store is written through `mkstemp`. The temporary file is never readable by
+  anyone else.
 - Each authenticated request logs the client label that matched. Tokens are never
   logged.
 - One Vikunja token serves every client. Client tokens control who may connect and

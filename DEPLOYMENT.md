@@ -17,25 +17,37 @@ What it assumes you already have:
 ## Install with uv
 
 `uv tool install` builds a virtual environment of its own and puts the commands in a
-bin directory. Setting `UV_TOOL_DIR` and `UV_TOOL_BIN_DIR` makes both paths
-deterministic. A service account with no home directory of its own would otherwise
-leave the unit file guessing.
+bin directory. Four environment variables make every path it touches deterministic,
+which a service account with no home directory of its own needs:
 
 ```bash
 sudo useradd --system --shell /usr/sbin/nologin altiplano
-sudo install -d -o altiplano -g altiplano /opt/altiplano /etc/altiplano
+sudo install -d -o altiplano -g altiplano \
+  /opt/altiplano /opt/altiplano/cache /etc/altiplano
 
 sudo -u altiplano env \
   UV_TOOL_DIR=/opt/altiplano/tools \
   UV_TOOL_BIN_DIR=/opt/altiplano/bin \
+  UV_CACHE_DIR=/opt/altiplano/cache \
+  UV_PYTHON_INSTALL_DIR=/opt/altiplano/python \
   uv tool install "altiplano==1.3.0"
 ```
 
+`UV_TOOL_DIR` and `UV_TOOL_BIN_DIR` place the environment and the commands.
+[`UV_CACHE_DIR`](https://docs.astral.sh/uv/concepts/cache/) is separate and matters
+just as much: uv's cache defaults to `$HOME/.cache/uv`, and an account created
+without a home directory has nowhere writable to put it. The install fails with
+`Failed to initialize cache at ... Permission denied`.
+
+[`UV_PYTHON_INSTALL_DIR`](https://docs.astral.sh/uv/reference/environment/) covers
+the case where uv downloads an interpreter. With a suitable system Python already
+present, pass `--python /usr/bin/python3.13` and leave that variable out.
+
 The commands land at `/opt/altiplano/bin/altiplano-http` and
-`/opt/altiplano/bin/altiplano-clientkey`. Confirm with:
+`/opt/altiplano/bin/altiplano-clientkey`. Confirm the install with:
 
 ```bash
-sudo -u altiplano /opt/altiplano/bin/altiplano-http --help 2>&1 | head -1
+sudo -u altiplano /opt/altiplano/bin/altiplano-http --version
 ```
 
 Pin the version. An unattended restart should not pick up a release nobody has
@@ -93,7 +105,23 @@ sudo -u altiplano env ALTIPLANO_CLIENTS=/etc/altiplano/clients \
 A revocation applies to the next request. The service keeps running.
 
 Register at least one client before starting the service on a non-loopback address.
-Altiplano refuses to start otherwise.
+Altiplano refuses to start otherwise, which catches the missing key while you can
+still act on it. Authentication is on either way: an empty store denies every
+request, and an unreadable store refuses to start.
+
+Check the whole configuration without opening a socket:
+
+```bash
+sudo -u altiplano env $(cat /etc/altiplano/service.env | xargs) \
+  /opt/altiplano/bin/altiplano-http --check
+```
+
+That prints the bind address, the Host allowlist, the store path, the client count,
+and whether authentication is on.
+
+> `ALTIPLANO_HTTP_ALLOW_UNAUTHENTICATED` has no place in a service unit. It is
+> refused on any bind address other than loopback, and behind a proxy or a tunnel a
+> loopback bind says nothing about who is calling.
 
 ## systemd, for Debian and its derivatives
 
@@ -235,11 +263,14 @@ Common failures, and where to look first:
 | Symptom | Cause | Fix |
 |---|---|---|
 | Refuses to start, names the client store | Non-loopback bind with no client tokens | Register a client, or bind to `127.0.0.1` |
+| Refuses to start, names permissions | The store exists and cannot be read | `chown` it to the service account and `chmod 600` |
 | `401` on every call | No token, a typo in it, or a revoked one | Mint a fresh token and check the client sends `Authorization: Bearer` |
 | `421` or an opaque transport error | The `Host` clients send is not allowlisted | Read the server log for the rejected value, then add it |
 | Connection refused from another machine | Bound to loopback, or the firewall drops it | Set `ALTIPLANO_HTTP_HOST=0.0.0.0`, check the firewall |
-| Connects, no tools | A stale install | Check the version the handshake reports |
+| Connects, no tools | A stale install | `altiplano-http --version` on the host |
 | Tool calls fail with a Vikunja `401` | The Vikunja token, not the client token | Check `VIKUNJA_URL` and `VIKUNJA_API_TOKEN` on the host |
+| Install fails on a cache path | `UV_CACHE_DIR` is unset and `$HOME` is not writable | Set `UV_CACHE_DIR` under `/opt/altiplano` |
+| A client is missing from `list` | Its record failed validation on read | The log names the skipped line number |
 
 The log names the client label on every accepted request and the source address on
 every rejected one. Tokens never appear in it.

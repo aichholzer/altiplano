@@ -18,7 +18,8 @@ arrives with the package, on whichever host runs the server.
 import argparse
 import sys
 
-from altiplano.clients import _CLIENTS_FILE, _add, _clients, _remove
+from altiplano import __version__
+from altiplano.clients import _CLIENTS_FILE, _add, _clients, _remove, _StoreUnreadable
 
 
 def _add_command(label: str) -> int:
@@ -57,6 +58,7 @@ def _parser() -> argparse.ArgumentParser:
         prog="altiplano-clientkey",
         description="Manage the tokens Altiplano's HTTP transport accepts.",
     )
+    parser.add_argument("--version", action="version", version=f"altiplano {__version__}")
     commands = parser.add_subparsers(dest="command", required=True)
 
     add = commands.add_parser("add", help="mint a token for a new client")
@@ -80,7 +82,7 @@ def main(argv: list[str] | None = None) -> int:
                 return _revoke_command(args.label)
             case _:
                 return _list_command()
-    except (ValueError, OSError) as err:
+    except (ValueError, OSError, _StoreUnreadable) as err:
         print(f"altiplano-clientkey: {err}", file=sys.stderr)
         return 1
 

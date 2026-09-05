@@ -185,8 +185,14 @@ A revocation takes effect on the next request. There is no restart.
 
 ### 2. Start the server
 
+Both settings matter. The bind address decides which interfaces accept a
+connection, and the Host allowlist decides which `Host` headers are answered. The
+allowlist defaults to localhost, and a LAN name has to be named explicitly:
+
 ```bash
-ALTIPLANO_HTTP_HOST=0.0.0.0 altiplano-http
+ALTIPLANO_HTTP_HOST=0.0.0.0 \
+ALTIPLANO_HTTP_ALLOWED_HOSTS='altiplano.home.arpa,altiplano.home.arpa:*' \
+altiplano-http
 ```
 
 | Variable | Default | Meaning |
@@ -197,13 +203,28 @@ ALTIPLANO_HTTP_HOST=0.0.0.0 altiplano-http
 | `ALTIPLANO_HTTP_ALLOWED_HOSTS` | localhost patterns | Accepted HTTP `Host` values, comma separated. |
 | `ALTIPLANO_HTTP_ALLOWED_ORIGINS` | localhost origins | Accepted browser `Origin` values, comma separated. |
 | `ALTIPLANO_CLIENTS` | `~/.config/altiplano/clients` | Client token store. |
+| `ALTIPLANO_HTTP_ALLOW_UNAUTHENTICATED` | unset | Serves with no token. Loopback only. |
 
-Binding beyond loopback with an empty client store is refused at startup. Every
-caller would otherwise act as the configured Vikunja identity, with every write and
-delete tool available.
+A client connecting to `http://altiplano.home.arpa:8000/mcp` sends
+`Host: altiplano.home.arpa:8000`, which `altiplano.home.arpa:*` covers. Over HTTPS
+on the default port it sends a bare `altiplano.home.arpa`. List both forms.
 
-On loopback with an empty store the server runs open and says so in its log, which
-keeps a fresh checkout testable before any key exists.
+`altiplano-http --check` prints the resolved settings, the client count, and whether
+authentication is on, then exits without opening a socket.
+
+### Authentication is always on
+
+Every request needs a token. An empty store denies every request, and an unreadable
+store refuses to start. The policy never follows from whether any keys happen to
+exist: "nobody is authorised" and "authorise everybody" are different answers.
+
+Starting off loopback with no clients registered is refused, which catches the
+missing key while you can still act on it.
+
+For local development, `ALTIPLANO_HTTP_ALLOW_UNAUTHENTICATED=1` turns the gate off.
+It is refused on any bind address other than loopback. Leave it unset behind a proxy
+or a tunnel: there the bind address describes this machine and says nothing about
+who is calling.
 
 > `ALLOWED_HOSTS` and `ALLOWED_ORIGINS` prevent DNS rebinding. They are not
 > authentication. A device can send any `Host` header it likes. The client tokens
@@ -235,6 +256,12 @@ Some clients name the transport `http`, others `streamable-http`, and some infer
 from the URL. A client that only launches subprocesses cannot reach an HTTP URL at
 all; keep the stdio entry on those machines.
 
+The supported path is a client that sends the header you configure. Altiplano
+answers an unauthenticated request with a bare `WWW-Authenticate: Bearer` challenge
+and publishes no OAuth metadata. A client may still probe the well-known metadata
+URLs on its own initiative and will get a `404`. A client that can only obtain
+credentials through an OAuth flow is not supported here.
+
 ### 4. Verify it
 
 ```python
@@ -243,7 +270,8 @@ import httpx2
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
-URL = "http://127.0.0.1:8000/mcp"
+# The endpoint clients actually use. Its Host header is the one the allowlist sees.
+URL = "http://altiplano.home.arpa:8000/mcp"
 AUTH = {"Authorization": "Bearer altp_..."}
 
 
@@ -262,6 +290,10 @@ asyncio.run(main())
 
 Headers set on the `httpx2.AsyncClient` reach every request. Dropping the
 `Authorization` header gives a `401`.
+
+Run it from a second machine, against the hostname clients will use. Pointing it at
+`127.0.0.1` on the server exercises a `Host` value the allowlist accepts by default.
+A misconfigured allowlist then goes unnoticed until a real client tries.
 
 ### Running it as a managed service
 
