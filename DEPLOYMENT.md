@@ -272,6 +272,27 @@ The verification snippet in [`README.md`](./README.md) connects with the MCP Pyt
 client and lists the tools. Run it from a second machine, with the endpoint's real
 hostname, and with a token minted for that machine.
 
+### Acceptance, before the deployment counts as done
+
+The test suite covers the token store and the gate. It cannot cover your hostname,
+your firewall, or your tunnel. Four checks close that gap, and each one has to run
+against the endpoint clients will actually use, never against `127.0.0.1` on the
+server:
+
+1. `altiplano-http --check` on the host reports the store you configured, a non-zero
+   client count, and `authenticated: yes`.
+2. From a client machine, a token-bearing `initialize` and `tools/list` succeed
+   through the public hostname. The full tool set comes back.
+3. The same request with the `Authorization` header removed gets a `401`.
+4. Revoke that client's token on the host, then repeat check 2. It gets a `401`
+   with no restart. Mint a fresh token afterwards.
+
+Run all four again after the tunnel goes up. The `Host` value changes at that point,
+`ALTIPLANO_HTTP_ALLOWED_HOSTS` has to name the public hostname, and a
+non-interactive client needs its Cloudflare service token alongside its Altiplano
+bearer. Check 4 is the one worth repeating most: it proves revocation still reaches
+the running service through the proxy in front of it.
+
 Common failures, and where to look first:
 
 | Symptom | Cause | Fix |
