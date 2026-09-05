@@ -33,19 +33,22 @@ def _warn_once(key: tuple[Path, str], message: str) -> None:
     warnings.warn(message, stacklevel=3)
 
 
-def _mode_warning(path: Path, mode: int) -> str | None:
-    """The complaint to make when the credentials file is not chmod 600, if any.
+def _mode_warning(path: Path, mode: int, holds: str = "your Vikunja API token") -> str | None:
+    """The complaint to make when a secret-bearing file is not chmod 600, if any.
 
     The module docstring asks for 600; this verifies it. It only warns: the file
     belongs to the user, and refusing to read one that works today would be the
     worse trade. The message names the path and the mode. The contents never appear
     in it.
+
+    `holds` names what is at risk. `clients.py` passes its own: the same check
+    guards the client token store.
     """
     if os.name != "posix" or not mode & 0o077:
         return None
     return (
-        f"{path} is accessible to group or others (mode {mode:04o}) and holds your "
-        f"Vikunja API token. Restrict it with: chmod 600 {path}"
+        f"{path} is accessible to group or others (mode {mode:04o}) and holds "
+        f"{holds}. Restrict it with: chmod 600 {path}"
     )
 
 

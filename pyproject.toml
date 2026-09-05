@@ -1,6 +1,6 @@
 [project]
 name = "altiplano"
-version = "1.2.0"
+version = "1.3.0"
 description = "Minimal MCP server for Vikunja (server-side filtering, no fluff)"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -22,6 +22,10 @@ classifiers = [
 dependencies = [
   "mcp>=2.0.0,<3",
   "httpx>=0.27",
+  # Serves the HTTP transport. Already in the tree through `mcp`, and declared
+  # here because `http_server.py` imports it. Starlette stays undeclared: the
+  # token gate is written against the ASGI interface and imports nothing from it.
+  "uvicorn>=0.30",
 ]
 
 [dependency-groups]
@@ -64,6 +68,8 @@ Issues = "https://github.com/aichholzer/altiplano/issues"
 
 [project.scripts]
 altiplano = "altiplano.server:main"
+altiplano-http = "altiplano.http_server:main"
+altiplano-clientkey = "altiplano.clientkey:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -24,7 +24,9 @@ prints nothing and waits. It speaks MCP over stdio.
 uv sync --locked                    # install, exactly as the lock file says
 uv run pytest -q                    # tests, with the 90 percent coverage gate
 uvx ruff@0.16.4 check src tests     # lint, the pinned version CI uses
-uv run altiplano                    # run the server from a checkout
+uv run altiplano                    # stdio server, from a checkout
+uv run altiplano-http               # HTTP server, loopback and open by default
+uv run altiplano-clientkey list     # the tokens the HTTP server accepts
 ```
 
 The coverage floor lives in `pyproject.toml` as `--cov-fail-under`. A local run
@@ -35,18 +37,21 @@ and CI enforce the same number. Enable the pre-commit hook once per clone with
 
 ```text
 src/altiplano/
-  app.py       MCP instance imported by the tool and prompt modules
-  config.py    Credential resolution and credential-file parsing
-  api.py       API-version handling, requests, and response shaping
-  prompts.py   The usage guidance served as an MCP prompt
-  tools/       One module for each tool group
-  server.py    Registration and the main entry point
+  app.py           MCP instance imported by the tool and prompt modules
+  config.py        Credential resolution and credential-file parsing
+  api.py           API-version handling, requests, and response shaping
+  prompts.py       The usage guidance served as an MCP prompt
+  tools/           One module for each tool group
+  server.py        Registration and the stdio entry point
+  clients.py       The per-client token store for the HTTP transport
+  http_server.py   The HTTP entry point and its bearer-token gate
+  clientkey.py     The altiplano-clientkey command
 ```
 
 Adding a tool means three edits beyond the tool itself: import its module from
 `server.py`, add a routing case in `tests/test_tools.py`, and add the name to the
 exact set in `tests/test_smoke.py`. Both tests fail on an unregistered or
-undocumented tool.
+undocumented tool. A new tool reaches both transports with no further work.
 
 ## Conventions
 
@@ -61,6 +66,29 @@ undocumented tool.
 - Never describe something by what it is not. Write the mechanism.
 - Nothing hangs off the end of a finished sentence. A trailing clause opening with
   `so`, `because`, `since`, or `which means` becomes its own sentence, or goes.
+
+## Two transports
+
+`server.py` runs stdio, one process per client. `http_server.py` serves the same
+`MCPServer` over Streamable HTTP to many clients, gated on per-client bearer tokens
+that `clients.py` stores as SHA-256 digests.
+
+The gate is ASGI middleware wrapping `mcp.streamable_http_app()`, and the reason is
+worth knowing before anyone tries to simplify it. The SDK's `token_verifier` is
+refused without `AuthSettings`; `AuthSettings` requires `issuer_url` and
+`resource_server_url`; and setting it makes the SDK publish
+`/.well-known/oauth-protected-resource` and wrap the endpoint in
+`RequireAuthMiddleware`. A compliant client then follows that metadata to an OAuth
+authorisation server that does not exist. `ServerMiddleware` is protocol-tier and
+never sees an HTTP header.
+
+Two rules for anything touching `http_server.py`:
+
+- The wrapper passes every non-`http` scope straight through. The `lifespan` scope
+  starts the MCP session manager, and no unit test on the auth path would notice it
+  going missing.
+- The middleware is written against the ASGI interface with no Starlette import,
+  which keeps `uvicorn` the only dependency this transport adds.
 
 ## Two API versions
 

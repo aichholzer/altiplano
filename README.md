@@ -155,6 +155,258 @@ Bucket behaviour:
 
 </details>
 
+## Shared HTTP server
+
+`altiplano` speaks MCP over stdio, one process per client, credentials on every
+machine. `altiplano-http` serves the same tools over Streamable HTTP from one
+always-on host, with the Vikunja token held there and nothing else.
+
+Each client presents its own bearer token. Altiplano mints them, stores only their
+SHA-256, and revokes them one at a time.
+
+### 1. Register a client
+
+```bash
+altiplano-clientkey add stefan-laptop
+```
+
+The token is printed once. Altiplano keeps only its hash. A lost token is replaced
+by revoking the label and adding it again.
+
+```bash
+altiplano-clientkey list
+altiplano-clientkey revoke stefan-laptop
+```
+
+A revocation takes effect on the next request. There is no restart.
+
+> The store lives beside the credentials file, at `~/.config/altiplano/clients`, or
+> wherever `ALTIPLANO_CLIENTS` points. It is written `chmod 600`.
+
+### 2. Start the server
+
+```bash
+ALTIPLANO_HTTP_HOST=0.0.0.0 altiplano-http
+```
+
+| Variable | Default | Meaning |
+|---|---:|---|
+| `ALTIPLANO_HTTP_HOST` | `127.0.0.1` | Bind address. `0.0.0.0` listens on every IPv4 interface. |
+| `ALTIPLANO_HTTP_PORT` | `8000` | TCP port. |
+| `ALTIPLANO_HTTP_PATH` | `/mcp` | MCP endpoint path. |
+| `ALTIPLANO_HTTP_ALLOWED_HOSTS` | localhost patterns | Accepted HTTP `Host` values, comma separated. |
+| `ALTIPLANO_HTTP_ALLOWED_ORIGINS` | localhost origins | Accepted browser `Origin` values, comma separated. |
+| `ALTIPLANO_CLIENTS` | `~/.config/altiplano/clients` | Client token store. |
+
+Binding beyond loopback with an empty client store is refused at startup. Every
+caller would otherwise act as the configured Vikunja identity, with every write and
+delete tool available.
+
+On loopback with an empty store the server runs open and says so in its log, which
+keeps a fresh checkout testable before any key exists.
+
+> `ALLOWED_HOSTS` and `ALLOWED_ORIGINS` prevent DNS rebinding. They are not
+> authentication. A device can send any `Host` header it likes. The client tokens
+> are the access control.
+
+### 3. Point a client at it
+
+```bash
+claude mcp add --transport http altiplano \
+  http://altiplano.home.arpa:8000/mcp \
+  --header "Authorization: Bearer altp_..."
+```
+
+The equivalent in a client's own configuration:
+
+```json
+{
+  "mcpServers": {
+    "altiplano": {
+      "type": "http",
+      "url": "http://altiplano.home.arpa:8000/mcp",
+      "headers": { "Authorization": "Bearer altp_..." }
+    }
+  }
+}
+```
+
+Some clients name the transport `http`, others `streamable-http`, and some infer it
+from the URL. A client that only launches subprocesses cannot reach an HTTP URL at
+all; keep the stdio entry on those machines.
+
+### 4. Verify it
+
+```python
+import asyncio
+import httpx2
+from mcp import ClientSession
+from mcp.client.streamable_http import streamable_http_client
+
+URL = "http://127.0.0.1:8000/mcp"
+AUTH = {"Authorization": "Bearer altp_..."}
+
+
+async def main() -> None:
+    async with httpx2.AsyncClient(headers=AUTH) as http:
+        async with streamable_http_client(URL, http_client=http) as (read, write, *_):
+            async with ClientSession(read, write) as session:
+                info = await session.initialize()
+                print(info.server_info.name, info.server_info.version)
+                listed = await session.list_tools()
+                print(len(listed.tools), "tools")
+
+
+asyncio.run(main())
+```
+
+Headers set on the `httpx2.AsyncClient` reach every request. Dropping the
+`Authorization` header gives a `401`.
+
+### Running it as a service with uv
+
+`uv tool install` puts the commands in a directory of their own. Setting
+`UV_TOOL_DIR` and `UV_TOOL_BIN_DIR` makes those paths deterministic, which matters
+for a unit file running as a system account with no home directory of its own.
+
+```bash
+sudo install -d -o altiplano -g altiplano /opt/altiplano /etc/altiplano
+sudo -u altiplano env \
+  UV_TOOL_DIR=/opt/altiplano/tools \
+  UV_TOOL_BIN_DIR=/opt/altiplano/bin \
+  uv tool install "altiplano==1.3.0"
+```
+
+Pin the version. An unattended restart should not pick up a release nobody has
+looked at.
+
+Put the settings in `/etc/altiplano/service.env`, owned by the service account and
+`chmod 600`:
+
+```dotenv
+VIKUNJA_URL=https://vikunja.home.arpa/api/v2
+VIKUNJA_API_TOKEN=tk_xxxxxxxx
+ALTIPLANO_CLIENTS=/etc/altiplano/clients
+ALTIPLANO_HTTP_HOST=0.0.0.0
+ALTIPLANO_HTTP_PORT=8000
+ALTIPLANO_HTTP_ALLOWED_HOSTS=altiplano.home.arpa,altiplano.home.arpa:*
+```
+
+Register clients as the service account. The store then belongs to the user that
+reads it:
+
+```bash
+sudo -u altiplano env ALTIPLANO_CLIENTS=/etc/altiplano/clients \
+  /opt/altiplano/bin/altiplano-clientkey add stefan-laptop
+```
+
+#### systemd, for Debian and its derivatives
+
+`/etc/systemd/system/altiplano.service`:
+
+```ini
+[Unit]
+Description=Altiplano MCP server over HTTP
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=altiplano
+Group=altiplano
+EnvironmentFile=/etc/altiplano/service.env
+ExecStart=/opt/altiplano/bin/altiplano-http
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/etc/altiplano
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now altiplano
+journalctl -u altiplano -f
+```
+
+#### OpenRC, for Alpine
+
+`/etc/init.d/altiplano`, `chmod 755`:
+
+```sh
+#!/sbin/openrc-run
+
+name="altiplano"
+description="Altiplano MCP server over HTTP"
+
+supervisor="supervise-daemon"
+command="/opt/altiplano/bin/altiplano-http"
+command_user="altiplano:altiplano"
+supervise_daemon_args="--respawn-delay 3"
+output_log="/var/log/altiplano/altiplano.log"
+error_log="/var/log/altiplano/altiplano.log"
+
+depend() {
+    need net
+}
+
+start_pre() {
+    checkpath --directory --owner altiplano:altiplano --mode 0755 /var/log/altiplano
+}
+```
+
+OpenRC sources `/etc/conf.d/altiplano` on its own. Environment variables there need
+exporting to reach the daemon:
+
+```sh
+export VIKUNJA_URL="https://vikunja.home.arpa/api/v2"
+export VIKUNJA_API_TOKEN="tk_xxxxxxxx"
+export ALTIPLANO_CLIENTS="/etc/altiplano/clients"
+export ALTIPLANO_HTTP_HOST="0.0.0.0"
+export ALTIPLANO_HTTP_PORT="8000"
+export ALTIPLANO_HTTP_ALLOWED_HOSTS="altiplano.home.arpa,altiplano.home.arpa:*"
+```
+
+```bash
+sudo chmod 600 /etc/conf.d/altiplano
+sudo rc-update add altiplano default
+sudo rc-service altiplano start
+sudo rc-service altiplano status
+```
+
+### Behind a Cloudflare tunnel
+
+The tunnel authenticates the connection and Altiplano authenticates the client, and
+the two are worth keeping separate: revoking one client's access stays a local
+operation, and it survives a change of transport.
+
+Two things change when the tunnel goes up. `ALTIPLANO_HTTP_ALLOWED_HOSTS` needs the
+public hostname, which is the `Host` the tunnel presents. And Cloudflare Access
+authenticates browsers through SSO, while an MCP client posting a bearer token is
+not a browser: non-interactive clients need a Cloudflare service token, sent as
+`CF-Access-Client-Id` and `CF-Access-Client-Secret` alongside their Altiplano
+bearer.
+
+Bind to loopback once the tunnel reaches the server, and let `cloudflared` be the
+only thing that connects.
+
+### What a shared server does not give you
+
+One Vikunja token serves every client. Every client therefore acts as the same
+Vikunja identity with the same permissions. Per-client tokens control who may
+connect and give each client a name in the log. They do not partition what a client
+may do.
+
+Use a dedicated Vikunja service account with only the scopes the tools you expose
+need. Per-user Vikunja identity would mean selecting credentials from the request
+context, which is a different design.
+
 ## Guidance
 
 Altiplano documents its own use in three places.
@@ -239,18 +491,24 @@ The hook runs Ruff 0.16.4 over `src` and `tests`, then pytest with a 90 percent 
 uv run altiplano                                      # development checkout
 uvx --from /your/local/path altiplano                 # local package path
 uvx --refresh-package altiplano altiplano@latest      # current PyPI release
+
+uv run altiplano-http                                 # HTTP transport, loopback
+uv run altiplano-clientkey add laptop                 # mint a client token
 ```
 
 ## Layout
 
 ```text
 src/altiplano/
-  app.py       MCP instance imported by the tool and prompt modules
-  config.py    Credential resolution and credential-file parsing
-  api.py       API-version handling, requests, and response shaping
-  prompts.py   The usage guidance, served as a prompt
-  tools/       One module for each tool group
-  server.py    Registration and the main entry point
+  app.py           MCP instance imported by the tool and prompt modules
+  config.py        Credential resolution and credential-file parsing
+  api.py           API-version handling, requests, and response shaping
+  prompts.py       The usage guidance, served as a prompt
+  tools/           One module for each tool group
+  server.py        Registration and the stdio entry point
+  clients.py       The per-client token store for the HTTP transport
+  http_server.py   The HTTP entry point and its bearer-token gate
+  clientkey.py     The altiplano-clientkey command
 ```
 
 Register a tool group by adding its module and importing it from `server.py`. Add its tools to the routing-table test and the smoke test's exact list.

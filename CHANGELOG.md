@@ -2,6 +2,40 @@
 
 All notable changes to this project are documented here.
 
+## [1.3.0]
+
+### Added
+
+- `altiplano-http`, a second entry point serving the existing tools and prompt over
+  Streamable HTTP from one always-on host. The Vikunja token stays on that host.
+  `altiplano` keeps speaking stdio, unchanged.
+
+  Settings come from the environment: `ALTIPLANO_HTTP_HOST` (default `127.0.0.1`),
+  `ALTIPLANO_HTTP_PORT` (`8000`), `ALTIPLANO_HTTP_PATH` (`/mcp`),
+  `ALTIPLANO_HTTP_ALLOWED_HOSTS`, and `ALTIPLANO_HTTP_ALLOWED_ORIGINS`.
+
+- `altiplano-clientkey add|list|revoke`, which mints the bearer tokens the HTTP
+  transport accepts. A token is `altp_` followed by 32 bytes from `secrets`, shown
+  once. Only its SHA-256 is stored, in `ALTIPLANO_CLIENTS` or a `clients` file
+  beside the credentials file. A revocation applies to the next request with no
+  restart.
+
+- `uvicorn` as a declared dependency. It was already in the tree through `mcp`.
+
+### Security
+
+- The HTTP transport refuses to start when bound to a non-loopback address with an
+  empty client store. Without a token every caller would act as the configured
+  Vikunja identity, with every write and delete tool reachable.
+- A request with no recognised token gets `401` with
+  `WWW-Authenticate: Bearer realm="altiplano"`. No OAuth metadata is advertised,
+  and no client is sent looking for an authorisation server.
+- Each authenticated request logs the client label that matched. Tokens are never
+  logged.
+- One Vikunja token serves every client. Client tokens control who may connect and
+  do not partition what a client may do. Use a Vikunja service account holding only
+  the scopes the exposed tools need.
+
 ## [1.2.0]
 
 ### Added
