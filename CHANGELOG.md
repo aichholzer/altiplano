@@ -22,6 +22,11 @@ All notable changes to this project are documented here.
 
 - `uvicorn` as a declared dependency. It was already in the tree through `mcp`.
 
+- `DEPLOYMENT.md`, covering the host side of a shared deployment: installing with
+  `uv` under a service account, a systemd unit, an OpenRC script, firewalling, and
+  a Cloudflare tunnel. The README keeps the transport, the settings, and the client
+  tokens.
+
 ### Security
 
 - The HTTP transport refuses to start when bound to a non-loopback address with an

@@ -13,6 +13,9 @@ If the job is to get Altiplano running for a user, follow `## Install` in
 `README.md`: `uv`, a Vikunja API token, a credentials file, the client's MCP
 entry, then one `list_projects()` call to confirm.
 
+For a shared HTTP deployment on a host, `DEPLOYMENT.md` has the service account,
+the systemd unit, the OpenRC script, and the client token commands.
+
 Three things go wrong there. `VIKUNJA_URL` has to end in `/api/v1` or `/api/v2`,
 and that suffix alone selects the version. The token belongs in the credentials
 file. The MCP entry then holds no secrets. And a terminal run of `uvx altiplano`

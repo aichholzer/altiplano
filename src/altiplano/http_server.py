@@ -81,10 +81,9 @@ def _host() -> str:
 def _is_loopback(host: str) -> bool:
     """Whether binding to `host` keeps the listener on this machine.
 
-    `127.0.0.0/8` is loopback in full, which is why the check goes through
-    `ipaddress` and not a string match. A hostname other than `localhost` reads as
-    remote, which is the safe direction: an unrecognised bind address then requires
-    client tokens.
+    `ipaddress` covers the whole of `127.0.0.0/8`. A hostname other than `localhost`
+    reads as remote, and an unrecognised bind address therefore requires client
+    tokens. Failing that way round is the safe one.
     """
     if host == "localhost":
         return True

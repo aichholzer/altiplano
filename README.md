@@ -263,138 +263,12 @@ asyncio.run(main())
 Headers set on the `httpx2.AsyncClient` reach every request. Dropping the
 `Authorization` header gives a `401`.
 
-### Running it as a service with uv
+### Running it as a managed service
 
-`uv tool install` puts the commands in a directory of their own. Setting
-`UV_TOOL_DIR` and `UV_TOOL_BIN_DIR` makes those paths deterministic, which matters
-for a unit file running as a system account with no home directory of its own.
-
-```bash
-sudo install -d -o altiplano -g altiplano /opt/altiplano /etc/altiplano
-sudo -u altiplano env \
-  UV_TOOL_DIR=/opt/altiplano/tools \
-  UV_TOOL_BIN_DIR=/opt/altiplano/bin \
-  uv tool install "altiplano==1.3.0"
-```
-
-Pin the version. An unattended restart should not pick up a release nobody has
-looked at.
-
-Put the settings in `/etc/altiplano/service.env`, owned by the service account and
-`chmod 600`:
-
-```dotenv
-VIKUNJA_URL=https://vikunja.home.arpa/api/v2
-VIKUNJA_API_TOKEN=tk_xxxxxxxx
-ALTIPLANO_CLIENTS=/etc/altiplano/clients
-ALTIPLANO_HTTP_HOST=0.0.0.0
-ALTIPLANO_HTTP_PORT=8000
-ALTIPLANO_HTTP_ALLOWED_HOSTS=altiplano.home.arpa,altiplano.home.arpa:*
-```
-
-Register clients as the service account. The store then belongs to the user that
-reads it:
-
-```bash
-sudo -u altiplano env ALTIPLANO_CLIENTS=/etc/altiplano/clients \
-  /opt/altiplano/bin/altiplano-clientkey add stefan-laptop
-```
-
-#### systemd, for Debian and its derivatives
-
-`/etc/systemd/system/altiplano.service`:
-
-```ini
-[Unit]
-Description=Altiplano MCP server over HTTP
-Wants=network-online.target
-After=network-online.target
-
-[Service]
-Type=simple
-User=altiplano
-Group=altiplano
-EnvironmentFile=/etc/altiplano/service.env
-ExecStart=/opt/altiplano/bin/altiplano-http
-Restart=on-failure
-RestartSec=3
-UMask=0077
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/etc/altiplano
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now altiplano
-journalctl -u altiplano -f
-```
-
-#### OpenRC, for Alpine
-
-`/etc/init.d/altiplano`, `chmod 755`:
-
-```sh
-#!/sbin/openrc-run
-
-name="altiplano"
-description="Altiplano MCP server over HTTP"
-
-supervisor="supervise-daemon"
-command="/opt/altiplano/bin/altiplano-http"
-command_user="altiplano:altiplano"
-supervise_daemon_args="--respawn-delay 3"
-output_log="/var/log/altiplano/altiplano.log"
-error_log="/var/log/altiplano/altiplano.log"
-
-depend() {
-    need net
-}
-
-start_pre() {
-    checkpath --directory --owner altiplano:altiplano --mode 0755 /var/log/altiplano
-}
-```
-
-OpenRC sources `/etc/conf.d/altiplano` on its own. Environment variables there need
-exporting to reach the daemon:
-
-```sh
-export VIKUNJA_URL="https://vikunja.home.arpa/api/v2"
-export VIKUNJA_API_TOKEN="tk_xxxxxxxx"
-export ALTIPLANO_CLIENTS="/etc/altiplano/clients"
-export ALTIPLANO_HTTP_HOST="0.0.0.0"
-export ALTIPLANO_HTTP_PORT="8000"
-export ALTIPLANO_HTTP_ALLOWED_HOSTS="altiplano.home.arpa,altiplano.home.arpa:*"
-```
-
-```bash
-sudo chmod 600 /etc/conf.d/altiplano
-sudo rc-update add altiplano default
-sudo rc-service altiplano start
-sudo rc-service altiplano status
-```
-
-### Behind a Cloudflare tunnel
-
-The tunnel authenticates the connection and Altiplano authenticates the client, and
-the two are worth keeping separate: revoking one client's access stays a local
-operation, and it survives a change of transport.
-
-Two things change when the tunnel goes up. `ALTIPLANO_HTTP_ALLOWED_HOSTS` needs the
-public hostname, which is the `Host` the tunnel presents. And Cloudflare Access
-authenticates browsers through SSO, while an MCP client posting a bearer token is
-not a browser: non-interactive clients need a Cloudflare service token, sent as
-`CF-Access-Client-Id` and `CF-Access-Client-Secret` alongside their Altiplano
-bearer.
-
-Bind to loopback once the tunnel reaches the server, and let `cloudflared` be the
-only thing that connects.
+[`DEPLOYMENT.md`](./DEPLOYMENT.md) covers the host side: installing with `uv` under
+a service account, a systemd unit for Debian and an OpenRC script for Alpine,
+firewalling the listener, putting it behind a Cloudflare tunnel, and what to check
+when it does not work.
 
 ### What a shared server does not give you
 
@@ -414,6 +288,7 @@ Altiplano documents its own use in three places.
 - The handshake sends usage rules: resolve ids by name, which calls cannot be undone, how to close a task. Clients apply them on connect.
 - The `altiplano_guide` prompt holds the full version, with cross-tool sequencing and the v1 and v2 differences. Clients list it as `Using Altiplano`.
 - `AGENTS.md` covers working on this repository, and installing Altiplano for someone else. `CLAUDE.md` imports it, for Claude Code.
+- `DEPLOYMENT.md` covers running the HTTP transport as a service on a host.
 
 ## Task behaviour
 
