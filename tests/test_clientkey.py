@@ -83,6 +83,22 @@ def test_revoking_something_absent_exits_non_zero(store, capsys):
     assert "no client named" in capsys.readouterr().err
 
 
+def test_a_platform_without_locking_is_reported_rather_than_risked(store, capsys, monkeypatch):
+    monkeypatch.setattr(clients, "fcntl", None)
+    assert clientkey.main(["add", "laptop"]) == 1
+    assert "POSIX file locking" in capsys.readouterr().err
+    assert not store.exists()
+
+
+def test_version_reports_the_package_version(capsys):
+    from altiplano import __version__
+
+    with pytest.raises(SystemExit) as caught:
+        clientkey.main(["--version"])
+    assert caught.value.code == 0
+    assert __version__ in capsys.readouterr().out
+
+
 def test_no_subcommand_is_an_error(store):
     """argparse raises SystemExit here. This pins that path."""
     with pytest.raises(SystemExit) as caught:

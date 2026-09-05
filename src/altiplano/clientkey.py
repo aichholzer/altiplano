@@ -19,7 +19,14 @@ import argparse
 import sys
 
 from altiplano import __version__
-from altiplano.clients import _CLIENTS_FILE, _add, _clients, _remove, _StoreUnreadable
+from altiplano.clients import (
+    _CLIENTS_FILE,
+    _add,
+    _clients,
+    _LockUnavailable,
+    _remove,
+    _StoreUnreadable,
+)
 
 
 def _add_command(label: str) -> int:
@@ -82,7 +89,7 @@ def main(argv: list[str] | None = None) -> int:
                 return _revoke_command(args.label)
             case _:
                 return _list_command()
-    except (ValueError, OSError, _StoreUnreadable) as err:
+    except (ValueError, OSError, _StoreUnreadable, _LockUnavailable) as err:
         print(f"altiplano-clientkey: {err}", file=sys.stderr)
         return 1
 

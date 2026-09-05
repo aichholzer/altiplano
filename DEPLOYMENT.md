@@ -112,12 +112,23 @@ request, and an unreadable store refuses to start.
 Check the whole configuration without opening a socket:
 
 ```bash
-sudo -u altiplano env $(cat /etc/altiplano/service.env | xargs) \
-  /opt/altiplano/bin/altiplano-http --check
+sudo -u altiplano sh -eu -c '
+  set -a
+  . /etc/altiplano/service.env
+  set +a
+  exec /opt/altiplano/bin/altiplano-http --check
+'
 ```
 
 That prints the bind address, the Host allowlist, the store path, the client count,
 and whether authentication is on.
+
+The file is sourced inside the service account's own shell, for two reasons. It is
+`chmod 600` and owned by that account, and an administrator's shell cannot read it
+before `sudo` runs. And sourcing keeps the Vikunja token out of the command line,
+where `ps` would show it to every user on the host. This form needs
+`service.env` to hold shell-compatible `KEY=VALUE` lines, which is what systemd's
+`EnvironmentFile` accepts anyway.
 
 > `ALTIPLANO_HTTP_ALLOW_UNAUTHENTICATED` has no place in a service unit. It is
 > refused on any bind address other than loopback, and behind a proxy or a tunnel a

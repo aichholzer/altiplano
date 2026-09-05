@@ -128,18 +128,40 @@ def test_no_token_identifies_nobody(store, token):
         "work\u2028laptop", "tab\tlaptop", "null\x00byte", "-leading-dash",
         ".leading-dot", "_leading-underscore", "a" * 65, "spaces here",
         "unicode\u00e9", "semi;colon",
+        # `$` also matches just before a final newline. `re.match` accepted these,
+        # and only `fullmatch` refuses them.
+        "laptop\n", "laptop\r\n", "laptop\n\n",
     ],
     ids=[
         "empty", "colon", "hash", "leading space", "trailing space",
         "newline", "carriage return", "crlf", "vertical tab", "line separator",
         "tab", "null byte", "leading dash", "leading dot", "leading underscore",
         "too long", "inner space", "non-ascii", "semicolon",
+        "trailing newline", "trailing crlf", "two trailing newlines",
     ],
 )
 def test_a_label_that_could_rewrite_the_record_is_refused(store, label):
     with pytest.raises(ValueError, match="client label"):
         clients._add(label)
     assert not store.exists()
+
+
+def test_a_trailing_newline_never_mints_an_unusable_token(store):
+    """`_LABEL.match("laptop\\n")` succeeded, and the record split across two lines.
+
+    `add` then reported success while handing over a token that could not
+    authenticate and a label that could not be revoked.
+    """
+    with pytest.raises(ValueError, match="client label"):
+        clients._add("laptop\n")
+    assert clients._labels() == ()
+    assert not store.exists()
+
+
+def test_the_patterns_are_anchored_at_both_ends():
+    """The guard against `match` creeping back in place of `fullmatch`."""
+    assert clients._LABEL.fullmatch("laptop\n") is None
+    assert clients._DIGEST.fullmatch("a" * 64 + "\n") is None
 
 
 def test_an_embedded_newline_cannot_smuggle_a_second_record(store):
@@ -225,30 +247,34 @@ def test_a_record_with_no_created_field_still_loads(store):
 
 
 # --- caching ----------------------------------------------------------------
-def test_the_store_is_read_once_per_change(store, monkeypatch):
+def test_the_parse_is_cached_and_the_file_is_opened_every_time(store, monkeypatch):
+    """Two separate guarantees, and they pull in opposite directions.
+
+    The parse is cached, and repeated reads cost nothing. The file is opened on
+    every call regardless, which is what notices a store that has stopped being
+    readable.
+    """
     clients._add("laptop")
     clients._file_cache = None
 
-    reads = []
-    real_read = clients.Path.read_text
-
-    def counting_read(self, *args, **kwargs):
-        if self == store:
-            reads.append(self)
-        return real_read(self, *args, **kwargs)
-
-    monkeypatch.setattr(clients.Path, "read_text", counting_read)
+    opens, parses = [], []
+    real_fstat, real_parse = clients.os.fstat, clients._parse
+    monkeypatch.setattr(clients.os, "fstat", lambda fd: (opens.append(fd), real_fstat(fd))[1])
+    monkeypatch.setattr(clients, "_parse", lambda text: (parses.append(text), real_parse(text))[1])
 
     clients._labels()
     clients._labels()
-    assert len(reads) == 1
+    clients._labels()
+    assert len(opens) == 3, "the file has to be opened on every call"
+    assert len(parses) == 1, "the parse is cached"
 
     write(store, f"desktop:{'c' * 64}:2026-09-05T00:00:00Z\n")
     bumped = store.stat().st_mtime_ns + 10**9
     os.utime(store, ns=(bumped, bumped))
 
     assert clients._labels() == ("desktop",)
-    assert len(reads) == 2
+    assert len(opens) == 4
+    assert len(parses) == 2
 
 
 # --- writing ----------------------------------------------------------------
@@ -331,16 +357,46 @@ def test_an_unreadable_store_raises(store):
 
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="root reads a file whatever its mode says")
-def test_an_unreadable_store_denies_rather_than_raising_at_identify(store):
+def test_an_unreadable_store_denies_even_with_the_cache_populated(store):
+    """The cache must not outlive the ability to read the file.
+
+    Removing read permission changes neither mtime nor size. A `stat`-keyed cache
+    therefore answered from a file the process could no longer open, and a token
+    authorised before the change kept working. No cache clearing here: that is the
+    point.
+    """
     token = clients._add("laptop")
+    assert clients._identify(token) == "laptop"  # populate the cache
+
     store.chmod(0o000)
-    clients._file_cache = None
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             assert clients._identify(token) is None
+            with pytest.raises(clients._StoreUnreadable):
+                clients._clients()
     finally:
         store.chmod(0o600)
+
+    # Readable again, and the same token works.
+    assert clients._identify(token) == "laptop"
+
+
+def test_a_store_replaced_by_a_different_file_of_the_same_size_is_re_read(store):
+    """mtime and size alone can miss a swap. The cache identity covers the inode."""
+    first = clients._add("laptop")
+    assert clients._identify(first) == "laptop"
+    stat_before = store.stat()
+
+    replacement = store.with_name("replacement")
+    other = clients._digest("altp_other")
+    replacement.write_text(f"desktop:{other}:2026-09-05T00:00:00Z\n")
+    replacement.chmod(0o600)
+    os.utime(replacement, ns=(stat_before.st_mtime_ns, stat_before.st_mtime_ns))
+    os.replace(replacement, store)
+
+    assert clients._labels() == ("desktop",)
+    assert clients._identify(first) is None
 
 
 def test_the_store_sits_beside_the_credentials_file():
@@ -349,6 +405,32 @@ def test_the_store_sits_beside_the_credentials_file():
 
 
 # --- concurrency ------------------------------------------------------------
+# --- locking availability ---------------------------------------------------
+def test_a_platform_without_fcntl_refuses_to_change_the_store(store, monkeypatch):
+    """Proceeding without the lock would drop the guarantee while looking identical.
+
+    A reader needs no lock: `os.replace` is atomic. Only a change is refused.
+    """
+    clients._add("laptop")
+    monkeypatch.setattr(clients, "fcntl", None)
+
+    with pytest.raises(clients._LockUnavailable, match="POSIX file locking"):
+        clients._add("desktop")
+    with pytest.raises(clients._LockUnavailable, match="POSIX file locking"):
+        clients._remove("laptop")
+
+    assert clients._labels() == ("laptop",)
+
+
+def test_reading_the_store_needs_no_lock(store, monkeypatch):
+    token = clients._add("laptop")
+    monkeypatch.setattr(clients, "fcntl", None)
+    clients._file_cache = None
+
+    assert clients._identify(token) == "laptop"
+    assert clients._labels() == ("laptop",)
+
+
 CONCURRENT_ADD = """
 import os, sys, time
 from pathlib import Path

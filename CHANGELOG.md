@@ -47,7 +47,18 @@ All notable changes to this project are documented here.
   path.
 - Client key changes hold an exclusive lock on a sibling `clients.lock` for the
   whole read-modify-write. An add overlapping a revoke can no longer write back a
-  snapshot that resurrects the revoked token.
+  snapshot that resurrects the revoked token. A platform without POSIX `fcntl`
+  refuses to change the store, in place of proceeding unlocked. Reading needs no
+  lock and is unaffected.
+- The client store is opened on every read, and the parse is cached against the
+  descriptor's device, inode, size, mtime, and ctime. A cache keyed on `stat` alone
+  kept authorising tokens after the server lost read access to the store, since
+  removing read permission changes neither mtime nor size. The wider key also
+  notices a store replaced by a different file of the same length.
+- Label and digest patterns are applied with `fullmatch`. `$` also matches just
+  before a final newline, which let a label like `laptop\n` pass validation and
+  split its own record across two lines. `add` reported success and handed over a
+  token that could never authenticate.
 - A client label is limited to 1 to 64 characters of letters, digits, `.`, `_`, and
   `-`, starting alphanumeric. A label carrying a line break could previously store
   a record that read back under a different label, leaving a live token that could

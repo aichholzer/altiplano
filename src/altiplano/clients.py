@@ -22,7 +22,13 @@ is exactly 64 hexadecimal characters. One corrupt line therefore cannot make
 
 Writes take an exclusive lock on a sibling `clients.lock` for the whole
 read-modify-write. Without it, an add overlapping a revoke would write back a
-snapshot taken before the revoke and bring the revoked token back.
+snapshot taken before the revoke and bring the revoked token back. The lock needs
+POSIX `fcntl`, and a platform without it refuses to change the store at all: a write
+that silently skipped the lock would drop that guarantee while looking identical.
+
+Every read opens the file, and losing read permission is therefore noticed on the
+next request. The parse is cached against the descriptor's own identity: device,
+inode, size, mtime, and ctime. That also catches a store replaced in place.
 
 The stdio transport never consults this. A local subprocess speaking over a pipe
 has no network to authenticate.
@@ -56,13 +62,14 @@ _TOKEN_PREFIX = "altp_"
 # Letters, digits, and the three separators that survive a round trip through the
 # file. A label starts alphanumeric, which keeps '#' and '-' out of the first
 # position. Anything wider risks a line break, a colon, or a control character
-# rewriting the record.
-_LABEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
-_DIGEST = re.compile(r"^[0-9a-f]{64}$")
+# rewriting the record. Both patterns are applied with `fullmatch`.
+_LABEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+_DIGEST = re.compile(r"[0-9a-f]{64}")
 
 # Keyed on mtime and size, the same way config.py keys the credentials file. Adding
 # or revoking a client takes effect on the next request.
-_file_cache: tuple[tuple[Path, int, int], tuple["_Client", ...]] | None = None
+_Stamp = tuple[Path, int, int, int, int, int]
+_file_cache: tuple[_Stamp, tuple["_Client", ...]] | None = None
 
 
 class _StoreUnreadable(RuntimeError):
@@ -72,6 +79,10 @@ class _StoreUnreadable(RuntimeError):
     authorised" are different answers, and only one of them may ever be mistaken for
     "everybody is authorised".
     """
+
+
+class _LockUnavailable(RuntimeError):
+    """This platform cannot take the lock a store change needs."""
 
 
 class _Client(NamedTuple):
@@ -102,9 +113,12 @@ def _locked() -> Iterator[None]:
     replaces that path, and the lock would follow the old inode while the next
     writer took a lock on the new one.
     """
-    if fcntl is None:  # pragma: no cover
-        yield
-        return
+    if fcntl is None:
+        raise _LockUnavailable(
+            "changing client tokens needs POSIX file locking, which this platform "
+            "does not provide. Two writers could then undo each other, and a "
+            "revoked token could come back. Manage the store on the host serving it."
+        )
     _CLIENTS_FILE.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     handle = os.open(_lock_path(), os.O_CREAT | os.O_RDWR, 0o600)
     try:
@@ -131,10 +145,10 @@ def _parse(text: str) -> tuple[_Client, ...]:
             continue
         label, digest = parts[0].strip(), parts[1].strip().lower()
         created = parts[2].strip() if len(parts) > 2 else ""
-        if not _LABEL.match(label):
+        if not _LABEL.fullmatch(label):
             _skipped(number, "unusable label")
             continue
-        if not _DIGEST.match(digest):
+        if not _DIGEST.fullmatch(digest):
             _skipped(number, "digest is not 64 hex characters")
             continue
         found.append(_Client(label, digest, created))
@@ -150,23 +164,39 @@ def _skipped(number: int, why: str) -> None:
 
 
 def _clients() -> tuple[_Client, ...]:
-    """Every registered client, re-reading the store only once it changes.
+    """Every registered client, re-parsing the store only once it changes.
 
-    Raises `_StoreUnreadable` when the file is present and unreadable. An absent
-    store is an empty one.
+    The file is opened on every call. A store that has become unreadable therefore
+    raises `_StoreUnreadable` even while the parse is cached. Checking `stat` alone
+    would not: removing read permission changes neither mtime nor size, and the
+    cache would answer from a file the process can no longer open.
+
+    The cache identity comes from `fstat` on the open descriptor, and covers device
+    and inode as well as size and both timestamps. A store swapped for a different
+    file of the same length is therefore re-read.
+
+    An absent store is an empty one.
     """
     global _file_cache
     try:
-        info = _CLIENTS_FILE.stat()
-        warning = _mode_warning(
-            _CLIENTS_FILE, info.st_mode & 0o777, "the Altiplano client tokens"
-        )
-        if warning:
-            _warn_once((_CLIENTS_FILE, "mode"), warning)
-        stamp = (_CLIENTS_FILE, info.st_mtime_ns, info.st_size)
-        if _file_cache is not None and _file_cache[0] == stamp:
-            return _file_cache[1]
-        text = _CLIENTS_FILE.read_text()
+        with open(_CLIENTS_FILE, encoding="utf-8") as handle:
+            info = os.fstat(handle.fileno())
+            warning = _mode_warning(
+                _CLIENTS_FILE, info.st_mode & 0o777, "the Altiplano client tokens"
+            )
+            if warning:
+                _warn_once((_CLIENTS_FILE, "mode"), warning)
+            stamp = (
+                _CLIENTS_FILE,
+                info.st_dev,
+                info.st_ino,
+                info.st_size,
+                info.st_mtime_ns,
+                info.st_ctime_ns,
+            )
+            if _file_cache is not None and _file_cache[0] == stamp:
+                return _file_cache[1]
+            text = handle.read()
     except FileNotFoundError:
         return ()
     except OSError as err:
@@ -229,7 +259,10 @@ def _write(records: tuple[_Client, ...]) -> None:
 
 def _add(label: str) -> str:
     """Register `label` and return its token. The token is not recoverable later."""
-    if not _LABEL.match(label):
+    # `fullmatch`, never `match`. `$` also matches just before a final newline, so
+    # `match` accepted "laptop\n", which then split its own record across two lines
+    # and minted a token that could never authenticate.
+    if not _LABEL.fullmatch(label):
         raise ValueError(
             "a client label must be 1 to 64 characters of letters, digits, '.', "
             "'_' or '-', starting with a letter or a digit"
