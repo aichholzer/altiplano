@@ -176,7 +176,6 @@ description="Altiplano MCP server over HTTP"
 supervisor="supervise-daemon"
 command="/opt/altiplano/bin/altiplano-http"
 command_user="altiplano:altiplano"
-supervise_daemon_args="--respawn-delay 3"
 output_log="/var/log/altiplano/altiplano.log"
 error_log="/var/log/altiplano/altiplano.log"
 
@@ -188,6 +187,10 @@ start_pre() {
     checkpath --directory --owner altiplano:altiplano --mode 0755 /var/log/altiplano
 }
 ```
+
+`supervise-daemon` restarts the process on failure with no further configuration.
+Its defaults are a 2 second delay and at most 5 restarts in 30 minutes, so
+`supervise_daemon_args` is left out.
 
 OpenRC sources `/etc/conf.d/altiplano` on its own. Variables there need exporting to
 reach the daemon:
