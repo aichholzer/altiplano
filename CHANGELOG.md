@@ -46,6 +46,13 @@ All notable changes to this project are documented here.
 
 - `CONTRIBUTING.md` and `CODE_OF_CONDUCT.md`.
 
+- `scripts/acceptance.py`, which checks a deployed endpoint from a client machine: the
+  401 for an anonymous caller, that no `mcp-session-id` is issued, the tool set, and
+  that two clients reach two Vikunja accounts. `--write` adds the conclusive check,
+  creating one task per client to read `created_by` off it, confirming neither client
+  can read the other's, and deleting both. Repository only, and it carries its own
+  dependencies for `uv run --script`.
+
 - `tests/test_http_integration.py`, which drives the application `altiplano-http`
   serves: the real ASGI app with its lifespan running, requests over
   `httpx2.ASGITransport`, and the MCP client library itself. Only Vikunja is

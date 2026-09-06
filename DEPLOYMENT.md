@@ -392,9 +392,35 @@ server:
 3. The same request with the `Authorization` header removed gets a `401`.
 4. Revoke that client's token on the host, then repeat check 2. It gets a `401`
    with no restart. Mint a fresh token afterwards.
-5. With two clients registered under two people's Vikunja tokens, `list_projects()`
-   from each returns that person's own projects. This is the check that proves the
-   identities are separate, and no test can do it for you.
+5. With two clients registered under two people's Vikunja tokens, each reaches its own
+   Vikunja account. This is the check that proves the identities are separate, and no
+   test can do it for you.
+
+`scripts/acceptance.py` in the repository automates checks 1 to 3 and 5. It runs from a
+client machine with `uv`, carries its own dependencies, and needs no checkout of
+Altiplano on the host:
+
+```bash
+export ALTIPLANO_TOKEN_A=altp_...
+export ALTIPLANO_TOKEN_B=altp_...
+./scripts/acceptance.py https://altiplano.example.com/mcp --write
+```
+
+The tokens are read from the environment, or prompted for if unset. Neither is ever an
+argument, where `ps` would show it.
+
+`--write` adds the conclusive check: each client creates one task in its own first
+project, `get_task` reports the `created_by` account the endpoint acted as, each client
+is confirmed unable to read the other's task, and both tasks are deleted. Use test
+accounts. Without `--write` the script reads only, and the strongest signal it can offer
+is that the two clients see different sets of project ids.
+
+The script also reports whether the endpoint issues an `mcp-session-id`. It should not,
+and one appearing means the host is running a build from before the transport went
+stateless.
+
+Check 4, revocation, stays manual. It needs `altiplano-clientkey revoke` on the host
+between two runs.
 
 Run all four again after the tunnel goes up. The `Host` value changes at that point,
 `ALTIPLANO_HTTP_ALLOWED_HOSTS` has to name the public hostname, and a

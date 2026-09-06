@@ -24,7 +24,7 @@ job and pytest on Python 3.10 and 3.13.
 ```bash
 uv sync --locked                                      # install, exactly as the lock file says
 uv run pytest -q                                      # tests, with the coverage gate
-uvx ruff@0.16.4 check src tests                       # lint, the pinned version CI uses
+uvx ruff@0.16.4 check src tests scripts               # lint, the pinned version CI uses
 
 uv run altiplano                                      # development checkout
 uvx --from /your/local/path altiplano                 # local package path
