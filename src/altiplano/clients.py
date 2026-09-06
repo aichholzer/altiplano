@@ -174,7 +174,8 @@ def _parse(text: str) -> tuple[_Client, ...]:
         _warn_once(
             (_CLIENTS_FILE, "v1"),
             f"{_CLIENTS_FILE} predates per-client Vikunja tokens. Every client in it "
-            "will be refused. Re-add each one with: altiplano-clientkey add <label>",
+            "will be refused. Give each one a Vikunja token with: "
+            "altiplano-clientkey update <label>",
         )
 
     found: list[_Client] = []
@@ -348,6 +349,31 @@ def _add(label: str, vikunja_token: str) -> str:
         created = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         _write((*existing, _Client(label, _digest(token), vikunja_token, created)))
     return token
+
+
+def _set_vikunja_token(label: str, vikunja_token: str) -> bool:
+    """Replace the Vikunja token `label` acts with. False when there is no such label.
+
+    The client's own token is untouched, and it keeps working. That is the whole point:
+    repairing a record carried over from a v1 store, or moving a client to a new Vikunja
+    token, costs nobody a redistributed client token.
+    """
+    if not _VIKUNJA_TOKEN.fullmatch(vikunja_token):
+        raise ValueError(
+            "a Vikunja API token must be 8 to 512 printable ASCII characters with no "
+            "spaces and no ':'. Create one in Vikunja under Settings, API Tokens."
+        )
+    with _locked():
+        existing = _clients()
+        if label not in {client.label for client in existing}:
+            return False
+        _write(
+            tuple(
+                client._replace(vikunja_token=vikunja_token) if client.label == label else client
+                for client in existing
+            )
+        )
+    return True
 
 
 def _remove(label: str) -> bool:

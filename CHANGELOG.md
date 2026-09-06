@@ -21,6 +21,12 @@ All notable changes to this project are documented here.
   their own projects and their own tasks, with Vikunja applying its own permissions
   to each.
 
+- `altiplano-clientkey update <label>` replaces the Vikunja API token a client acts
+  with and leaves its Altiplano client token alone. The client needs no
+  reconfiguring. It is how a client is moved to a different Vikunja token, and how a
+  record from a store predating per-client tokens is repaired. `add` continues to
+  refuse a label that already exists.
+
 - `altiplano-clientkey add|list|revoke`, which mints the bearer tokens the HTTP
   transport accepts. A token is `altp_` followed by 32 bytes from `secrets`, shown
   once, and only its SHA-256 is stored. `add` also collects the Vikunja API token
@@ -40,14 +46,32 @@ All notable changes to this project are documented here.
 
 - `CONTRIBUTING.md` and `CODE_OF_CONDUCT.md`.
 
-- `altiplano-http --check` prints the resolved settings, the client count, how many
-  of those clients carry a Vikunja token, and whether authentication is on, then
-  exits without opening a socket. Both HTTP commands take `--version`.
+- `altiplano-http --check` prints the resolved settings, the Vikunja URL, both
+  allowlists, the client count, how many of those clients carry a Vikunja token, and
+  whether authentication is on, then exits without opening a socket. It validates the
+  same settings startup validates. A configuration it approves is one the server can
+  serve. Both HTTP commands take `--version`.
 
 - `ALTIPLANO_HTTP_ALLOW_UNAUTHENTICATED` serves with no token, for local
   development. It is refused on any bind address other than loopback.
 
 ### Security
+
+- The HTTP transport is stateless and issues no `mcp-session-id`. In the SDK's
+  stateful mode every request after `initialize` is keyed on that id alone, and the
+  bearer-token gate cannot say which client a session belongs to. A client holding any
+  valid token could send requests on another client's session and could delete it,
+  after which the owner received `404` and an in-flight response was lost. Stateless
+  removes the session. There is no id to borrow or terminate, and no session table to
+  grow on a reconnecting client or a rejected request.
+
+  The cost is server-initiated requests: sampling, elicitation, progress over a
+  standalone stream, and resumability. Altiplano uses none of them, and a client needs
+  no configuration change.
+
+- A client token is a bearer credential and needs confidentiality in transit. Serve
+  the endpoint behind TLS or an encrypted tunnel on any network, a LAN included, and
+  bind Altiplano to loopback when something terminates TLS in front of it.
 
 - Authentication is always on. Every HTTP request needs a registered token. An
   empty store denies every request, and an unreadable store refuses to start. The

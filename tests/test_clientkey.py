@@ -192,3 +192,82 @@ def test_no_subcommand_is_an_error(store):
     with pytest.raises(SystemExit) as caught:
         clientkey.main([])
     assert caught.value.code != 0
+
+
+# --- update ------------------------------------------------------------------
+def test_update_replaces_the_vikunja_token_and_keeps_the_client_token(store, capsys):
+    clientkey.main(["add", "laptop"])
+    printed = capsys.readouterr().out
+    token = next(word for word in printed.split() if word.startswith("altp_"))
+
+    fresh = "tk_" + "9" * 32
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(clientkey, "_read_vikunja_token", lambda label: fresh)
+        assert clientkey.main(["update", "laptop"]) == 0
+
+    assert "updated laptop" in capsys.readouterr().out
+    resolved = clients._resolve(token)
+    assert resolved.label == "laptop", "the client token still authenticates"
+    assert resolved.vikunja_token == fresh
+
+
+def test_update_says_the_client_needs_no_reconfiguring(store, capsys):
+    clientkey.main(["add", "laptop"])
+    capsys.readouterr()
+    clientkey.main(["update", "laptop"])
+    assert "needs no reconfiguring" in capsys.readouterr().out
+
+
+def test_update_never_prints_the_vikunja_token_back(store, capsys):
+    clientkey.main(["add", "laptop"])
+    capsys.readouterr()
+    clientkey.main(["update", "laptop"])
+    assert VIKUNJA not in capsys.readouterr().out
+
+
+def test_update_on_an_absent_label_exits_non_zero(store, capsys):
+    assert clientkey.main(["update", "ghost"]) == 1
+    assert "no client named" in capsys.readouterr().err
+
+
+def test_update_refuses_an_unusable_vikunja_token(store, capsys, monkeypatch):
+    clientkey.main(["add", "laptop"])
+    capsys.readouterr()
+    monkeypatch.setattr(clientkey, "_read_vikunja_token", lambda label: "has:colon")
+    assert clientkey.main(["update", "laptop"]) == 1
+    assert "Vikunja API token" in capsys.readouterr().err
+
+
+def test_update_repairs_a_client_that_list_flags_as_missing(store, capsys):
+    """The migration path, end to end through the command line."""
+    store.write_text(f"{clients._HEADER}\nlaptop:{'a' * 64}::2026-09-05T00:00:00Z\n")
+    store.chmod(0o600)
+
+    clientkey.main(["list"])
+    assert "MISSING" in capsys.readouterr().out
+
+    assert clientkey.main(["update", "laptop"]) == 0
+    capsys.readouterr()
+
+    clients._file_cache = None
+    clientkey.main(["list"])
+    printed = capsys.readouterr().out
+    assert "MISSING" not in printed
+    assert "yes" in printed
+
+
+def test_list_points_at_update_for_a_missing_token(store, capsys):
+    """`add` refuses an existing label. It was never the fix to suggest."""
+    store.write_text(f"{clients._HEADER}\nlaptop:{'a' * 64}::2026-09-05T00:00:00Z\n")
+    store.chmod(0o600)
+
+    clientkey.main(["list"])
+    assert "altiplano-clientkey update <label>" in capsys.readouterr().out
+
+
+def test_add_still_refuses_a_label_that_exists(store, capsys):
+    """The reason `update` had to exist. Pinned here to keep the two distinct."""
+    clientkey.main(["add", "laptop"])
+    capsys.readouterr()
+    assert clientkey.main(["add", "laptop"]) == 1
+    assert "already exists" in capsys.readouterr().err
