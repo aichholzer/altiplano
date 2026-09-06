@@ -268,9 +268,8 @@ becomes unnecessary.
 
 ## Is it working?
 
-The verification snippet in [`README.md`](./README.md) connects with the MCP Python
-client and lists the tools. Run it from a second machine, with the endpoint's real
-hostname, and with a token minted for that machine.
+Verification runs from a client machine, against the endpoint's real hostname, with a
+token minted for that machine.
 
 ### Acceptance, before the deployment counts as done
 
