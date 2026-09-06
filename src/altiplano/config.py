@@ -1,9 +1,18 @@
 """Where the credentials come from, and the only module that reads a file.
 
-Resolved without storing secrets in a shared mcp.json:
-  1. Environment variables VIKUNJA_URL / VIKUNJA_API_TOKEN (preferred).
+`VIKUNJA_URL` is resolved without storing secrets in a shared mcp.json:
+  1. The environment variable (preferred).
   2. A per-device file of KEY=VALUE lines (default ~/.config/altiplano/env,
      override with ALTIPLANO_CONFIG). Keep it chmod 600.
+
+The Vikunja API token takes one source ahead of those two: whatever the current
+request is bound to, through `_acting_as`. The HTTP transport binds each request to
+the token of the client that made it. One server therefore serves several Vikunja
+identities from one process. stdio binds nothing and falls through to the environment
+and the file.
+
+The URL has no such override. Every client of one server reaches one Vikunja
+instance, and `api._version()` reads the v1 or v2 choice off that single URL.
 
 Nothing is resolved at import time. Every value is read when a request needs it.
 A rotated token takes effect without a restart.
@@ -11,6 +20,9 @@ A rotated token takes effect without a restart.
 
 import os
 import warnings
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 
 _CONFIG_FILE = Path(
@@ -104,8 +116,32 @@ def _base() -> str:
     return url.rstrip("/")
 
 
+# The Vikunja token the current request acts with. The HTTP gate binds it once the
+# caller is known; on stdio it stays unset.
+#
+# A ContextVar and not an argument because the alternative is threading an identity
+# through 35 tool signatures and every helper in `api.py`. A ContextVar set in ASGI
+# middleware reaches the tool coroutine and stays isolated per request, including
+# across overlapping calls on one long-lived session. `tests/test_clients.py` holds
+# the test that says so.
+_REQUEST_TOKEN: ContextVar[str | None] = ContextVar("altiplano_vikunja_token", default=None)
+
+
+@contextmanager
+def _acting_as(token: str) -> Iterator[None]:
+    """Bind the Vikunja token for everything called inside this block."""
+    handle = _REQUEST_TOKEN.set(token)
+    try:
+        yield
+    finally:
+        _REQUEST_TOKEN.reset(handle)
+
+
 def _headers() -> dict[str, str]:
-    token = _conf("VIKUNJA_API_TOKEN")
+    # The bound token wins. On the HTTP transport the gate refuses a caller it cannot
+    # bind one for. Falling through to the environment here therefore means stdio, or
+    # the loopback development mode that turns the gate off.
+    token = _REQUEST_TOKEN.get() or _conf("VIKUNJA_API_TOKEN")
     if not token:
         raise RuntimeError("VIKUNJA_API_TOKEN is not set (env or ~/.config/altiplano/env)")
     return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}

@@ -19,6 +19,10 @@ from altiplano import clients, config, http_server
 
 DIGEST = "a" * 64
 
+# The Vikunja API token a registered client acts with. Every record needs one, and a
+# client whose record has none is refused.
+VIKUNJA = "tk_" + "1" * 32
+
 
 @pytest.fixture(autouse=True)
 def _forget_module_state(monkeypatch):
@@ -193,7 +197,7 @@ def test_adding_the_first_key_takes_effect_on_the_running_app(store):
     before = drive(app, scope(bearer("altp_notyetminted")))
     assert before.status == 401
 
-    token = clients._add("laptop")
+    token = clients._add("laptop", VIKUNJA)
     clients._file_cache = None
 
     after = Recorder()
@@ -205,7 +209,7 @@ def test_adding_the_first_key_takes_effect_on_the_running_app(store):
 
 def test_revoking_the_last_key_leaves_the_app_closed(store):
     """Revoking every client must deny, never fall open."""
-    token = clients._add("laptop")
+    token = clients._add("laptop", VIKUNJA)
     app = http_server.build_app(gated=True)
 
     recorder = Recorder()
@@ -225,7 +229,7 @@ def test_a_restart_with_an_empty_store_still_authenticates(store, monkeypatch):
     """The store is empty because the last key was revoked. A restart on loopback
     must not come up open."""
     monkeypatch.setenv("ALTIPLANO_HTTP_HOST", "127.0.0.1")
-    clients._add("laptop")
+    clients._add("laptop", VIKUNJA)
     clients._remove("laptop")
     assert clients._labels() == ()
 
@@ -238,7 +242,7 @@ def test_a_restart_with_an_empty_store_still_authenticates(store, monkeypatch):
 def test_an_unreadable_store_refuses_to_start(store, monkeypatch):
     """"I cannot tell who is authorised" must never resolve to "serve everyone"."""
     monkeypatch.setenv("ALTIPLANO_HTTP_HOST", "127.0.0.1")
-    clients._add("laptop")
+    clients._add("laptop", VIKUNJA)
     store.chmod(0o000)
     clients._file_cache = None
     try:
@@ -254,7 +258,7 @@ def test_an_unreadable_store_refuses_to_start(store, monkeypatch):
 def test_an_unreadable_store_denies_at_request_time(store):
     import warnings
 
-    token = clients._add("laptop")
+    token = clients._add("laptop", VIKUNJA)
     app = http_server.build_app(gated=True)
     store.chmod(0o000)
     clients._file_cache = None
@@ -297,7 +301,7 @@ def test_main_refuses_to_serve_when_the_policy_is_refused(store, monkeypatch):
 
 
 def test_main_serves_a_gated_app(store, monkeypatch):
-    clients._add("laptop")
+    clients._add("laptop", VIKUNJA)
     monkeypatch.setenv("ALTIPLANO_HTTP_HOST", "0.0.0.0")
     monkeypatch.setenv("ALTIPLANO_HTTP_PORT", "8123")
     observed = {}
@@ -328,7 +332,7 @@ def test_version_reports_the_package_version(capsys):
 
 
 def test_check_reports_the_settings_without_serving(store, monkeypatch, capsys):
-    clients._add("laptop")
+    clients._add("laptop", VIKUNJA)
     monkeypatch.setenv("ALTIPLANO_HTTP_HOST", "127.0.0.1")
     started = []
     monkeypatch.setattr(http_server.uvicorn, "run", lambda *a, **k: started.append(True))
@@ -336,7 +340,9 @@ def test_check_reports_the_settings_without_serving(store, monkeypatch, capsys):
     assert http_server.main(["--check"]) == 0
     printed = capsys.readouterr().out
     assert "clients:       1" in printed
+    assert "with a token:  1 of 1" in printed
     assert "authenticated: yes" in printed
+    assert VIKUNJA not in printed, "a Vikunja token never reaches the terminal"
     assert started == []
 
 
@@ -381,7 +387,7 @@ def test_bearer_extraction(headers, expected):
 
 # --- the gate ---------------------------------------------------------------
 def test_a_valid_token_reaches_the_app(store):
-    token = clients._add("laptop")
+    token = clients._add("laptop", VIKUNJA)
     recorder = Recorder()
     drive(http_server._RequireClientToken(recorder.app), scope(bearer(token)), recorder)
 
@@ -395,7 +401,7 @@ def test_a_valid_token_reaches_the_app(store):
     ids=["no token", "unissued token"],
 )
 def test_a_request_without_a_known_token_gets_401(store, headers):
-    clients._add("laptop")
+    clients._add("laptop", VIKUNJA)
     recorder = Recorder()
     drive(http_server._RequireClientToken(recorder.app), scope(headers), recorder)
 
@@ -406,7 +412,7 @@ def test_a_request_without_a_known_token_gets_401(store, headers):
 def test_the_401_names_a_realm_and_advertises_no_oauth_metadata(store):
     """A `resource_metadata` parameter here would point a client at metadata this
     server does not serve."""
-    clients._add("laptop")
+    clients._add("laptop", VIKUNJA)
     recorder = drive(http_server._RequireClientToken(Recorder().app), scope())
 
     challenge = recorder.headers[b"www-authenticate"]
@@ -416,7 +422,7 @@ def test_the_401_names_a_realm_and_advertises_no_oauth_metadata(store):
 
 
 def test_the_401_body_matches_its_content_length(store):
-    clients._add("laptop")
+    clients._add("laptop", VIKUNJA)
     recorder = drive(http_server._RequireClientToken(Recorder().app), scope())
     assert int(recorder.headers[b"content-length"]) == len(recorder.messages[1]["body"])
 
@@ -426,7 +432,7 @@ def test_a_non_http_scope_passes_straight_through(store, kind):
     """The lifespan scope starts the MCP session manager. Swallowing it would leave
     the server unable to answer anything, and no test on the auth path would see it.
     """
-    clients._add("laptop")
+    clients._add("laptop", VIKUNJA)
     recorder = Recorder()
     drive(http_server._RequireClientToken(recorder.app), scope(kind=kind), recorder)
 
@@ -436,7 +442,7 @@ def test_a_non_http_scope_passes_straight_through(store, kind):
 
 def test_the_matched_label_is_logged(store, caplog):
     """Per-client identity in the log is the reason these tokens are per client."""
-    token = clients._add("laptop")
+    token = clients._add("laptop", VIKUNJA)
     recorder = Recorder()
 
     with caplog.at_level("INFO", logger="altiplano.http"):
@@ -447,7 +453,7 @@ def test_the_matched_label_is_logged(store, caplog):
 
 
 def test_a_rejection_logs_the_peer_and_never_the_token(store, caplog):
-    clients._add("laptop")
+    clients._add("laptop", VIKUNJA)
     with caplog.at_level("WARNING", logger="altiplano.http"):
         drive(
             http_server._RequireClientToken(Recorder().app),
@@ -460,3 +466,187 @@ def test_a_rejection_logs_the_peer_and_never_the_token(store, caplog):
 
 def test_a_peer_the_server_cannot_see_is_reported_as_unknown():
     assert http_server._peer(scope(client=None)) == "unknown"
+
+
+# --- binding the caller's Vikunja identity ----------------------------------
+def v1_record(label, digest, created="2026-09-05T00:00:00Z"):
+    """A record with no Vikunja token, as one carried over from an older store."""
+    return f"{clients._HEADER}\n{label}:{digest}::{created}\n"
+
+
+def test_the_callers_vikunja_token_is_bound_for_the_downstream_call(store):
+    """The whole point. `config._headers()` picks this up with no argument passed."""
+    token = clients._add("laptop", VIKUNJA)
+    seen = {}
+
+    async def app(scope, receive, send):
+        seen["bound"] = config._REQUEST_TOKEN.get()
+        seen["headers"] = config._headers()
+
+    drive(http_server._RequireClientToken(app), scope(bearer(token)))
+
+    assert seen["bound"] == VIKUNJA
+    assert seen["headers"]["Authorization"] == f"Bearer {VIKUNJA}"
+
+
+def test_the_binding_is_released_after_the_call(store):
+    """A leaked binding would put the next caller on the previous caller's account."""
+    token = clients._add("laptop", VIKUNJA)
+
+    async def app(scope, receive, send):
+        assert config._REQUEST_TOKEN.get() == VIKUNJA
+
+    drive(http_server._RequireClientToken(app), scope(bearer(token)))
+    assert config._REQUEST_TOKEN.get() is None
+
+
+def test_two_callers_are_bound_to_their_own_tokens(store):
+    """Two clients, one process, two Vikunja identities."""
+    mine = clients._add("mine", "tk_" + "1" * 32)
+    yours = clients._add("yours", "tk_" + "2" * 32)
+    seen = []
+
+    async def app(scope, receive, send):
+        seen.append(config._REQUEST_TOKEN.get())
+
+    gate = http_server._RequireClientToken(app)
+    drive(gate, scope(bearer(mine)))
+    drive(gate, scope(bearer(yours)))
+    drive(gate, scope(bearer(mine)))
+
+    assert seen == ["tk_" + "1" * 32, "tk_" + "2" * 32, "tk_" + "1" * 32]
+
+
+def test_overlapping_calls_do_not_cross_identities(store):
+    """The isolation guarantee, with the two requests genuinely interleaved.
+
+    A `ContextVar` set in ASGI middleware is what carries the identity, and this is
+    the test that says two concurrent callers each keep their own.
+    """
+    mine = clients._add("mine", "tk_" + "1" * 32)
+    yours = clients._add("yours", "tk_" + "2" * 32)
+    observed = {}
+
+    async def app(scope, receive, send):
+        who = scope["headers"][0][1]
+        # Yield twice. The other request then runs between the read and the check.
+        first = config._REQUEST_TOKEN.get()
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        observed[who] = (first, config._REQUEST_TOKEN.get())
+
+    gate = http_server._RequireClientToken(app)
+
+    async def both():
+        await asyncio.gather(
+            gate(scope(bearer(mine)), None, None),
+            gate(scope(bearer(yours)), None, None),
+        )
+
+    asyncio.run(both())
+
+    assert observed[f"Bearer {mine}".encode()] == ("tk_" + "1" * 32, "tk_" + "1" * 32)
+    assert observed[f"Bearer {yours}".encode()] == ("tk_" + "2" * 32, "tk_" + "2" * 32)
+
+
+# --- a client with no Vikunja identity --------------------------------------
+def test_a_client_with_no_vikunja_token_is_refused(store):
+    """Strict. The server's own token is not a fallback for an HTTP caller."""
+    token = clients._mint()
+    store.write_text(v1_record("laptop", clients._digest(token)))
+    store.chmod(0o600)
+
+    recorder = Recorder()
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        drive(http_server._RequireClientToken(recorder.app), scope(bearer(token)), recorder)
+
+    assert recorder.reached is False
+    assert recorder.status == 403
+
+
+def test_the_403_says_what_is_missing_and_matches_its_content_length(store):
+    token = clients._mint()
+    store.write_text(v1_record("laptop", clients._digest(token)))
+    store.chmod(0o600)
+
+    recorder = drive(http_server._RequireClientToken(Recorder().app), scope(bearer(token)))
+
+    assert b"Vikunja identity" in recorder.messages[1]["body"]
+    assert int(recorder.headers[b"content-length"]) == len(recorder.messages[1]["body"])
+    assert b"www-authenticate" not in recorder.headers, "retrying the same token cannot help"
+
+
+def test_the_403_is_logged_with_the_label_and_the_fix(store, caplog):
+    token = clients._mint()
+    store.write_text(v1_record("laptop", clients._digest(token)))
+    store.chmod(0o600)
+
+    with caplog.at_level("ERROR", logger="altiplano.http"):
+        drive(http_server._RequireClientToken(Recorder().app), scope(bearer(token)))
+
+    assert "laptop" in caplog.text
+    assert "altiplano-clientkey add laptop" in caplog.text
+    assert token not in caplog.text
+
+
+def test_nothing_is_bound_when_the_caller_is_refused(store):
+    """A refused request must not leave the server's own token bound behind it."""
+    clients._add("laptop", VIKUNJA)
+    drive(http_server._RequireClientToken(Recorder().app), scope(bearer("altp_unissued")))
+    assert config._REQUEST_TOKEN.get() is None
+
+
+def test_a_store_where_no_client_has_a_token_refuses_to_start_off_loopback(store, monkeypatch):
+    """Every request would be refused, which looks like a server that answers nothing."""
+    monkeypatch.setenv("ALTIPLANO_HTTP_HOST", "0.0.0.0")
+    store.write_text(v1_record("laptop", DIGEST))
+    store.chmod(0o600)
+
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        with pytest.raises(RuntimeError, match="has a Vikunja token"):
+            http_server._check_policy()
+
+
+def test_a_store_where_no_client_has_a_token_only_warns_on_loopback(store, monkeypatch, caplog):
+    monkeypatch.setenv("ALTIPLANO_HTTP_HOST", "127.0.0.1")
+    store.write_text(v1_record("laptop", DIGEST))
+    store.chmod(0o600)
+
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        with caplog.at_level("WARNING", logger="altiplano.http"):
+            assert http_server._check_policy() is True
+
+    assert "has a Vikunja token" in caplog.text
+
+
+def test_one_client_with_a_token_is_enough_to_start(store, monkeypatch):
+    """A part-migrated store serves the clients that are ready."""
+    monkeypatch.setenv("ALTIPLANO_HTTP_HOST", "0.0.0.0")
+    clients._add("ready", VIKUNJA)
+    body = store.read_text()
+    store.write_text(f"{body}stale:{DIGEST}::2026-09-05T00:00:00Z\n")
+    store.chmod(0o600)
+    clients._file_cache = None
+
+    assert http_server._check_policy() is True
+
+
+def test_check_counts_only_the_clients_with_a_token(store, monkeypatch, capsys):
+    monkeypatch.setenv("ALTIPLANO_HTTP_HOST", "127.0.0.1")
+    clients._add("ready", VIKUNJA)
+    body = store.read_text()
+    store.write_text(f"{body}stale:{DIGEST}::2026-09-05T00:00:00Z\n")
+    store.chmod(0o600)
+    clients._file_cache = None
+
+    assert http_server.main(["--check"]) == 0
+    assert "with a token:  1 of 2" in capsys.readouterr().out

@@ -1,24 +1,45 @@
 """The per-client token store, and the only place a caller is identified.
 
-The HTTP transport hands every request's bearer token to `_identify`, which returns
-the label of the client that holds it. `altiplano-clientkey` mints tokens and
-writes the store; nothing else does.
+The HTTP transport hands every request's bearer token to `_resolve`, which returns
+the whole record for the client holding it: the label it is known by, and the Vikunja
+API token it acts with. `altiplano-clientkey` writes the store; nothing else does.
 
-One record per line, beside the credentials file:
+A version line, then one record per line, beside the credentials file:
 
-    label:sha256hex:created
+    # altiplano clients v2
+    label:sha256hex:vikunja_token:created
 
-Only the SHA-256 of a token is kept. A leaked store yields no working credential,
-and a lost token is replaced by revoking the label and adding it again.
+### This file holds live credentials
 
-Tokens carry 32 bytes from `secrets`. The digest is therefore a bare SHA-256, with
-no salt and no password KDF: there is no dictionary to attack, and a KDF would add
-a third runtime dependency to a package that has two.
+Each record holds the Vikunja API token that client's requests are made with, in
+plaintext. Altiplano presents it to Vikunja on every call and needs the plaintext to do
+it. Anyone who can read this file can act in Vikunja as every client listed in it. It is
+written `chmod 600` and the host is trusted to keep it that way.
 
-Two rules keep the file trustworthy. A label is drawn from a narrow character set,
-so no label can smuggle a line break and split itself into a second record. A digest
-is exactly 64 hexadecimal characters. One corrupt line therefore cannot make
-`hmac.compare_digest` raise and lock out every working client.
+The client token is different: only its SHA-256 is kept, and the plaintext is shown
+once at mint time and never stored. So a reader of this file learns every Vikunja
+identity and no Altiplano token.
+
+Client tokens carry 32 bytes from `secrets`. The digest is therefore a bare SHA-256,
+with no salt and no password KDF. There is no dictionary to attack, and a KDF would
+add a third runtime dependency to a package that has two.
+
+### The version line
+
+`created` is an ISO 8601 timestamp and contains colons, which is why it comes last
+and takes the rest of the line. A v1 store had three fields and no Vikunja token, so
+appending one would have made `2026-09-06T20:41:28Z` parse as a token followed by a
+mangled timestamp. The version line settles it before any record is read. A store
+without one is v1, every record in it resolves with no Vikunja token, and `_resolve`
+refuses each of them.
+
+### Keeping the file trustworthy
+
+Each field is drawn from a character set that cannot contain a line break or the
+colon separator. No label can split itself into a second record, and no Vikunja token
+can shift the fields around it. A digest is exactly 64 hexadecimal characters. One
+corrupt line therefore cannot make `hmac.compare_digest` raise and lock out every
+working client.
 
 Writes take an exclusive lock on a sibling `clients.lock` for the whole
 read-modify-write. Without it, an add overlapping a revoke would write back a
@@ -59,12 +80,20 @@ _CLIENTS_FILE = Path(os.environ.get("ALTIPLANO_CLIENTS", _CONFIG_FILE.parent / "
 # has something to match on.
 _TOKEN_PREFIX = "altp_"
 
+# The line `_write` puts at the top, and `_parse` looks for before reading records.
+_HEADER = "# altiplano clients v2"
+
 # Letters, digits, and the three separators that survive a round trip through the
 # file. A label starts alphanumeric, which keeps '#' and '-' out of the first
 # position. Anything wider risks a line break, a colon, or a control character
-# rewriting the record. Both patterns are applied with `fullmatch`.
+# rewriting the record. Every pattern is applied with `fullmatch`.
 _LABEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 _DIGEST = re.compile(r"[0-9a-f]{64}")
+
+# Printable ASCII without space and without the colon separator: 0x21-0x39 then
+# 0x3B-0x7E. Vikunja's own tokens are `tk_` and hex, and the prefix is not required
+# here. Vikunja owns that vocabulary and may widen it.
+_VIKUNJA_TOKEN = re.compile(r"[!-9;-~]{8,512}")
 
 # Keyed on mtime and size, the same way config.py keys the credentials file. Adding
 # or revoking a client takes effect on the next request.
@@ -88,6 +117,7 @@ class _LockUnavailable(RuntimeError):
 class _Client(NamedTuple):
     label: str
     digest: str
+    vikunja_token: str
     created: str
 
 
@@ -131,27 +161,54 @@ def _locked() -> Iterator[None]:
 def _parse(text: str) -> tuple[_Client, ...]:
     """Read the store, skipping blanks, comments, and anything malformed.
 
-    A record with a label or a digest that fails its pattern is skipped with a
-    warning. One corrupt line leaves every other client working.
+    A record with a field that fails its pattern is skipped with a warning. One
+    corrupt line leaves every other client working.
+
+    A store with no version line is v1. Its records are read for their labels, so
+    `altiplano-clientkey list` can still show what needs migrating, and each one
+    resolves with an empty Vikunja token. `_resolve` refuses those.
     """
+    lines = text.splitlines()
+    v2 = any(line.strip() == _HEADER for line in lines)
+    if lines and not v2:
+        _warn_once(
+            (_CLIENTS_FILE, "v1"),
+            f"{_CLIENTS_FILE} predates per-client Vikunja tokens. Every client in it "
+            "will be refused. Re-add each one with: altiplano-clientkey add <label>",
+        )
+
     found: list[_Client] = []
-    for number, line in enumerate(text.splitlines(), start=1):
+    for number, line in enumerate(lines, start=1):
         line = line.strip()
         if not line or line.startswith("#"):
             continue
-        parts = line.split(":", 2)
+        # Three fields on v1, four on v2. `created` is last either way and keeps the
+        # colons in its timestamp.
+        parts = line.split(":", 3 if v2 else 2)
         if len(parts) < 2:
             _skipped(number, "no digest")
             continue
         label, digest = parts[0].strip(), parts[1].strip().lower()
-        created = parts[2].strip() if len(parts) > 2 else ""
         if not _LABEL.fullmatch(label):
             _skipped(number, "unusable label")
             continue
         if not _DIGEST.fullmatch(digest):
             _skipped(number, "digest is not 64 hex characters")
             continue
-        found.append(_Client(label, digest, created))
+        if v2:
+            token = parts[2].strip() if len(parts) > 2 else ""
+            created = parts[3].strip() if len(parts) > 3 else ""
+            # An empty field is a client with no Vikunja identity, which is what a
+            # record carried over from a v1 store looks like after one rewrite. It is
+            # kept so the label stays visible and `_resolve` can name it; the HTTP
+            # gate refuses it. A field with something unusable in it is corruption.
+            if token and not _VIKUNJA_TOKEN.fullmatch(token):
+                _skipped(number, "unusable Vikunja token")
+                continue
+        else:
+            token = ""
+            created = parts[2].strip() if len(parts) > 2 else ""
+        found.append(_Client(label, digest, token, created))
     return tuple(found)
 
 
@@ -207,11 +264,14 @@ def _clients() -> tuple[_Client, ...]:
     return parsed
 
 
-def _identify(token: str | None) -> str | None:
-    """The label holding this token, or `None`.
+def _resolve(token: str | None) -> _Client | None:
+    """The record holding this token, or `None`.
 
     Compared with `hmac.compare_digest` over every record. A handful of clients
     makes the cost irrelevant, and it removes the question entirely.
+
+    A match says who the caller is. It does not say the caller may proceed: a record
+    from a v1 store carries no Vikunja token, and the HTTP gate refuses those.
 
     An unreadable store denies. The caller cannot tell that apart from a token
     nobody holds, which is the safe way round.
@@ -226,7 +286,7 @@ def _identify(token: str | None) -> str | None:
         return None
     for client in registered:
         if hmac.compare_digest(presented, client.digest):
-            return client.label
+            return client
     return None
 
 
@@ -245,7 +305,9 @@ def _write(records: tuple[_Client, ...]) -> None:
     """
     global _file_cache
     _CLIENTS_FILE.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    body = "".join(f"{c.label}:{c.digest}:{c.created}\n" for c in records)
+    body = f"{_HEADER}\n" + "".join(
+        f"{c.label}:{c.digest}:{c.vikunja_token}:{c.created}\n" for c in records
+    )
     handle, temporary = tempfile.mkstemp(dir=_CLIENTS_FILE.parent, prefix=".clients-")
     try:
         with os.fdopen(handle, "w") as out:
@@ -257,8 +319,12 @@ def _write(records: tuple[_Client, ...]) -> None:
     _file_cache = None
 
 
-def _add(label: str) -> str:
-    """Register `label` and return its token. The token is not recoverable later."""
+def _add(label: str, vikunja_token: str) -> str:
+    """Register `label` with the Vikunja token it acts as, and return its own token.
+
+    The returned client token is not recoverable later. `vikunja_token` is stored as
+    given: Altiplano presents it to Vikunja on every request this client makes.
+    """
     # `fullmatch`, never `match`. `$` also matches just before a final newline, so
     # `match` accepted "laptop\n", which then split its own record across two lines
     # and minted a token that could never authenticate.
@@ -266,6 +332,11 @@ def _add(label: str) -> str:
         raise ValueError(
             "a client label must be 1 to 64 characters of letters, digits, '.', "
             "'_' or '-', starting with a letter or a digit"
+        )
+    if not _VIKUNJA_TOKEN.fullmatch(vikunja_token):
+        raise ValueError(
+            "a Vikunja API token must be 8 to 512 printable ASCII characters with no "
+            "spaces and no ':'. Create one in Vikunja under Settings, API Tokens."
         )
     with _locked():
         # Read inside the lock. The cache is keyed on mtime and size, and a write by
@@ -275,7 +346,7 @@ def _add(label: str) -> str:
             raise ValueError(f"client {label!r} already exists. Revoke it first to re-issue.")
         token = _mint()
         created = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        _write((*existing, _Client(label, _digest(token), created)))
+        _write((*existing, _Client(label, _digest(token), vikunja_token, created)))
     return token
 
 
