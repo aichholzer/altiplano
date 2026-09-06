@@ -233,8 +233,8 @@ Altiplano documents its own use in four places.
 
 - The handshake sends usage rules: resolve ids by name, which calls cannot be undone, how to close a task. Clients apply them on connect.
 - The `altiplano_guide` prompt holds the full version, with cross-tool sequencing and the v1 and v2 differences. Clients list it as `Using Altiplano`.
-- `AGENTS.md` covers working on this repository, and installing Altiplano for someone else. `CLAUDE.md` imports it, for Claude Code.
-- `DEPLOYMENT.md` covers running the HTTP transport as a service on a host: installing with `uv` under a service account, every environment variable the transport reads, minting client tokens, a systemd unit for Debian and an OpenRC script for Alpine, firewalling the listener, putting it behind a Cloudflare tunnel, and the checks to run before the deployment counts as done.
+- [`AGENTS.md`](./AGENTS.md) covers working on this repository, and installing Altiplano for someone else. [`CLAUDE.md`](./CLAUDE.md) imports it, for Claude Code.
+- [`DEPLOYMENT.md`](./DEPLOYMENT.md) covers running the HTTP transport as a service on a host: installing with `uv` under a service account, every environment variable the transport reads, minting client tokens, a systemd unit for Debian and an OpenRC script for Alpine, firewalling the listener, putting it behind a Cloudflare tunnel, and the checks to run before the deployment counts as done.
 
 ## Task behaviour
 
@@ -298,45 +298,7 @@ Identified issues:
 
 ## Contributing
 
-Enable the pre-commit hook once per clone:
-
-```bash
-git config core.hooksPath hooks
-```
-
-The hook runs Ruff 0.16.4 over `src` and `tests`, then pytest with a 90 percent coverage minimum. CI runs Ruff in one job and pytest on Python 3.10 and 3.13.
-
-## Run
-
-```bash
-uv run altiplano                                      # development checkout
-uvx --from /your/local/path altiplano                 # local package path
-uvx --refresh-package altiplano altiplano@latest      # current PyPI release
-
-uv run altiplano-http                                 # HTTP transport, loopback
-uv run altiplano-clientkey add laptop                 # mint a client token
-```
-
-`altiplano-http` binds `127.0.0.1:8000` and keeps authentication on. `ALTIPLANO_HTTP_ALLOW_UNAUTHENTICATED=1` turns it off for development. Any bind address other than loopback refuses that variable.
-
-## Layout
-
-```text
-src/altiplano/
-  app.py           MCP instance imported by the tool and prompt modules
-  config.py        Credential resolution and credential-file parsing
-  api.py           API-version handling, requests, and response shaping
-  prompts.py       The usage guidance, served as a prompt
-  tools/           One module for each tool group
-  server.py        Registration and the stdio entry point
-  clients.py       The per-client token store for the HTTP transport
-  http_server.py   The HTTP entry point and its bearer-token gate
-  clientkey.py     The altiplano-clientkey command
-```
-
-Register a tool group by adding its module and importing it from `server.py`. Add its tools to the routing-table test and the smoke test's exact list.
-
-> Pull requests are always welcome.
+Pull requests are always welcome. [`CONTRIBUTING.md`](./CONTRIBUTING.md) covers the development setup, the commands, the pre-commit hook, the source layout, and what a pull request needs. Taking part means agreeing to the [code of conduct](./CODE_OF_CONDUCT.md).
 
 ## Licence
 

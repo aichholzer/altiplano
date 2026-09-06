@@ -7,6 +7,10 @@ This file is for an agent working inside a checkout. The wheel contains
 `src/altiplano` alone. An agent that only calls the tools takes its guidance from
 the handshake instructions and the `altiplano_guide` prompt.
 
+[`CONTRIBUTING.md`](./CONTRIBUTING.md) covers the same ground for a human
+contributor. A change here to the commands, the layout, or the conventions belongs in
+that file too.
+
 ## Installing it for someone
 
 Ask which shape they want first. `README.md` opens with the choice under
