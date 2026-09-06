@@ -779,3 +779,18 @@ def test_check_refuses_a_malformed_vikunja_url(store, monkeypatch, capsys, url):
 
     assert http_server.main(["--check"]) == 1
     assert "VIKUNJA_URL" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["https://vikunja.test:abc/api/v2", "https://[::1/api/v2", "https://vikunja.test:99999/api/v2"],
+    ids=["bad port", "unclosed ipv6 bracket", "port out of range"],
+)
+def test_check_refuses_a_url_the_request_layer_would_reject(store, monkeypatch, capsys, url):
+    """`--check` reports these. The operator sees a message and no traceback."""
+    monkeypatch.setenv("ALTIPLANO_HTTP_HOST", "127.0.0.1")
+    monkeypatch.setenv("VIKUNJA_URL", url)
+    clients._add("laptop", VIKUNJA)
+
+    assert http_server.main(["--check"]) == 1
+    assert "VIKUNJA_URL" in capsys.readouterr().err

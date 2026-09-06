@@ -438,3 +438,52 @@ def test_the_error_says_where_the_version_suffix_goes(monkeypatch):
     monkeypatch.setenv("VIKUNJA_URL", "vikunja.home.arpa")
     with pytest.raises(RuntimeError, match="/api/v1 or /api/v2"):
         config._base()
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["https://vikunja.test:abc/api/v2", "https://[::1/api/v2"],
+    ids=["port is not a number", "unclosed ipv6 bracket"],
+)
+def test_a_url_httpx_cannot_parse_is_refused_without_a_traceback(monkeypatch, url):
+    """The check has to agree with the parser that builds the request.
+
+    `urlsplit` accepted the first of these and httpx refused it at request time. The
+    second raised a bare `ValueError` out of `urlsplit`, which reached the operator as
+    a traceback.
+    """
+    monkeypatch.setenv("VIKUNJA_URL", url)
+    with pytest.raises(RuntimeError, match="cannot be parsed as a URL"):
+        config._base()
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["https://vikunja.test:99999/api/v2", "https://vikunja.test:0/api/v2"],
+    ids=["above 65535", "zero"],
+)
+def test_a_port_outside_the_usable_range_is_refused(monkeypatch, url):
+    """`httpx.URL` parses these happily, and nothing can listen on either."""
+    monkeypatch.setenv("VIKUNJA_URL", url)
+    with pytest.raises(RuntimeError, match="port outside 1 to 65535"):
+        config._base()
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["https://[::1]/api/v2", "http://[::1]:8080/api/v1", "https://[2001:db8::1]/api/v2"],
+    ids=["loopback", "with a port", "documentation range"],
+)
+def test_an_ipv6_host_is_accepted(monkeypatch, url):
+    """Bracketed and well formed. `httpx.URL` reports the host without the brackets."""
+    monkeypatch.setenv("VIKUNJA_URL", url)
+    assert config._base() == url
+
+
+def test_the_parse_failure_names_the_url_and_the_reason(monkeypatch):
+    monkeypatch.setenv("VIKUNJA_URL", "https://vikunja.test:abc/api/v2")
+    with pytest.raises(RuntimeError) as caught:
+        config._base()
+    message = str(caught.value)
+    assert "vikunja.test:abc" in message
+    assert "port" in message.lower()
