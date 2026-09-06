@@ -433,7 +433,11 @@ def test_a_store_replaced_by_a_different_file_of_the_same_size_is_re_read(store)
 
 
 def test_the_store_sits_beside_the_credentials_file():
-    assert clients._CLIENTS_FILE.parent == config._CONFIG_FILE.parent
+    # The real default, captured before the suite repoints credential resolution away
+    # from the developer's own file.
+    from conftest import REAL_CONFIG_FILE
+
+    assert clients._CLIENTS_FILE.parent == REAL_CONFIG_FILE.parent
     assert clients._CLIENTS_FILE.name == "clients"
 
 

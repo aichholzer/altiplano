@@ -53,6 +53,16 @@ def bearer(token):
     return [(b"authorization", f"Bearer {token}".encode())]
 
 
+@pytest.fixture
+def vikunja_url(monkeypatch):
+    """A Vikunja URL, for the tests that reach `main` or `--check`.
+
+    Both validate every setting before serving, the upstream URL included. The suite
+    otherwise resolves no credentials at all, per the autouse fixture in `conftest`.
+    """
+    monkeypatch.setenv("VIKUNJA_URL", "https://vikunja.example.com/api/v2")
+
+
 class Recorder:
     """A `send` that keeps what the app wrote, and an app that records a pass."""
 
@@ -300,7 +310,7 @@ def test_main_refuses_to_serve_when_the_policy_is_refused(store, monkeypatch):
     assert started == []
 
 
-def test_main_serves_a_gated_app(store, monkeypatch):
+def test_main_serves_a_gated_app(store, monkeypatch, vikunja_url):
     clients._add("laptop", VIKUNJA)
     monkeypatch.setenv("ALTIPLANO_HTTP_HOST", "0.0.0.0")
     monkeypatch.setenv("ALTIPLANO_HTTP_PORT", "8123")
@@ -331,7 +341,7 @@ def test_version_reports_the_package_version(capsys):
     assert __version__ in capsys.readouterr().out
 
 
-def test_check_reports_the_settings_without_serving(store, monkeypatch, capsys):
+def test_check_reports_the_settings_without_serving(store, monkeypatch, capsys, vikunja_url):
     clients._add("laptop", VIKUNJA)
     monkeypatch.setenv("ALTIPLANO_HTTP_HOST", "127.0.0.1")
     started = []
@@ -346,14 +356,14 @@ def test_check_reports_the_settings_without_serving(store, monkeypatch, capsys):
     assert started == []
 
 
-def test_check_reports_a_refused_policy_without_raising(store, monkeypatch, capsys):
+def test_check_reports_a_refused_policy_without_raising(store, monkeypatch, capsys, vikunja_url):
     monkeypatch.setenv("ALTIPLANO_HTTP_HOST", "0.0.0.0")
     monkeypatch.setenv("ALTIPLANO_HTTP_ALLOW_UNAUTHENTICATED", "1")
     assert http_server.main(["--check"]) == 1
     assert "ALLOW_UNAUTHENTICATED" in capsys.readouterr().err
 
 
-def test_check_names_an_unauthenticated_listener_loudly(store, monkeypatch, capsys):
+def test_check_names_an_unauthenticated_listener_loudly(store, monkeypatch, capsys, vikunja_url):
     monkeypatch.setenv("ALTIPLANO_HTTP_HOST", "127.0.0.1")
     monkeypatch.setenv("ALTIPLANO_HTTP_ALLOW_UNAUTHENTICATED", "1")
     assert http_server.main(["--check"]) == 0
@@ -640,7 +650,7 @@ def test_one_client_with_a_token_is_enough_to_start(store, monkeypatch):
     assert http_server._check_policy() is True
 
 
-def test_check_counts_only_the_clients_with_a_token(store, monkeypatch, capsys):
+def test_check_counts_only_the_clients_with_a_token(store, monkeypatch, capsys, vikunja_url):
     monkeypatch.setenv("ALTIPLANO_HTTP_HOST", "127.0.0.1")
     clients._add("ready", VIKUNJA)
     body = store.read_text()
