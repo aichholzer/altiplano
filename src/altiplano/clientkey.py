@@ -3,6 +3,7 @@
 Three subcommands, run on the machine hosting the server:
 
     altiplano-clientkey add <label>
+    altiplano-clientkey update <label>
     altiplano-clientkey list
     altiplano-clientkey revoke <label>
 
@@ -12,6 +13,10 @@ who created it. Give one person's token to one client label.
 
 `add` prints the client token once. Altiplano keeps only its SHA-256. A client token
 that is lost is replaced by revoking the label and adding it again.
+
+`update` replaces the Vikunja token a client acts with and leaves its client token
+alone. The client needs no reconfiguring. It is how a record from a store predating
+per-client Vikunja tokens is repaired, and how a client moves to a new Vikunja token.
 
 The Vikunja token is read from a hidden prompt, or from stdin when the input is
 piped. It never appears as an argument, where `ps` would show it to every user on the
@@ -34,6 +39,7 @@ from altiplano.clients import (
     _clients,
     _LockUnavailable,
     _remove,
+    _set_vikunja_token,
     _StoreUnreadable,
 )
 
@@ -63,6 +69,16 @@ def _add_command(label: str) -> int:
     return 0
 
 
+def _update_command(label: str) -> int:
+    vikunja_token = _read_vikunja_token(label)
+    if not _set_vikunja_token(label, vikunja_token):
+        print(f"no client named {label!r} in {_CLIENTS_FILE}", file=sys.stderr)
+        return 1
+    print(f"updated {label}. It takes effect on the next request, with no restart.")
+    print(f"Its Altiplano client token is unchanged. {label} needs no reconfiguring.")
+    return 0
+
+
 def _list_command() -> int:
     registered = _clients()
     if not registered:
@@ -75,7 +91,8 @@ def _list_command() -> int:
         print(f"{client.label.ljust(width)}  {vikunja}  {client.created or 'unknown'}")
     if any(not client.vikunja_token for client in registered):
         print()
-        print("A client marked MISSING is refused on every request. Re-add it.")
+        print("A client marked MISSING is refused on every request. Give it a Vikunja")
+        print("token with: altiplano-clientkey update <label>")
     return 0
 
 
@@ -106,6 +123,18 @@ def _parser() -> argparse.ArgumentParser:
     )
     add.add_argument("label", help="a name for the client, for example stefan-laptop")
 
+    update = commands.add_parser(
+        "update",
+        help="replace the Vikunja token a client acts with",
+        description=(
+            "Replace the Vikunja API token an existing client acts with. Its Altiplano "
+            "client token is unchanged and the client needs no reconfiguring. The "
+            "Vikunja token is read from a hidden prompt, or from stdin when the input "
+            "is piped."
+        ),
+    )
+    update.add_argument("label", help="the client to update")
+
     commands.add_parser("list", help="list registered clients")
 
     revoke = commands.add_parser("revoke", help="revoke a client's token")
@@ -120,6 +149,8 @@ def main(argv: list[str] | None = None) -> int:
         match args.command:
             case "add":
                 return _add_command(args.label)
+            case "update":
+                return _update_command(args.label)
             case "revoke":
                 return _revoke_command(args.label)
             case _:

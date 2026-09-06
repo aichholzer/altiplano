@@ -86,6 +86,12 @@ undocumented tool. A new tool reaches both transports with no further work.
 `MCPServer` over Streamable HTTP to many clients, gated on per-client bearer tokens
 that `clients.py` stores as SHA-256 digests.
 
+The HTTP transport is stateless, and `http_server.py` explains why at length. The
+short version: the SDK's stateful mode keys every request on `mcp-session-id`, the
+gate cannot bind a session to a client, and a client with any valid token could
+therefore work on another client's session and delete it. Adding a tool that needs
+the server to call back to the client means revisiting that.
+
 Each record in that store also holds the Vikunja API token its client acts with. The
 gate resolves the bearer token to a record and binds that Vikunja token with
 `config._acting_as` for the rest of the call, and `config._headers()` reads it back.

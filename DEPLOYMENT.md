@@ -159,7 +159,18 @@ sudo -u altiplano env ALTIPLANO_CLIENTS=/etc/altiplano/clients \
 A revocation applies to the next request. The service keeps running.
 
 `list` shows a VIKUNJA column. A client marked `MISSING` has no Vikunja token and is
-refused on every request. Re-add it.
+refused on every request. Give it one with `update`, which leaves its Altiplano client
+token alone:
+
+```bash
+printf '%s\n' "$VIKUNJA_TOKEN_FOR_STEFAN" | sudo -u altiplano env \
+  ALTIPLANO_CLIENTS=/etc/altiplano/clients \
+  /opt/altiplano/bin/altiplano-clientkey update stefan-laptop
+```
+
+`update` is also how a client moves to a different Vikunja token. The client needs no
+reconfiguring either way. Only the store changes. `add` is for a client that does not
+exist yet, and it refuses a label already in the store.
 
 Revoking a client removes its Vikunja token from the store, and it does nothing to the
 token in Vikunja itself. To stop a token working everywhere, delete it in Vikunja under
@@ -169,6 +180,10 @@ Register at least one client before starting the service on a non-loopback addre
 Altiplano refuses to start otherwise. The missing key surfaces at startup. The same
 applies when no registered client has a Vikunja token. Every request would be refused,
 and the service reports that at startup.
+
+Sessions are stateless. Altiplano issues no `mcp-session-id`, and every request stands
+on the bearer token it carries. A restart therefore costs a client nothing, and there is
+no session state on the host to grow or expire.
 
 Authentication is on either way: an empty store denies every request, and an
 unreadable store refuses to start. The policy never follows from whether any keys
@@ -285,13 +300,42 @@ sudo rc-service altiplano start
 sudo rc-service altiplano status
 ```
 
-Alpine's `useradd` comes from the `shadow` package. With busybox alone, use
-`adduser -S -D altiplano`.
+Alpine's `useradd` comes from the `shadow` package. With busybox alone, create the
+group first:
+
+```bash
+sudo addgroup -S altiplano
+sudo adduser -S -D -G altiplano altiplano
+```
+
+BusyBox `adduser` puts a system user in `nogroup` when `-G` is left out, and both the
+`chown altiplano:altiplano` commands above and the OpenRC script's
+`command_group` need an `altiplano` group to exist.
+
+## Encrypt the connection
+
+A client token is a bearer credential. It goes in a header on every request, it is
+reusable, and it grants that person's Vikunja permissions including writes and
+deletions. Anyone who can observe the traffic can copy one and use it.
+[RFC 6750](https://www.rfc-editor.org/rfc/rfc6750#section-5.3) requires TLS for bearer
+tokens, and a home network is not an exception: a phone, a television, a guest laptop,
+or anything else on the same segment can watch plain HTTP.
+
+So do not serve this over plain HTTP across any network. Two ways to avoid it:
+
+- Put a reverse proxy in front with a certificate, and bind Altiplano to loopback.
+  Caddy or nginx with an internal certificate authority both work on a LAN.
+- Run the Cloudflare tunnel described below, which terminates TLS and reaches
+  Altiplano over loopback. This works for a LAN as readily as for the internet.
+
+Plain HTTP on `127.0.0.1` is fine. Nothing observes loopback.
 
 ## Firewall the listener
 
-Binding `0.0.0.0` means the process accepts connections on every interface. The
-client tokens decide who gets a reply, and a firewall decides who gets to ask.
+Binding `0.0.0.0` means the process accepts connections on every interface. The client
+tokens decide who gets a reply, and a firewall decides who gets to ask. This narrows
+who can reach the port; it does nothing about what a listener on the path can read, so
+it comes on top of TLS and never in place of it.
 
 ```bash
 # Debian, with ufw
@@ -302,8 +346,8 @@ sudo iptables -A INPUT -p tcp --dport 8000 -s 192.168.1.0/24 -j ACCEPT
 sudo iptables -A INPUT -p tcp --dport 8000 -j DROP
 ```
 
-Adapt the subnet. Do not port-forward this from the internet on plain HTTP. The
-tunnel below is the better answer.
+Adapt the subnet. With the proxy or the tunnel in front, bind Altiplano to `127.0.0.1`
+and the rule becomes unnecessary.
 
 ## Behind a Cloudflare tunnel
 
@@ -363,15 +407,15 @@ Common failures, and where to look first:
 | Symptom | Cause | Fix |
 |---|---|---|
 | Refuses to start, names the client store | Non-loopback bind with no client tokens | Register a client, or bind to `127.0.0.1` |
-| Refuses to start, names Vikunja tokens | No registered client has one | Re-add each client, which asks for its token |
+| Refuses to start, names Vikunja tokens | No registered client has one | `altiplano-clientkey update <label>` for each |
 | Refuses to start, names permissions | The store exists and cannot be read | `chown` it to the service account and `chmod 600` |
 | `401` on every call | No token, a typo in it, or a revoked one | Mint a fresh token and check the client sends `Authorization: Bearer` |
 | `421` or an opaque transport error | The `Host` clients send is not allowlisted | Read the server log for the rejected value, then add it |
 | Connection refused from another machine | Bound to loopback, or the firewall drops it | Set `ALTIPLANO_HTTP_HOST=0.0.0.0`, check the firewall |
 | Connects, no tools | A stale install | `altiplano-http --version` on the host |
-| `403` naming a Vikunja identity | The client's record has no Vikunja token | `altiplano-clientkey list`, then re-add the client marked `MISSING` |
-| Tool calls fail with a Vikunja `401` | That client's Vikunja token is wrong or was deleted in Vikunja | Re-add the client with a fresh token, and check `VIKUNJA_URL` |
-| A client sees someone else's tasks | Two clients were registered with one Vikunja token | Re-add one of them with its own |
+| `403` naming a Vikunja identity | The client's record has no Vikunja token | `altiplano-clientkey list`, then `update` the client marked `MISSING` |
+| Tool calls fail with a Vikunja `401` | That client's Vikunja token is wrong or was deleted in Vikunja | `altiplano-clientkey update <label>` with a fresh token, and check `VIKUNJA_URL` |
+| A client sees someone else's tasks | Two clients were registered with one Vikunja token | `altiplano-clientkey update <label>` on one of them |
 | Install fails on a cache path | `UV_CACHE_DIR` is unset and `$HOME` is not writable | Set `UV_CACHE_DIR` under `/opt/altiplano` |
 | A client is missing from `list` | Its record failed validation on read | The log names the skipped line number |
 

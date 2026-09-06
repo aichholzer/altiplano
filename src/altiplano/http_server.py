@@ -25,6 +25,25 @@ refused on any bind address other than loopback. Even on loopback it is the wron
 setting behind a proxy or a tunnel, where the bind address describes this machine
 and says nothing about who is calling.
 
+### Why the transport is stateless
+
+The SDK's stateful mode issues an `mcp-session-id` and keys every subsequent request
+on it alone. The gate below authenticates the bearer token on each request and has no
+way to say which client a session belongs to. A client holding any valid token could
+therefore send requests on another client's session and could delete it. Both were
+reproduced: the borrowed session answered 200, the delete answered 200, and the owner
+then got 404 with an in-flight response lost.
+
+Stateless removes the session. There is no id to issue, borrow, or terminate, and no
+session table to grow on a reconnecting client or on a rejected malformed request.
+Authentication then rests on the one thing that was always checked, the bearer token
+on the request in hand.
+
+The cost is server-initiated requests: sampling, elicitation, progress over a
+standalone stream, and resumability. Altiplano uses none of them. Every tool is one
+request and one response. Adding a tool that needs the server to call back to the
+client means revisiting this, and enforcing session ownership at the same time.
+
 ### Why the gate is ASGI middleware
 
 The SDK offers `token_verifier`, and it refuses to accept one without
@@ -61,7 +80,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 
 from altiplano import __version__
 from altiplano.clients import _CLIENTS_FILE, _clients, _resolve
-from altiplano.config import _acting_as
+from altiplano.config import _acting_as, _base
 from altiplano.server import mcp
 
 _LOG = logging.getLogger("altiplano.http")
@@ -215,8 +234,8 @@ class _RequireClientToken:
             return
         if not client.vikunja_token:
             _LOG.error(
-                "refused %s %s as %s: no Vikunja token on its record in %s. Re-add it "
-                "with: altiplano-clientkey add %s",
+                "refused %s %s as %s: no Vikunja token on its record in %s. Give it one "
+                "with: altiplano-clientkey update %s",
                 method,
                 path,
                 client.label,
@@ -233,6 +252,23 @@ class _RequireClientToken:
 def _peer(scope: Scope) -> str:
     client = scope.get("client")
     return client[0] if client else "unknown"
+
+
+def _validate_settings() -> None:
+    """Resolve every setting that has to be right before a request arrives.
+
+    `--check` and `main` both call this. A configuration `--check` approves is then one
+    the server can actually serve. Each of these raises on its own, and reaching them
+    all from one place is what keeps the two paths in agreement.
+
+    `VIKUNJA_URL` is the one that used to escape. It is resolved per request, and a
+    server with none configured started happily and failed on the first tool call.
+    """
+    _base()
+    _port()
+    _path()
+    _list_setting("ALTIPLANO_HTTP_ALLOWED_HOSTS", _LOCAL_HOSTS)
+    _list_setting("ALTIPLANO_HTTP_ALLOWED_ORIGINS", _LOCAL_ORIGINS)
 
 
 def _check_policy() -> bool:
@@ -291,12 +327,12 @@ def _check_policy() -> bool:
         if not _is_loopback(host):
             raise RuntimeError(
                 f"no client in {_CLIENTS_FILE} has a Vikunja token and the bind "
-                f"address is {host}. Every request would be refused. Re-add each "
-                "client with: altiplano-clientkey add <label>"
+                f"address is {host}. Every request would be refused. Give each client "
+                "one with: altiplano-clientkey update <label>"
             )
         _LOG.warning(
-            "no client in %s has a Vikunja token. Every request will be refused. "
-            "Re-add each client with: altiplano-clientkey add <label>",
+            "no client in %s has a Vikunja token. Every request will be refused. Give "
+            "each client one with: altiplano-clientkey update <label>",
             _CLIENTS_FILE,
         )
     return True
@@ -317,6 +353,8 @@ def build_app(*, gated: bool = True) -> Any:
         streamable_http_path=_path(),
         transport_security=security,
         host=_host(),
+        # Stateless. See "Why the transport is stateless" above.
+        stateless_http=True,
     )
     return _RequireClientToken(app) if gated else app
 
@@ -344,6 +382,7 @@ def _parser() -> argparse.ArgumentParser:
 def _check_report() -> int:
     """Print what the server would do, without opening a socket."""
     try:
+        _validate_settings()
         gated = _check_policy()
         registered = _clients()
     except RuntimeError as err:
@@ -351,11 +390,17 @@ def _check_report() -> int:
         return 1
     print(f"version:       {__version__}")
     print(f"bind:          {_host()}:{_port()}{_path()}")
+    print(f"vikunja:       {_base()}")
     print(f"allowed hosts: {', '.join(_list_setting('ALTIPLANO_HTTP_ALLOWED_HOSTS', _LOCAL_HOSTS))}")
+    print(
+        "allowed origins: "
+        f"{', '.join(_list_setting('ALTIPLANO_HTTP_ALLOWED_ORIGINS', _LOCAL_ORIGINS))}"
+    )
     identified = sum(1 for client in registered if client.vikunja_token)
     print(f"client store:  {_CLIENTS_FILE}")
     print(f"clients:       {len(registered)}")
     print(f"with a token:  {identified} of {len(registered)}")
+    print("sessions:      stateless")
     print(f"authenticated: {'yes' if gated else 'NO'}")
     return 0
 
@@ -367,6 +412,7 @@ def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     if args.check:
         return _check_report()
+    _validate_settings()
     gated = _check_policy()
     host, port = _host(), _port()
     _LOG.info(

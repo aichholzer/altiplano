@@ -588,7 +588,7 @@ def test_the_403_is_logged_with_the_label_and_the_fix(store, caplog):
         drive(http_server._RequireClientToken(Recorder().app), scope(bearer(token)))
 
     assert "laptop" in caplog.text
-    assert "altiplano-clientkey add laptop" in caplog.text
+    assert "altiplano-clientkey update laptop" in caplog.text
     assert token not in caplog.text
 
 
@@ -650,3 +650,105 @@ def test_check_counts_only_the_clients_with_a_token(store, monkeypatch, capsys):
 
     assert http_server.main(["--check"]) == 0
     assert "with a token:  1 of 2" in capsys.readouterr().out
+
+
+# --- the transport is stateless ---------------------------------------------
+# Stateful mode keyed every request on `mcp-session-id` alone, and the gate had no way
+# to say which client a session belonged to. A client holding any valid token could
+# send requests on another client's session and delete it. Both were reproduced
+# against the real SDK. Stateless removes the session, and with it the whole class.
+def test_the_built_app_is_stateless(store):
+    """No session manager state. Nothing to borrow, and nothing to expire."""
+    from altiplano.server import mcp
+
+    clients._add("laptop", VIKUNJA)
+    http_server.build_app(gated=False)
+    assert mcp.session_manager.stateless is True
+
+
+def test_a_session_id_on_a_request_is_not_honoured(store):
+    """A borrowed or fabricated session id has nothing to attach to."""
+    token = clients._add("laptop", VIKUNJA)
+    recorder = Recorder()
+    headers = bearer(token) + [(b"mcp-session-id", b"someone-elses-session")]
+    drive(http_server._RequireClientToken(recorder.app), scope(headers), recorder)
+
+    # The gate authenticates on the token in hand and passes it through. The SDK has no
+    # session table to match that id against.
+    assert recorder.reached is True
+
+
+def test_check_reports_stateless_sessions(store, monkeypatch, capsys):
+    monkeypatch.setenv("ALTIPLANO_HTTP_HOST", "127.0.0.1")
+    monkeypatch.setenv("VIKUNJA_URL", "https://vikunja.example.com/api/v2")
+    clients._add("laptop", VIKUNJA)
+    assert http_server.main(["--check"]) == 0
+    assert "sessions:      stateless" in capsys.readouterr().out
+
+
+# --- --check validates what startup validates -------------------------------
+def test_check_refuses_a_missing_vikunja_url(store, monkeypatch, capsys, tmp_path):
+    """`--check` exited 0 for this, and the server then failed on the first tool call."""
+    monkeypatch.setenv("ALTIPLANO_HTTP_HOST", "127.0.0.1")
+    monkeypatch.delenv("VIKUNJA_URL", raising=False)
+    monkeypatch.setattr(config, "_CONFIG_FILE", tmp_path / "absent")
+    clients._add("laptop", VIKUNJA)
+
+    assert http_server.main(["--check"]) == 1
+    assert "VIKUNJA_URL" in capsys.readouterr().err
+
+
+def test_check_refuses_an_empty_origins_allowlist(store, monkeypatch, capsys):
+    monkeypatch.setenv("ALTIPLANO_HTTP_HOST", "127.0.0.1")
+    monkeypatch.setenv("VIKUNJA_URL", "https://vikunja.example.com/api/v2")
+    monkeypatch.setenv("ALTIPLANO_HTTP_ALLOWED_ORIGINS", " , ")
+    clients._add("laptop", VIKUNJA)
+
+    assert http_server.main(["--check"]) == 1
+    assert "ALTIPLANO_HTTP_ALLOWED_ORIGINS" in capsys.readouterr().err
+
+
+def test_check_refuses_an_unusable_port(store, monkeypatch, capsys):
+    monkeypatch.setenv("ALTIPLANO_HTTP_HOST", "127.0.0.1")
+    monkeypatch.setenv("VIKUNJA_URL", "https://vikunja.example.com/api/v2")
+    monkeypatch.setenv("ALTIPLANO_HTTP_PORT", "70000")
+    assert http_server.main(["--check"]) == 1
+    assert "ALTIPLANO_HTTP_PORT" in capsys.readouterr().err
+
+
+def test_check_reports_the_vikunja_url_and_both_allowlists(store, monkeypatch, capsys):
+    monkeypatch.setenv("ALTIPLANO_HTTP_HOST", "127.0.0.1")
+    monkeypatch.setenv("VIKUNJA_URL", "https://vikunja.example.com/api/v2")
+    clients._add("laptop", VIKUNJA)
+
+    assert http_server.main(["--check"]) == 0
+    printed = capsys.readouterr().out
+    assert "vikunja:       https://vikunja.example.com/api/v2" in printed
+    assert "allowed hosts:" in printed
+    assert "allowed origins:" in printed
+
+
+def test_main_validates_settings_before_opening_a_socket(store, monkeypatch, tmp_path):
+    """A server with no Vikunja URL used to start and fail on the first tool call."""
+    monkeypatch.setenv("ALTIPLANO_HTTP_HOST", "127.0.0.1")
+    monkeypatch.delenv("VIKUNJA_URL", raising=False)
+    monkeypatch.setattr(config, "_CONFIG_FILE", tmp_path / "absent")
+    clients._add("laptop", VIKUNJA)
+    started = []
+    monkeypatch.setattr(http_server.uvicorn, "run", lambda *a, **k: started.append(True))
+
+    with pytest.raises(RuntimeError, match="VIKUNJA_URL"):
+        http_server.main([])
+    assert started == []
+
+
+def test_the_403_log_line_names_the_command_that_repairs_it(store, caplog):
+    """`add` refuses an existing label. It could never have been the fix."""
+    token = clients._mint()
+    store.write_text(v1_record("laptop", clients._digest(token)))
+    store.chmod(0o600)
+
+    with caplog.at_level("ERROR", logger="altiplano.http"):
+        drive(http_server._RequireClientToken(Recorder().app), scope(bearer(token)))
+
+    assert "altiplano-clientkey update laptop" in caplog.text

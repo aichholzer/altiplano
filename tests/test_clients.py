@@ -582,7 +582,8 @@ def test_a_v1_store_is_warned_about_once_and_names_the_fix(store):
     write(store, f"laptop:{'a' * 64}:2026-09-05T00:00:00Z\n", header=False)
     with pytest.warns(UserWarning, match="predates per-client Vikunja tokens") as caught:
         clients._clients()
-    assert "altiplano-clientkey add" in str(caught[0].message)
+    # `add` refuses a label that already exists. It could never have been the fix.
+    assert "altiplano-clientkey update" in str(caught[0].message)
 
 
 def test_a_v1_record_still_resolves_so_the_gate_can_name_it(store):
@@ -633,3 +634,62 @@ def test_a_v2_record_with_an_empty_token_field_survives(store):
     assert parsed.label == "laptop"
     assert parsed.vikunja_token == ""
     assert parsed.created == "2026-09-05T00:00:00Z"
+
+
+# --- replacing a client's Vikunja token -------------------------------------
+# `_add` refuses a label that already exists and could never repair a record. This is
+# what the v1 warning and the 403 log line point at.
+def test_updating_a_vikunja_token_keeps_the_client_token_working(store):
+    """The reason this exists. A repaired client needs no reconfiguring."""
+    token = clients._add("laptop", VIKUNJA)
+    fresh = "tk_" + "9" * 32
+
+    assert clients._set_vikunja_token("laptop", fresh) is True
+    resolved = clients._resolve(token)
+    assert resolved.label == "laptop"
+    assert resolved.vikunja_token == fresh
+
+
+def test_updating_repairs_a_client_carried_over_with_no_token(store):
+    token = clients._mint()
+    write(store, f"laptop:{clients._digest(token)}:2026-09-05T00:00:00Z\n", header=False)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        assert clients._set_vikunja_token("laptop", VIKUNJA) is True
+
+    clients._file_cache = None
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        resolved = clients._resolve(token)
+    assert resolved.vikunja_token == VIKUNJA
+
+
+def test_updating_leaves_every_other_client_alone(store):
+    mine = clients._add("mine", "tk_" + "1" * 32)
+    yours = clients._add("yours", "tk_" + "2" * 32)
+
+    clients._set_vikunja_token("mine", "tk_" + "3" * 32)
+
+    assert clients._resolve(mine).vikunja_token == "tk_" + "3" * 32
+    assert clients._resolve(yours).vikunja_token == "tk_" + "2" * 32
+    assert clients._labels() == ("mine", "yours"), "order is preserved"
+
+
+def test_updating_an_absent_label_reports_it(store):
+    clients._add("laptop", VIKUNJA)
+    assert clients._set_vikunja_token("ghost", VIKUNJA) is False
+
+
+def test_updating_refuses_an_unusable_vikunja_token(store):
+    token = clients._add("laptop", VIKUNJA)
+    with pytest.raises(ValueError, match="Vikunja API token"):
+        clients._set_vikunja_token("laptop", "has:colon")
+    assert clients._resolve(token).vikunja_token == VIKUNJA, "the store is untouched"
+
+
+def test_updating_needs_the_lock(store, monkeypatch):
+    """A change to the store without the lock could undo a concurrent revoke."""
+    clients._add("laptop", VIKUNJA)
+    monkeypatch.setattr(clients, "fcntl", None)
+    with pytest.raises(clients._LockUnavailable, match="POSIX file locking"):
+        clients._set_vikunja_token("laptop", "tk_" + "9" * 32)
