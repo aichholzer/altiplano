@@ -97,7 +97,7 @@ Restart or reconnect your MCP client, then call `list_projects()`. Any list, an 
 
 `altiplano-http` serves the same tools over Streamable HTTP from one always-on host. The Vikunja token stays on that host. Each client presents its own bearer token, which Altiplano mints, stores as a SHA-256 hash, and revokes one at a time.
 
-The service must already be running and reachable from the computer running your MCP client. Adding its URL to your client configuration connects to the service. It does not start it.
+The service must already be running and reachable from the computer running your MCP client. Adding its URL to your client configuration connects to the service. It does not start it. [`DEPLOYMENT.md`](./DEPLOYMENT.md) covers standing one up.
 
 Every client reaches Vikunja through the host's one Vikunja token, and they all act as the same Vikunja identity with the same permissions. Client tokens control who may connect and give each client a name in the log.
 
@@ -138,12 +138,6 @@ Restart or reconnect your MCP client, then call `list_projects()`. A successful 
 Keep the client token private. It grants access to the service and every tool it exposes. Ask the operator to revoke and replace a lost or exposed token. A revocation applies to the next request.
 
 > The supported path is a client that sends the header you configure. Altiplano answers an unauthenticated request with a bare `WWW-Authenticate: Bearer` challenge and publishes no OAuth metadata. A client may still probe the well-known metadata URLs on its own initiative and will get a `404`. A client that can only obtain credentials through an OAuth flow is not supported here.
-
-### Run your own HTTP service
-
-[`DEPLOYMENT.md`](./DEPLOYMENT.md) covers the host side end to end: installing with `uv` under a service account, every environment variable the transport reads, minting client tokens, a systemd unit for Debian and an OpenRC script for Alpine, firewalling the listener, putting it behind a Cloudflare tunnel, and the checks to run before the deployment counts as done.
-
-For a local test, `uv run altiplano-http` binds `127.0.0.1:8000`. Authentication stays on, and `ALTIPLANO_HTTP_ALLOW_UNAUTHENTICATED=1` turns it off for development. Any bind address other than loopback refuses that variable.
 
 ## Tools
 
@@ -240,7 +234,7 @@ Altiplano documents its own use in four places.
 - The handshake sends usage rules: resolve ids by name, which calls cannot be undone, how to close a task. Clients apply them on connect.
 - The `altiplano_guide` prompt holds the full version, with cross-tool sequencing and the v1 and v2 differences. Clients list it as `Using Altiplano`.
 - `AGENTS.md` covers working on this repository, and installing Altiplano for someone else. `CLAUDE.md` imports it, for Claude Code.
-- `DEPLOYMENT.md` covers running the HTTP transport as a service on a host.
+- `DEPLOYMENT.md` covers running the HTTP transport as a service on a host: installing with `uv` under a service account, every environment variable the transport reads, minting client tokens, a systemd unit for Debian and an OpenRC script for Alpine, firewalling the listener, putting it behind a Cloudflare tunnel, and the checks to run before the deployment counts as done.
 
 ## Task behaviour
 
@@ -322,6 +316,8 @@ uvx --refresh-package altiplano altiplano@latest      # current PyPI release
 uv run altiplano-http                                 # HTTP transport, loopback
 uv run altiplano-clientkey add laptop                 # mint a client token
 ```
+
+`altiplano-http` binds `127.0.0.1:8000` and keeps authentication on. `ALTIPLANO_HTTP_ALLOW_UNAUTHENTICATED=1` turns it off for development. Any bind address other than loopback refuses that variable.
 
 ## Layout
 
