@@ -251,6 +251,19 @@ async def check_projects_differ(report: Report, a: Client, b: Client) -> list[di
 
 
 # --- the write phase ----------------------------------------------------------
+def _writable(projects: list) -> dict | None:
+    """The first project that can hold a task.
+
+    Vikunja reports saved filters alongside real projects and gives them negative ids.
+    `My Open Tasks` is one, and creating a task in it fails. Position in the list is no
+    guide either, which leaves the id as the only thing to go on.
+    """
+    for project in projects:
+        if isinstance(project, dict) and isinstance(project.get("id"), int) and project["id"] > 0:
+            return project
+    return None
+
+
 async def check_identity_by_writing(report: Report, a: Client, b: Client, projects) -> None:
     """The conclusive check. A task each client creates names the identity that made it.
 
@@ -261,18 +274,24 @@ async def check_identity_by_writing(report: Report, a: Client, b: Client, projec
     created: list[tuple[Client, int]] = []
     try:
         for client, own in ((a, projects_a), (b, projects_b)):
-            if not own:
-                report.record(False, f"{client.name} has a project to write to")
+            target = _writable(own)
+            if target is None:
+                report.record(
+                    False,
+                    f"{client.name} has a project to write to",
+                    "every project it can see has a negative id, which Vikunja uses for "
+                    "saved filters such as 'My Open Tasks'. Those hold no tasks.",
+                )
                 continue
             task = await client.call(
                 "create_task",
-                {"project_id": own[0]["id"], "title": MARKER},
+                {"project_id": target["id"], "title": MARKER},
             )
             created.append((client, task["id"]))
             report.record(
                 True,
                 f"{client.name} creates a task in its own project",
-                f"task {task['id']} in project {own[0]['id']}",
+                f"task {task['id']} in {target.get('title', '?')} (project {target['id']})",
             )
 
         for client, task_id in created:
