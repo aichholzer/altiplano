@@ -343,7 +343,7 @@ with the same permissions.
 
 Give the host a dedicated Vikunja service account holding only the scopes the tools
 you expose need. Per-user Vikunja identity would mean choosing credentials from the
-request context, which is a different design.
+request context.
 
 Altiplano stores nothing of its own, and Vikunja stays the system of record. Back up
 Vikunja, the service definition, and the client store. If the host goes down, the
