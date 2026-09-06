@@ -24,7 +24,8 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
-from urllib.parse import urlsplit
+
+import httpx
 
 _CONFIG_FILE = Path(
     os.environ.get("ALTIPLANO_CONFIG", Path.home() / ".config" / "altiplano" / "env")
@@ -113,22 +114,34 @@ def _conf(key: str) -> str | None:
 def _base() -> str:
     """The Vikunja API root, checked for shape as well as presence.
 
-    Presence alone let two unusable values through to the first request:
-    `vikunja.home.arpa/api/v2`, which httpx reads as a relative path, and
-    `https:///api/v2`, which names no host. Both passed `altiplano-http --check` and
-    failed on the first tool call.
+    Parsed with `httpx.URL`, which is the parser the request layer uses. Validating
+    with anything else lets the check and the behaviour disagree: `urlsplit` accepted
+    `https://vikunja.test:abc/api/v2`, which httpx refuses when the request is built,
+    and raised a bare `ValueError` on `https://[::1/api/v2`, which reached the operator
+    as a traceback.
+
+    Three checks sit on top of the parse, one per observed failure. A missing scheme,
+    as in `vikunja.home.arpa/api/v2`, which httpx reads as a relative path. A missing
+    host, as in `https:///api/v2`. And a port outside the usable range, which
+    `httpx.URL` accepts and no listener can answer on.
     """
     url = _conf("VIKUNJA_URL")
     if not url:
         raise RuntimeError("VIKUNJA_URL is not set (env or ~/.config/altiplano/env)")
-    parts = urlsplit(url)
-    if parts.scheme not in ("http", "https"):
+    try:
+        parsed = httpx.URL(url)
+    except (httpx.InvalidURL, ValueError) as err:
+        # `UnicodeError` is a `ValueError`, which covers a hostname IDNA cannot encode.
+        raise RuntimeError(f"VIKUNJA_URL cannot be parsed as a URL (got {url!r}): {err}") from err
+    if parsed.scheme not in ("http", "https"):
         raise RuntimeError(
             f"VIKUNJA_URL must begin with http:// or https:// (got {url!r}). It ends in "
             "/api/v1 or /api/v2, and that suffix selects the API version."
         )
-    if not parts.hostname:
+    if not parsed.host:
         raise RuntimeError(f"VIKUNJA_URL names no host (got {url!r})")
+    if parsed.port is not None and not 1 <= parsed.port <= 65535:
+        raise RuntimeError(f"VIKUNJA_URL has a port outside 1 to 65535 (got {url!r})")
     return url.rstrip("/")
 
 

@@ -74,10 +74,12 @@ All notable changes to this project are documented here.
   standalone stream, and resumability. Altiplano uses none of them, and a client needs
   no configuration change.
 
-- `VIKUNJA_URL` is checked for shape as well as presence. It needs an `http` or
-  `https` scheme and a host. `vikunja.home.arpa/api/v2` and `https:///api/v2` are
-  therefore refused at startup. Both were accepted before and failed on the first tool
-  call.
+- `VIKUNJA_URL` is checked for shape as well as presence, and parsed with the same
+  parser that builds the request. It needs an `http` or `https` scheme, a host, and a
+  port inside 1 to 65535. `vikunja.home.arpa/api/v2`, `https:///api/v2`,
+  `https://vikunja.test:abc/api/v2` and `https://[::1/api/v2` are all refused at
+  startup with a message. Every one of them was accepted before, and the last two
+  reached the operator as a failed tool call and a traceback.
 
 - A client token is a bearer credential and needs confidentiality in transit. Serve
   the endpoint behind TLS or an encrypted tunnel on any network, a LAN included, and
