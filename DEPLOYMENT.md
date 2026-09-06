@@ -5,8 +5,8 @@ on your network then reaches one Altiplano process holding one Vikunja token.
 
 The transport itself, the environment variables, the client tokens, and how to point
 a client at the endpoint are all in [`README.md`](./README.md) under `Use over HTTP`.
-Read that first. This file picks up where it stops, and covers the parts a first-time
-deployment usually gets wrong.
+Read that first. What follows covers the parts a first-time deployment usually gets
+wrong.
 
 What it assumes you already have:
 
@@ -17,8 +17,7 @@ What it assumes you already have:
 ## Install with uv
 
 `uv tool install` builds a virtual environment of its own and puts the commands in a
-bin directory. Four environment variables make every path it touches deterministic,
-which a service account with no home directory of its own needs:
+bin directory. Four environment variables make every path it touches deterministic:
 
 ```bash
 sudo useradd --system --shell /usr/sbin/nologin altiplano
@@ -85,7 +84,7 @@ Every setting the HTTP transport reads, with its default:
 | `ALTIPLANO_HTTP_ALLOW_UNAUTHENTICATED` | unset | Serves with no token. Loopback only. |
 
 `VIKUNJA_URL` and `VIKUNJA_API_TOKEN` are read the same way here as for a local
-install, and [`README.md`](./README.md) covers the resolution order and the file
+install. [`README.md`](./README.md) covers the resolution order and the file
 permissions Altiplano warns about.
 
 `ALTIPLANO_HTTP_ALLOWED_HOSTS` has to contain the `Host` value clients actually
@@ -154,8 +153,8 @@ The file is sourced inside the service account's own shell, for two reasons. It 
 `chmod 600` and owned by that account, and an administrator's shell cannot read it
 before `sudo` runs. And sourcing keeps the Vikunja token out of the command line,
 where `ps` would show it to every user on the host. This form needs
-`service.env` to hold shell-compatible `KEY=VALUE` lines, which is what systemd's
-`EnvironmentFile` accepts anyway.
+`service.env` to hold shell-compatible `KEY=VALUE` lines. Systemd's `EnvironmentFile`
+accepts the same format.
 
 > `ALTIPLANO_HTTP_ALLOW_UNAUTHENTICATED` has no place in a service unit. It is
 > refused on any bind address other than loopback, and behind a proxy or a tunnel a

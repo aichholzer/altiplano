@@ -38,7 +38,7 @@ uv sync --locked                    # install, exactly as the lock file says
 uv run pytest -q                    # tests, with the 90 percent coverage gate
 uvx ruff@0.16.4 check src tests     # lint, the pinned version CI uses
 uv run altiplano                    # stdio server, from a checkout
-uv run altiplano-http               # HTTP server, loopback and open by default
+uv run altiplano-http               # HTTP server, loopback, authentication on
 uv run altiplano-clientkey list     # the tokens the HTTP server accepts
 ```
 
@@ -68,8 +68,8 @@ undocumented tool. A new tool reaches both transports with no further work.
 
 ## Conventions
 
-- Tool docstrings are shipped text. MCP clients read them as tool descriptions,
-  and a wrong one misleads every caller, silently.
+- Tool docstrings are shipped text. MCP clients read them as tool descriptions. A
+  wrong one misleads every caller, silently.
 - One concern per commit, and no task tracker references in commit messages.
 - Every change bumps the version across `pyproject.toml`,
   `src/altiplano/__init__.py`, and `uv.lock`, with a `CHANGELOG.md` entry under the
@@ -86,8 +86,8 @@ undocumented tool. A new tool reaches both transports with no further work.
 `MCPServer` over Streamable HTTP to many clients, gated on per-client bearer tokens
 that `clients.py` stores as SHA-256 digests.
 
-The gate is ASGI middleware wrapping `mcp.streamable_http_app()`, and the reason is
-worth knowing before anyone tries to simplify it. The SDK's `token_verifier` is
+The gate is ASGI middleware wrapping `mcp.streamable_http_app()`. The SDK's
+`token_verifier` is
 refused without `AuthSettings`; `AuthSettings` requires `issuer_url` and
 `resource_server_url`; and setting it makes the SDK publish
 `/.well-known/oauth-protected-resource` and wrap the endpoint in
@@ -100,8 +100,8 @@ Two rules for anything touching `http_server.py`:
 - The wrapper passes every non-`http` scope straight through. The `lifespan` scope
   starts the MCP session manager, and no unit test on the auth path would notice it
   going missing.
-- The middleware is written against the ASGI interface with no Starlette import,
-  which keeps `uvicorn` the only dependency this transport adds.
+- The middleware is written against the ASGI interface with no Starlette import.
+  `uvicorn` is the only dependency this transport adds.
 
 ## Two API versions
 
