@@ -99,7 +99,7 @@ Restart or reconnect your MCP client, then call `list_projects()`. Any list, an 
 
 The service must already be running and reachable from the computer running your MCP client. Adding its URL to your client configuration connects to the service. It does not start it. [`DEPLOYMENT.md`](./DEPLOYMENT.md) covers standing one up.
 
-Every client reaches Vikunja through the host's one Vikunja token, and they all act as the same Vikunja identity with the same permissions. Client tokens control who may connect and give each client a name in the log.
+Every client reaches Vikunja through the host's one Vikunja token. They all act as the same Vikunja identity with the same permissions. Client tokens control who may connect and give each client a name in the log.
 
 ### Connect to an existing service
 

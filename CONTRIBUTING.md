@@ -79,7 +79,7 @@ should not branch on the version unless the endpoint itself differs.
 - One concern per commit.
 - A version bump across `pyproject.toml`, `src/altiplano/__init__.py`, and `uv.lock`,
   with a `CHANGELOG.md` entry under the matching heading. A new tool is a minor bump.
-- Ruff clean and the test suite passing, both of which the pre-commit hook checks.
+- Ruff clean and the test suite passing.
 - Australian spelling in prose, and no em dashes.
 
 Documentation-only changes skip the version bump and the change log entry.

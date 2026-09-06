@@ -7,7 +7,7 @@ code, never about the person who wrote it.
 
 ## Expected behaviour
 
-- Be direct and be kind. Both at once is possible, and it is the standard here.
+- Be direct and be kind. Both at once is possible.
 - Accept that people arrive with different experience, languages, time zones, and
   hardware. A question that looks obvious to you was not obvious to whoever asked it.
 - Aim feedback at the work. "This function leaks a file handle" is useful. "You are
@@ -38,7 +38,7 @@ report will not be held against the person who makes it, whatever the outcome.
 
 ## Enforcement
 
-The maintainer decides the response, and it fits the incident:
+The maintainer decides the response. The steps run from lightest to heaviest:
 
 1. A private word about the behaviour.
 2. A public correction on the thread.
