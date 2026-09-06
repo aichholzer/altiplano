@@ -12,7 +12,7 @@
 A small, dependable MCP server for [Vikunja](https://vikunja.io).<br />
 Named after the Andean altiplano, the high plateau that is the Vicuña's native habitat.
 
-Altiplano runs locally through `uvx`, or as a stand-alone HTTP service shared by several MCP clients. Both modes expose the same tools and the same guidance.
+Altiplano runs locally through `uvx`, or as a stand-alone HTTP service that several people share on one endpoint, each acting as their own Vikunja user. Both modes expose the same tools and the same guidance.
 
 ## Choose how to use Altiplano
 
@@ -21,7 +21,7 @@ Altiplano runs locally through `uvx`, or as a stand-alone HTTP service shared by
 | Where Altiplano runs               | On your computer, launched by your MCP client.                  | On a host running Altiplano as a stand-alone service.                             |
 | How your MCP client connects       | Runs `uvx` and communicates over stdio.                         | Connects to the service URL with a valid bearer token.                            |
 | Requirements on your computer      | `uv`, Python 3.10 or later, and an MCP client supporting stdio. | An MCP client supporting Streamable HTTP and a configured `Authorization` header. |
-| Where the Vikunja credentials live | On each computer running Altiplano.                             | On the service host.                                                              |
+| Where the Vikunja credentials live | On each computer running Altiplano.                             | On the service host, one token per client.                                        |
 | Setup                              | [Use locally](#use-locally-with-uvx)                            | [Use over HTTP](#use-over-http)                                                   |
 
 Connecting to an existing HTTP service needs its URL and an Altiplano client token. You do not need to install Altiplano, `uv`, or Python on the client.
@@ -99,7 +99,9 @@ Restart or reconnect your MCP client, then call `list_projects()`. Any list, an 
 
 The service must already be running and reachable from the computer running your MCP client. Adding its URL to your client configuration connects to the service. It does not start it. [`DEPLOYMENT.md`](./DEPLOYMENT.md) covers standing one up.
 
-Each client acts as its own Vikunja user. The host holds one Vikunja API token per registered client. Two people sharing a service reach their own projects and their own tasks, with Vikunja applying its own permissions to each. A client with no Vikunja token registered for it is refused.
+One endpoint serves several people, each as their own Vikunja user. There is no shared Vikunja API token: the host holds one per registered client, and a request is made with the token belonging to the client that sent it. Two people on one service reach their own projects and their own tasks, with Vikunja applying its own permissions to each.
+
+The operator records your Vikunja token when registering your client. Give them one created from your own Vikunja account. A client with no token registered for it is refused.
 
 ### Connect to an existing service
 
