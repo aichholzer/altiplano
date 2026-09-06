@@ -11,12 +11,16 @@ server and never returns. And they need no Vikunja credentials, because
 """
 
 import asyncio
+import json
 from importlib.metadata import entry_points, version
+from pathlib import Path
 
 import pytest
 
 import altiplano
 from altiplano.server import mcp
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # The full public surface. Update this when adding or removing a tool; the
 # exact-match assertion below stops a tool silently disappearing.
@@ -89,3 +93,20 @@ def test_the_handshake_reports_the_running_version():
     options = mcp._lowlevel_server.create_initialization_options()
     assert options.server_name == "altiplano"
     assert options.server_version == altiplano.__version__
+
+
+def test_the_glama_manifest_is_parseable_and_names_a_maintainer():
+    """Glama reads `glama.json` to let a maintainer claim the server listing.
+
+    A syntax error there is the documented reason a claim silently fails, and
+    nothing else in this project ever parses the file. The schema requires
+    `maintainers` to be a unique array of GitHub usernames.
+    """
+    manifest = json.loads((REPO_ROOT / "glama.json").read_text())
+    assert manifest["$schema"] == "https://glama.ai/mcp/schemas/server.json"
+
+    maintainers = manifest["maintainers"]
+    assert isinstance(maintainers, list)
+    assert maintainers, "at least one GitHub username is required"
+    assert all(isinstance(name, str) and name.strip() for name in maintainers)
+    assert len(set(maintainers)) == len(maintainers), "the schema requires unique entries"

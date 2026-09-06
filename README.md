@@ -6,6 +6,7 @@
 [![codecov](https://codecov.io/gh/aichholzer/altiplano/graph/badge.svg?token=l7Svxa1x0X)](https://codecov.io/gh/aichholzer/altiplano)
 [![Python](https://img.shields.io/badge/python-%3E%3D3.10-blue.svg)](https://www.python.org/)
 [![PyPI version](https://img.shields.io/pypi/v/altiplano.svg)](https://pypi.org/project/altiplano/)
+[![Altiplano MCP server](https://glama.ai/mcp/servers/aichholzer/altiplano/badges/score.svg)](https://glama.ai/mcp/servers/aichholzer/altiplano)
 [![License](https://img.shields.io/github/license/aichholzer/altiplano)](LICENSE)
 
 A small, dependable MCP server for [Vikunja](https://vikunja.io).<br />
