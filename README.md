@@ -97,7 +97,9 @@ Restart or reconnect your MCP client, then call `list_projects()`. Any list, an 
 
 `altiplano-http` serves the same tools over Streamable HTTP from one always-on host. The Vikunja token stays on that host. Each client presents its own bearer token, which Altiplano mints, stores as a SHA-256 hash, and revokes one at a time.
 
-The service must already be running and reachable from the computer running your MCP client. Adding its URL to your client configuration connects to the service. It does not start it.
+The service must already be running and reachable from the computer running your MCP client. Adding its URL to your client configuration connects to the service. It does not start it. [`DEPLOYMENT.md`](./DEPLOYMENT.md) covers standing one up.
+
+Every client reaches Vikunja through the host's one Vikunja token, and they all act as the same Vikunja identity with the same permissions. Client tokens control who may connect and give each client a name in the log.
 
 ### Connect to an existing service
 
@@ -136,71 +138,6 @@ Restart or reconnect your MCP client, then call `list_projects()`. A successful 
 Keep the client token private. It grants access to the service and every tool it exposes. Ask the operator to revoke and replace a lost or exposed token. A revocation applies to the next request.
 
 > The supported path is a client that sends the header you configure. Altiplano answers an unauthenticated request with a bare `WWW-Authenticate: Bearer` challenge and publishes no OAuth metadata. A client may still probe the well-known metadata URLs on its own initiative and will get a `404`. A client that can only obtain credentials through an OAuth flow is not supported here.
-
-### Run your own HTTP service
-
-Set up Altiplano on a host that stays available to your clients. The host has the same `uv` and Python requirements as a local install. It runs `altiplano-http` independently of any MCP client, and holds the Vikunja URL and API token together with the client token store.
-
-Mint a token for each client on that host:
-
-```bash
-altiplano-clientkey add stefan-laptop
-```
-
-The token prints once. Altiplano keeps only its hash. Replace a lost token by revoking the label and adding it again.
-
-```bash
-altiplano-clientkey list
-altiplano-clientkey revoke stefan-laptop
-```
-
-A revocation applies to the next request. The service keeps running.
-
-> The store lives beside the credentials file, at `~/.config/altiplano/clients`, or wherever `ALTIPLANO_CLIENTS` points. It is written `chmod 600`.
-
-Two settings decide who reaches the service. The bind address decides which interfaces accept a connection, and the Host allowlist decides which `Host` headers are answered. The allowlist defaults to localhost, and a LAN name has to be named explicitly:
-
-```bash
-ALTIPLANO_HTTP_HOST=0.0.0.0 \
-ALTIPLANO_HTTP_ALLOWED_HOSTS='altiplano.home.arpa,altiplano.home.arpa:*' \
-altiplano-http
-```
-
-| Variable                               |                       Default | Meaning                                                  |
-| -------------------------------------- | ----------------------------: | -------------------------------------------------------- |
-| `ALTIPLANO_HTTP_HOST`                  |                   `127.0.0.1` | Bind address. `0.0.0.0` listens on every IPv4 interface. |
-| `ALTIPLANO_HTTP_PORT`                  |                        `8000` | TCP port.                                                |
-| `ALTIPLANO_HTTP_PATH`                  |                        `/mcp` | MCP endpoint path.                                       |
-| `ALTIPLANO_HTTP_ALLOWED_HOSTS`         |            localhost patterns | Accepted HTTP `Host` values, comma separated.            |
-| `ALTIPLANO_HTTP_ALLOWED_ORIGINS`       |             localhost origins | Accepted browser `Origin` values, comma separated.       |
-| `ALTIPLANO_CLIENTS`                    | `~/.config/altiplano/clients` | Client token store.                                      |
-| `ALTIPLANO_HTTP_ALLOW_UNAUTHENTICATED` |                         unset | Serves with no token. Loopback only.                     |
-
-A client connecting to `http://altiplano.home.arpa:8000/mcp` sends `Host: altiplano.home.arpa:8000`, which `altiplano.home.arpa:*` covers. Over HTTPS on the default port it sends a bare `altiplano.home.arpa`. List both forms.
-
-Test the allowlist from a second machine, against the hostname clients will use. A check pointed at `127.0.0.1` on the server exercises a `Host` value the allowlist accepts by default. A misconfigured allowlist then goes unnoticed until a real client tries.
-
-`altiplano-http --check` prints the resolved settings, the client count, and whether authentication is on, then exits without opening a socket.
-
-#### Authentication is always on
-
-Every request needs a token. An empty store denies every request, and an unreadable store refuses to start. The policy never follows from whether any keys happen to exist: "nobody is authorised" and "authorise everybody" are different answers.
-
-Starting off loopback with no clients registered is refused. The missing key surfaces at startup.
-
-For local development, `ALTIPLANO_HTTP_ALLOW_UNAUTHENTICATED=1` turns the gate off. It is refused on any bind address other than loopback. Leave it unset behind a proxy or a tunnel: there the bind address describes this machine and says nothing about who is calling.
-
-> `ALLOWED_HOSTS` and `ALLOWED_ORIGINS` prevent DNS rebinding. They are not authentication. A device can send any `Host` header it likes. The client tokens are the access control.
-
-#### Running it as a managed service
-
-[`DEPLOYMENT.md`](./DEPLOYMENT.md) covers the host side: installing with `uv` under a service account, a systemd unit for Debian and an OpenRC script for Alpine, firewalling the listener, putting it behind a Cloudflare tunnel, and what to check when it does not work.
-
-#### What a shared server does not give you
-
-One Vikunja token serves every client. Every client therefore acts as the same Vikunja identity with the same permissions. Per-client tokens control who may connect and give each client a name in the log. They do not partition what a client may do.
-
-Use a dedicated Vikunja service account with only the scopes the tools you expose need. Per-user Vikunja identity would mean selecting credentials from the request context, which is a different design.
 
 ## Tools
 
@@ -296,8 +233,8 @@ Altiplano documents its own use in four places.
 
 - The handshake sends usage rules: resolve ids by name, which calls cannot be undone, how to close a task. Clients apply them on connect.
 - The `altiplano_guide` prompt holds the full version, with cross-tool sequencing and the v1 and v2 differences. Clients list it as `Using Altiplano`.
-- `AGENTS.md` covers working on this repository, and installing Altiplano for someone else. `CLAUDE.md` imports it, for Claude Code.
-- `DEPLOYMENT.md` covers running the HTTP transport as a service on a host.
+- [`AGENTS.md`](./AGENTS.md) covers working on this repository, and installing Altiplano for someone else. [`CLAUDE.md`](./CLAUDE.md) imports it, for Claude Code.
+- [`DEPLOYMENT.md`](./DEPLOYMENT.md) covers running the HTTP transport as a service on a host: installing with `uv` under a service account, every environment variable the transport reads, minting client tokens, a systemd unit for Debian and an OpenRC script for Alpine, firewalling the listener, putting it behind a Cloudflare tunnel, and the checks to run before the deployment counts as done.
 
 ## Task behaviour
 
@@ -361,43 +298,7 @@ Identified issues:
 
 ## Contributing
 
-Enable the pre-commit hook once per clone:
-
-```bash
-git config core.hooksPath hooks
-```
-
-The hook runs Ruff 0.16.4 over `src` and `tests`, then pytest with a 90 percent coverage minimum. CI runs Ruff in one job and pytest on Python 3.10 and 3.13.
-
-## Run
-
-```bash
-uv run altiplano                                      # development checkout
-uvx --from /your/local/path altiplano                 # local package path
-uvx --refresh-package altiplano altiplano@latest      # current PyPI release
-
-uv run altiplano-http                                 # HTTP transport, loopback
-uv run altiplano-clientkey add laptop                 # mint a client token
-```
-
-## Layout
-
-```text
-src/altiplano/
-  app.py           MCP instance imported by the tool and prompt modules
-  config.py        Credential resolution and credential-file parsing
-  api.py           API-version handling, requests, and response shaping
-  prompts.py       The usage guidance, served as a prompt
-  tools/           One module for each tool group
-  server.py        Registration and the stdio entry point
-  clients.py       The per-client token store for the HTTP transport
-  http_server.py   The HTTP entry point and its bearer-token gate
-  clientkey.py     The altiplano-clientkey command
-```
-
-Register a tool group by adding its module and importing it from `server.py`. Add its tools to the routing-table test and the smoke test's exact list.
-
-> Pull requests are always welcome.
+Pull requests are always welcome. [`CONTRIBUTING.md`](./CONTRIBUTING.md) covers the development setup, the commands, the pre-commit hook, the source layout, and what a pull request needs. Taking part means agreeing to the [code of conduct](./CODE_OF_CONDUCT.md).
 
 ## Licence
 
