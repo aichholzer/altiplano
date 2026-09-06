@@ -36,7 +36,7 @@ prints nothing and waits. It speaks MCP over stdio.
 ```bash
 uv sync --locked                    # install, exactly as the lock file says
 uv run pytest -q                    # tests, with the 90 percent coverage gate
-uvx ruff@0.16.4 check src tests     # lint, the pinned version CI uses
+uvx ruff@0.16.4 check src tests scripts   # lint, the pinned version CI uses
 uv run altiplano                    # stdio server, from a checkout
 uv run altiplano-http               # HTTP server, loopback, authentication on
 uv run altiplano-clientkey list     # the clients the HTTP server accepts
