@@ -9,9 +9,15 @@ the handshake instructions and the `altiplano_guide` prompt.
 
 ## Installing it for someone
 
-If the job is to get Altiplano running for a user, follow `## Install` in
-`README.md`: `uv`, a Vikunja API token, a credentials file, the client's MCP
-entry, then one `list_projects()` call to confirm.
+Ask which shape they want first. `README.md` opens with the choice under
+`## Choose how to use Altiplano`.
+
+For a local install, follow `## Use locally with uvx`: `uv`, a Vikunja API token, a
+credentials file, the client's MCP entry, then one `list_projects()` call to confirm.
+
+For a client connecting to an HTTP service, follow `## Use over HTTP`, under
+`### Connect to an existing service`. That needs the endpoint URL and a client token
+from whoever operates it, and installs nothing.
 
 For a shared HTTP deployment on a host, `DEPLOYMENT.md` has the service account,
 the systemd unit, the OpenRC script, and the client token commands.

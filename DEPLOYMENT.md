@@ -4,9 +4,9 @@ How to run `altiplano-http` as a managed service on an always-on host. Every cli
 on your network then reaches one Altiplano process holding one Vikunja token.
 
 The transport itself, the environment variables, the client tokens, and how to point
-a client at the endpoint are all in [`README.md`](./README.md) under
-`Shared HTTP server`. Read that first. This file picks up where it stops, and covers
-the parts a first-time deployment usually gets wrong.
+a client at the endpoint are all in [`README.md`](./README.md) under `Use over HTTP`.
+Read that first. This file picks up where it stops, and covers the parts a first-time
+deployment usually gets wrong.
 
 What it assumes you already have:
 

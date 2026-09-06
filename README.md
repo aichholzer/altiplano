@@ -12,61 +12,227 @@
 A small, dependable MCP server for [Vikunja](https://vikunja.io).<br />
 Named after the Andean altiplano, the high plateau that is the Vicuña's native habitat.
 
-Requires Python 3.10 or later.
+Altiplano runs locally through `uvx`, or as a stand-alone HTTP service shared by several MCP clients. Both modes expose the same tools and the same guidance.
 
-## Install
+## Choose how to use Altiplano
+
+| | Local, through `uvx` | Shared, over HTTP |
+|---|---|---|
+| Where Altiplano runs | On your computer, launched by your MCP client. | On a host running Altiplano as a stand-alone service. |
+| How your MCP client connects | Runs `uvx` and communicates over stdio. | Connects to the service URL with a valid bearer token. |
+| Requirements on your computer | `uv`, Python 3.10 or later, and an MCP client supporting stdio. | An MCP client supporting Streamable HTTP and a configured `Authorization` header. |
+| Where the Vikunja credentials live | On each computer running Altiplano. | On the service host. |
+| Setup | [Use locally](#use-locally-with-uvx) | [Use over HTTP](#use-over-http) |
+
+Connecting to an existing HTTP service needs its URL and an Altiplano client token. You do not need to install Altiplano, `uv`, or Python on the connecting computer.
+
+The configuration examples below use an `mcpServers` block. Adapt the surrounding structure to your MCP client's configuration format.
+
+## Use locally with uvx
+
+Your MCP client launches Altiplano as a local subprocess and communicates with it over stdio. Each client manages its own Altiplano process.
 
 ### 1. Install uv
 
-`uv` provides `uvx`, which runs Altiplano without a checkout. See [installation guide](https://docs.astral.sh/uv/getting-started/installation/).
+[`uv`](https://docs.astral.sh/uv/getting-started/installation/) provides the `uvx` command, which runs Altiplano from PyPI without a repository checkout.
 
-### 2. Vikunja API token
+### 2. Configure Vikunja credentials
 
-In Vikunja, open Settings from the menu under your username, then API Tokens. See [Vikunja's API documentation](https://vikunja.io/docs/api-documentation/).
-
-Give the token scopes covering the tools you intend to call.
-
-### 3. Store the credentials
+Create an API token in Vikunja under Settings → API Tokens, reachable from the menu under your username. Give it the scopes covering the tools you intend to call. See [Vikunja's API documentation](https://vikunja.io/docs/api-documentation/).
 
 ```bash
 mkdir -p ~/.config/altiplano
-printf 'VIKUNJA_URL=https://todo.example.com/api/v2\nVIKUNJA_API_TOKEN=tk_xxx\n' > ~/.config/altiplano/env
+```
+
+Create `~/.config/altiplano/env` containing:
+
+```dotenv
+VIKUNJA_URL=https://todo.example.com/api/v2
+VIKUNJA_API_TOKEN=tk_replace_me
+```
+
+Restrict the file's permissions:
+
+```bash
 chmod 600 ~/.config/altiplano/env
 ```
 
-> `VIKUNJA_URL` must end in `/api/v1` or `/api/v2`. That suffix selects the version, for example `https://todo.example.com/api/v2`.
-
-> Vikunja 2.4.0 introduced `/api/v2`. Altiplano strips trailing slashes and enables v2 only for a URL ending in `/api/v2`; every other URL keeps its configured path and uses v1 request verbs. Use `/api/v2` when the server supports it.
-
 Altiplano checks these sources in order:
 
-1. `VIKUNJA_URL` and `VIKUNJA_API_TOKEN` environment variables.
+1. The `VIKUNJA_URL` and `VIKUNJA_API_TOKEN` environment variables.
 2. A file containing `KEY=VALUE` pairs, defaulting to `~/.config/altiplano/env`.
 
-Set `ALTIPLANO_CONFIG` before starting Altiplano to use a different file. Use absolute paths; `~` is not expanded in custom paths.
+Set `ALTIPLANO_CONFIG` before starting Altiplano to read a different file. Use absolute paths; `~` is not expanded in custom paths.
 
-> Permissions broader than `600` produce a warning (on POSIX) but do not prevent startup. An unreadable file is ignored after a warning.
+> `VIKUNJA_URL` must end in `/api/v1` or `/api/v2`. That suffix selects the version, for example `https://todo.example.com/api/v2`.
 
-### 4. Add the MCP server entry
+> Vikunja 2.4.0 introduced `/api/v2`. Altiplano strips trailing slashes and enables v2 only for a URL ending in `/api/v2`. Every other URL keeps its configured path and uses v1 request verbs. Use `/api/v2` when the server supports it.
 
-In your client's MCP configuration:
+> Permissions broader than `600` produce a warning on POSIX systems and startup continues. An unreadable file is ignored after a warning.
+
+### 3. Configure your MCP client
+
+Add a local server entry:
 
 ```json
 {
-  "altiplano": {
-    "command": "uvx",
-    "args": ["--refresh-package", "altiplano", "altiplano@latest"]
+  "mcpServers": {
+    "altiplano": {
+      "command": "uvx",
+      "args": [
+        "--refresh-package",
+        "altiplano",
+        "altiplano@latest"
+      ]
+    }
   }
 }
 ```
 
-> `--refresh-package altiplano` checks PyPI for a current release; if an older version still starts, close the client and run `uv cache clean altiplano`.
+> `--refresh-package altiplano` checks PyPI for a current release. If an older version still starts, close the client and run `uv cache clean altiplano`.
 
-### 5. Verify with one call
+### 4. Verify with one call
 
-Restart the client so it launches the server, then call `list_projects()`. Any list, an empty one included, means the install works.
+Restart or reconnect your MCP client, then call `list_projects()`. Any list, an empty one included, confirms that Altiplano reaches Vikunja with the configured credentials.
 
-> Altiplano speaks MCP over stdio. `uvx altiplano` prints nothing and waits for a client.
+> Altiplano speaks MCP over stdio. Running `uvx altiplano` in a terminal prints nothing and waits for a client on stdin and stdout.
+
+## Use over HTTP
+
+`altiplano-http` serves the same tools over Streamable HTTP from one always-on host. The Vikunja token stays on that host. Each client presents its own bearer token, which Altiplano mints, stores as a SHA-256 hash, and revokes one at a time.
+
+The service must already be running and reachable from the computer running your MCP client. Adding its URL to your client configuration connects to the service. It does not start it.
+
+### Connect to an existing service
+
+Obtain the MCP endpoint URL and a client token from whoever operates the service. Each client should have its own token.
+
+```bash
+claude mcp add --transport http altiplano \
+  https://altiplano.example.com/mcp \
+  --header "Authorization: Bearer altp_replace_me"
+```
+
+The equivalent in a client's own configuration:
+
+```json
+{
+  "mcpServers": {
+    "altiplano": {
+      "type": "http",
+      "url": "https://altiplano.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer altp_replace_me"
+      }
+    }
+  }
+}
+```
+
+Replace the URL with the real endpoint, including its port and path where required. The example above assumes HTTPS is configured for the service.
+
+Some clients name the transport `streamable-http`, others `http`, and some infer it from the URL. Use the form your client supports. A client that only launches subprocesses cannot reach an HTTP URL at all; keep the stdio entry on those machines.
+
+The bearer token here is an **Altiplano client token**, issued by `altiplano-clientkey`. The **Vikunja API token** stays on the service host and authorises Altiplano's own requests to Vikunja.
+
+Restart or reconnect your MCP client, then call `list_projects()`. A successful response confirms the connection, the client token, and access to Vikunja.
+
+Keep the client token private. It grants access to the service and every tool it exposes. Ask the operator to revoke and replace a lost or exposed token. A revocation applies to the next request.
+
+> The supported path is a client that sends the header you configure. Altiplano answers an unauthenticated request with a bare `WWW-Authenticate: Bearer` challenge and publishes no OAuth metadata. A client may still probe the well-known metadata URLs on its own initiative and will get a `404`. A client that can only obtain credentials through an OAuth flow is not supported here.
+
+To check an endpoint without an MCP client:
+
+```python
+import asyncio
+import httpx2
+from mcp import ClientSession
+from mcp.client.streamable_http import streamable_http_client
+
+# The endpoint clients actually use. Its Host header is the one the allowlist sees.
+URL = "https://altiplano.example.com/mcp"
+AUTH = {"Authorization": "Bearer altp_replace_me"}
+
+
+async def main() -> None:
+    async with httpx2.AsyncClient(headers=AUTH) as http:
+        async with streamable_http_client(URL, http_client=http) as (read, write, *_):
+            async with ClientSession(read, write) as session:
+                info = await session.initialize()
+                print(info.server_info.name, info.server_info.version)
+                listed = await session.list_tools()
+                print(len(listed.tools), "tools")
+
+
+asyncio.run(main())
+```
+
+Headers set on the `httpx2.AsyncClient` reach every request. Dropping the `Authorization` header gives a `401`.
+
+Run it from a second machine, against the hostname clients will use. Pointing it at `127.0.0.1` on the server exercises a `Host` value the allowlist accepts by default. A misconfigured allowlist then goes unnoticed until a real client tries.
+
+### Run your own HTTP service
+
+Set up Altiplano on a host that stays available to your clients. The host has the same `uv` and Python requirements as a local install. It runs `altiplano-http` independently of any MCP client, and holds the Vikunja URL and API token together with the client token store.
+
+Mint a token for each client on that host:
+
+```bash
+altiplano-clientkey add stefan-laptop
+```
+
+The token prints once. Altiplano keeps only its hash. Replace a lost token by revoking the label and adding it again.
+
+```bash
+altiplano-clientkey list
+altiplano-clientkey revoke stefan-laptop
+```
+
+A revocation applies to the next request. The service keeps running.
+
+> The store lives beside the credentials file, at `~/.config/altiplano/clients`, or wherever `ALTIPLANO_CLIENTS` points. It is written `chmod 600`.
+
+Two settings decide who reaches the service. The bind address decides which interfaces accept a connection, and the Host allowlist decides which `Host` headers are answered. The allowlist defaults to localhost, and a LAN name has to be named explicitly:
+
+```bash
+ALTIPLANO_HTTP_HOST=0.0.0.0 \
+ALTIPLANO_HTTP_ALLOWED_HOSTS='altiplano.home.arpa,altiplano.home.arpa:*' \
+altiplano-http
+```
+
+| Variable | Default | Meaning |
+|---|---:|---|
+| `ALTIPLANO_HTTP_HOST` | `127.0.0.1` | Bind address. `0.0.0.0` listens on every IPv4 interface. |
+| `ALTIPLANO_HTTP_PORT` | `8000` | TCP port. |
+| `ALTIPLANO_HTTP_PATH` | `/mcp` | MCP endpoint path. |
+| `ALTIPLANO_HTTP_ALLOWED_HOSTS` | localhost patterns | Accepted HTTP `Host` values, comma separated. |
+| `ALTIPLANO_HTTP_ALLOWED_ORIGINS` | localhost origins | Accepted browser `Origin` values, comma separated. |
+| `ALTIPLANO_CLIENTS` | `~/.config/altiplano/clients` | Client token store. |
+| `ALTIPLANO_HTTP_ALLOW_UNAUTHENTICATED` | unset | Serves with no token. Loopback only. |
+
+A client connecting to `http://altiplano.home.arpa:8000/mcp` sends `Host: altiplano.home.arpa:8000`, which `altiplano.home.arpa:*` covers. Over HTTPS on the default port it sends a bare `altiplano.home.arpa`. List both forms.
+
+`altiplano-http --check` prints the resolved settings, the client count, and whether authentication is on, then exits without opening a socket.
+
+#### Authentication is always on
+
+Every request needs a token. An empty store denies every request, and an unreadable store refuses to start. The policy never follows from whether any keys happen to exist: "nobody is authorised" and "authorise everybody" are different answers.
+
+Starting off loopback with no clients registered is refused. The missing key surfaces at startup.
+
+For local development, `ALTIPLANO_HTTP_ALLOW_UNAUTHENTICATED=1` turns the gate off. It is refused on any bind address other than loopback. Leave it unset behind a proxy or a tunnel: there the bind address describes this machine and says nothing about who is calling.
+
+> `ALLOWED_HOSTS` and `ALLOWED_ORIGINS` prevent DNS rebinding. They are not authentication. A device can send any `Host` header it likes. The client tokens are the access control.
+
+#### Running it as a managed service
+
+[`DEPLOYMENT.md`](./DEPLOYMENT.md) covers the host side: installing with `uv` under a service account, a systemd unit for Debian and an OpenRC script for Alpine, firewalling the listener, putting it behind a Cloudflare tunnel, and what to check when it does not work.
+
+#### What a shared server does not give you
+
+One Vikunja token serves every client. Every client therefore acts as the same Vikunja identity with the same permissions. Per-client tokens control who may connect and give each client a name in the log. They do not partition what a client may do.
+
+Use a dedicated Vikunja service account with only the scopes the tools you expose need. Per-user Vikunja identity would mean selecting credentials from the request context, which is a different design.
 
 ## Tools
 
@@ -156,167 +322,9 @@ Bucket behaviour:
 
 </details>
 
-## Shared HTTP server
-
-`altiplano` speaks MCP over stdio, one process per client, credentials on every
-machine. `altiplano-http` serves the same tools over Streamable HTTP from one
-always-on host, with the Vikunja token held there and nothing else.
-
-Each client presents its own bearer token. Altiplano mints them, stores only their
-SHA-256, and revokes them one at a time.
-
-### 1. Register a client
-
-```bash
-altiplano-clientkey add stefan-laptop
-```
-
-The token is printed once. Altiplano keeps only its hash. A lost token is replaced
-by revoking the label and adding it again.
-
-```bash
-altiplano-clientkey list
-altiplano-clientkey revoke stefan-laptop
-```
-
-A revocation takes effect on the next request. There is no restart.
-
-> The store lives beside the credentials file, at `~/.config/altiplano/clients`, or
-> wherever `ALTIPLANO_CLIENTS` points. It is written `chmod 600`.
-
-### 2. Start the server
-
-Both settings matter. The bind address decides which interfaces accept a
-connection, and the Host allowlist decides which `Host` headers are answered. The
-allowlist defaults to localhost, and a LAN name has to be named explicitly:
-
-```bash
-ALTIPLANO_HTTP_HOST=0.0.0.0 \
-ALTIPLANO_HTTP_ALLOWED_HOSTS='altiplano.home.arpa,altiplano.home.arpa:*' \
-altiplano-http
-```
-
-| Variable | Default | Meaning |
-|---|---:|---|
-| `ALTIPLANO_HTTP_HOST` | `127.0.0.1` | Bind address. `0.0.0.0` listens on every IPv4 interface. |
-| `ALTIPLANO_HTTP_PORT` | `8000` | TCP port. |
-| `ALTIPLANO_HTTP_PATH` | `/mcp` | MCP endpoint path. |
-| `ALTIPLANO_HTTP_ALLOWED_HOSTS` | localhost patterns | Accepted HTTP `Host` values, comma separated. |
-| `ALTIPLANO_HTTP_ALLOWED_ORIGINS` | localhost origins | Accepted browser `Origin` values, comma separated. |
-| `ALTIPLANO_CLIENTS` | `~/.config/altiplano/clients` | Client token store. |
-| `ALTIPLANO_HTTP_ALLOW_UNAUTHENTICATED` | unset | Serves with no token. Loopback only. |
-
-A client connecting to `http://altiplano.home.arpa:8000/mcp` sends
-`Host: altiplano.home.arpa:8000`, which `altiplano.home.arpa:*` covers. Over HTTPS
-on the default port it sends a bare `altiplano.home.arpa`. List both forms.
-
-`altiplano-http --check` prints the resolved settings, the client count, and whether
-authentication is on, then exits without opening a socket.
-
-### Authentication is always on
-
-Every request needs a token. An empty store denies every request, and an unreadable
-store refuses to start. The policy never follows from whether any keys happen to
-exist: "nobody is authorised" and "authorise everybody" are different answers.
-
-Starting off loopback with no clients registered is refused, which catches the
-missing key while you can still act on it.
-
-For local development, `ALTIPLANO_HTTP_ALLOW_UNAUTHENTICATED=1` turns the gate off.
-It is refused on any bind address other than loopback. Leave it unset behind a proxy
-or a tunnel: there the bind address describes this machine and says nothing about
-who is calling.
-
-> `ALLOWED_HOSTS` and `ALLOWED_ORIGINS` prevent DNS rebinding. They are not
-> authentication. A device can send any `Host` header it likes. The client tokens
-> are the access control.
-
-### 3. Point a client at it
-
-```bash
-claude mcp add --transport http altiplano \
-  http://altiplano.home.arpa:8000/mcp \
-  --header "Authorization: Bearer altp_..."
-```
-
-The equivalent in a client's own configuration:
-
-```json
-{
-  "mcpServers": {
-    "altiplano": {
-      "type": "http",
-      "url": "http://altiplano.home.arpa:8000/mcp",
-      "headers": { "Authorization": "Bearer altp_..." }
-    }
-  }
-}
-```
-
-Some clients name the transport `http`, others `streamable-http`, and some infer it
-from the URL. A client that only launches subprocesses cannot reach an HTTP URL at
-all; keep the stdio entry on those machines.
-
-The supported path is a client that sends the header you configure. Altiplano
-answers an unauthenticated request with a bare `WWW-Authenticate: Bearer` challenge
-and publishes no OAuth metadata. A client may still probe the well-known metadata
-URLs on its own initiative and will get a `404`. A client that can only obtain
-credentials through an OAuth flow is not supported here.
-
-### 4. Verify it
-
-```python
-import asyncio
-import httpx2
-from mcp import ClientSession
-from mcp.client.streamable_http import streamable_http_client
-
-# The endpoint clients actually use. Its Host header is the one the allowlist sees.
-URL = "http://altiplano.home.arpa:8000/mcp"
-AUTH = {"Authorization": "Bearer altp_..."}
-
-
-async def main() -> None:
-    async with httpx2.AsyncClient(headers=AUTH) as http:
-        async with streamable_http_client(URL, http_client=http) as (read, write, *_):
-            async with ClientSession(read, write) as session:
-                info = await session.initialize()
-                print(info.server_info.name, info.server_info.version)
-                listed = await session.list_tools()
-                print(len(listed.tools), "tools")
-
-
-asyncio.run(main())
-```
-
-Headers set on the `httpx2.AsyncClient` reach every request. Dropping the
-`Authorization` header gives a `401`.
-
-Run it from a second machine, against the hostname clients will use. Pointing it at
-`127.0.0.1` on the server exercises a `Host` value the allowlist accepts by default.
-A misconfigured allowlist then goes unnoticed until a real client tries.
-
-### Running it as a managed service
-
-[`DEPLOYMENT.md`](./DEPLOYMENT.md) covers the host side: installing with `uv` under
-a service account, a systemd unit for Debian and an OpenRC script for Alpine,
-firewalling the listener, putting it behind a Cloudflare tunnel, and what to check
-when it does not work.
-
-### What a shared server does not give you
-
-One Vikunja token serves every client. Every client therefore acts as the same
-Vikunja identity with the same permissions. Per-client tokens control who may
-connect and give each client a name in the log. They do not partition what a client
-may do.
-
-Use a dedicated Vikunja service account with only the scopes the tools you expose
-need. Per-user Vikunja identity would mean selecting credentials from the request
-context, which is a different design.
-
 ## Guidance
 
-Altiplano documents its own use in three places.
+Altiplano documents its own use in four places.
 
 - The handshake sends usage rules: resolve ids by name, which calls cannot be undone, how to close a task. Clients apply them on connect.
 - The `altiplano_guide` prompt holds the full version, with cross-tool sequencing and the v1 and v2 differences. Clients list it as `Using Altiplano`.
