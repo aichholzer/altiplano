@@ -24,6 +24,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
+from urllib.parse import urlsplit
 
 _CONFIG_FILE = Path(
     os.environ.get("ALTIPLANO_CONFIG", Path.home() / ".config" / "altiplano" / "env")
@@ -110,9 +111,24 @@ def _conf(key: str) -> str | None:
 
 
 def _base() -> str:
+    """The Vikunja API root, checked for shape as well as presence.
+
+    Presence alone let two unusable values through to the first request:
+    `vikunja.home.arpa/api/v2`, which httpx reads as a relative path, and
+    `https:///api/v2`, which names no host. Both passed `altiplano-http --check` and
+    failed on the first tool call.
+    """
     url = _conf("VIKUNJA_URL")
     if not url:
         raise RuntimeError("VIKUNJA_URL is not set (env or ~/.config/altiplano/env)")
+    parts = urlsplit(url)
+    if parts.scheme not in ("http", "https"):
+        raise RuntimeError(
+            f"VIKUNJA_URL must begin with http:// or https:// (got {url!r}). It ends in "
+            "/api/v1 or /api/v2, and that suffix selects the API version."
+        )
+    if not parts.hostname:
+        raise RuntimeError(f"VIKUNJA_URL names no host (got {url!r})")
     return url.rstrip("/")
 
 

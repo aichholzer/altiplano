@@ -676,15 +676,17 @@ def test_the_built_app_is_stateless(store):
     assert mcp.session_manager.stateless is True
 
 
-def test_a_session_id_on_a_request_is_not_honoured(store):
-    """A borrowed or fabricated session id has nothing to attach to."""
+def test_the_gate_passes_a_request_carrying_a_session_id(store):
+    """The gate reads the bearer token and nothing else off the request.
+
+    Whether a session id then means anything is the SDK's business, and a stub cannot
+    answer it. `tests/test_http_integration.py` runs the real application for that.
+    """
     token = clients._add("laptop", VIKUNJA)
     recorder = Recorder()
     headers = bearer(token) + [(b"mcp-session-id", b"someone-elses-session")]
     drive(http_server._RequireClientToken(recorder.app), scope(headers), recorder)
 
-    # The gate authenticates on the token in hand and passes it through. The SDK has no
-    # session table to match that id against.
     assert recorder.reached is True
 
 
@@ -762,3 +764,18 @@ def test_the_403_log_line_names_the_command_that_repairs_it(store, caplog):
         drive(http_server._RequireClientToken(Recorder().app), scope(bearer(token)))
 
     assert "altiplano-clientkey update laptop" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["vikunja.home.arpa/api/v2", "https:///api/v2"],
+    ids=["no scheme", "no host"],
+)
+def test_check_refuses_a_malformed_vikunja_url(store, monkeypatch, capsys, url):
+    """Both of these passed `--check` and failed on the first tool call."""
+    monkeypatch.setenv("ALTIPLANO_HTTP_HOST", "127.0.0.1")
+    monkeypatch.setenv("VIKUNJA_URL", url)
+    clients._add("laptop", VIKUNJA)
+
+    assert http_server.main(["--check"]) == 1
+    assert "VIKUNJA_URL" in capsys.readouterr().err

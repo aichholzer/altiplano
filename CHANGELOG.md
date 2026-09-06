@@ -46,6 +46,11 @@ All notable changes to this project are documented here.
 
 - `CONTRIBUTING.md` and `CODE_OF_CONDUCT.md`.
 
+- `tests/test_http_integration.py`, which drives the application `altiplano-http`
+  serves: the real ASGI app with its lifespan running, requests over
+  `httpx2.ASGITransport`, and the MCP client library itself. Only Vikunja is
+  synthetic. Five of its eight tests fail against a stateful transport.
+
 - `altiplano-http --check` prints the resolved settings, the Vikunja URL, both
   allowlists, the client count, how many of those clients carry a Vikunja token, and
   whether authentication is on, then exits without opening a socket. It validates the
@@ -68,6 +73,11 @@ All notable changes to this project are documented here.
   The cost is server-initiated requests: sampling, elicitation, progress over a
   standalone stream, and resumability. Altiplano uses none of them, and a client needs
   no configuration change.
+
+- `VIKUNJA_URL` is checked for shape as well as presence. It needs an `http` or
+  `https` scheme and a host. `vikunja.home.arpa/api/v2` and `https:///api/v2` are
+  therefore refused at startup. Both were accepted before and failed on the first tool
+  call.
 
 - A client token is a bearer credential and needs confidentiality in transit. Serve
   the endpoint behind TLS or an encrypted tunnel on any network, a LAN included, and
