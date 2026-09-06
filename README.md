@@ -6,8 +6,8 @@
 [![codecov](https://codecov.io/gh/aichholzer/altiplano/graph/badge.svg?token=l7Svxa1x0X)](https://codecov.io/gh/aichholzer/altiplano)
 [![Python](https://img.shields.io/badge/python-%3E%3D3.10-blue.svg)](https://www.python.org/)
 [![PyPI version](https://img.shields.io/pypi/v/altiplano.svg)](https://pypi.org/project/altiplano/)
-[![Altiplano MCP server](https://glama.ai/mcp/servers/aichholzer/altiplano/badges/score.svg)](https://glama.ai/mcp/servers/aichholzer/altiplano)
 [![License](https://img.shields.io/github/license/aichholzer/altiplano)](LICENSE)
+[![Altiplano MCP server](https://glama.ai/mcp/servers/aichholzer/altiplano/badges/score.svg)](https://glama.ai/mcp/servers/aichholzer/altiplano)
 
 A small, dependable MCP server for [Vikunja](https://vikunja.io).<br />
 Named after the Andean altiplano, the high plateau that is the Vicuña's native habitat.
@@ -95,11 +95,11 @@ Restart or reconnect your MCP client, then call `list_projects()`. Any list, an 
 
 ## Use over HTTP
 
-`altiplano-http` serves the same tools over Streamable HTTP from one always-on host. The Vikunja token stays on that host. Each client presents its own bearer token, which Altiplano mints, stores as a SHA-256 hash, and revokes one at a time.
+`altiplano-http` serves the same tools over Streamable HTTP from one always-on host. Each client presents its own bearer token, which Altiplano mints, stores as a SHA-256 hash, and revokes one at a time.
 
 The service must already be running and reachable from the computer running your MCP client. Adding its URL to your client configuration connects to the service. It does not start it. [`DEPLOYMENT.md`](./DEPLOYMENT.md) covers standing one up.
 
-Every client reaches Vikunja through the host's one Vikunja token. They all act as the same Vikunja identity with the same permissions. Client tokens control who may connect and give each client a name in the log.
+Each client acts as its own Vikunja user. The host holds one Vikunja API token per registered client. Two people sharing a service reach their own projects and their own tasks, with Vikunja applying its own permissions to each. A client with no Vikunja token registered for it is refused.
 
 ### Connect to an existing service
 
@@ -131,7 +131,7 @@ Replace the URL with the real endpoint, including its port and path where requir
 
 Some clients name the transport `streamable-http`, others `http`, and some infer it from the URL. Use the form your client supports. A client that only launches subprocesses cannot reach an HTTP URL at all; keep the stdio entry on those machines.
 
-The bearer token here is an **Altiplano client token**, issued by `altiplano-clientkey`. The **Vikunja API token** stays on the service host and authorises Altiplano's own requests to Vikunja.
+The bearer token here is an **Altiplano client token**, issued by `altiplano-clientkey`, and it says which client is calling. Your **Vikunja API token** is a separate thing: it stays on the service host, registered against your client, and it is the identity your requests act as. Give the operator a token from your own Vikunja account.
 
 Restart or reconnect your MCP client, then call `list_projects()`. A successful response confirms the connection, the client token, and access to Vikunja.
 

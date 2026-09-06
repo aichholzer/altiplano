@@ -1,5 +1,10 @@
-"""Credential resolution: environment first, then the per-device file."""
+"""Credential resolution: environment first, then the per-device file.
 
+The Vikunja API token takes one source ahead of those two, bound per request by the
+HTTP transport. The section at the end covers that.
+"""
+
+import asyncio
 import os
 import warnings
 
@@ -285,3 +290,85 @@ def test_main_starts_the_server(monkeypatch):
     monkeypatch.setattr(server.mcp, "run", lambda: started.append(True))
     server.main()
     assert started == [True]
+
+
+# --- the per-request Vikunja token ------------------------------------------
+# The HTTP transport binds the calling client's token; stdio binds nothing. These
+# cover `config`'s half of that. `tests/test_http_server.py` covers the gate.
+def test_nothing_is_bound_by_default():
+    assert config._REQUEST_TOKEN.get() is None
+
+
+def test_the_bound_token_wins_over_the_environment(monkeypatch):
+    """The environment holds the server's own token. A bound one is the caller's.
+
+    Losing this order would put every HTTP client on the operator's Vikunja account.
+    """
+    monkeypatch.setenv("VIKUNJA_API_TOKEN", "tk_server")
+    with config._acting_as("tk_caller"):
+        assert config._headers()["Authorization"] == "Bearer tk_caller"
+
+
+def test_the_environment_is_used_when_nothing_is_bound(monkeypatch):
+    """stdio has no caller to resolve, and reads the environment as it always did."""
+    monkeypatch.setenv("VIKUNJA_API_TOKEN", "tk_server")
+    assert config._headers()["Authorization"] == "Bearer tk_server"
+
+
+def test_the_binding_is_released_on_the_way_out(monkeypatch):
+    monkeypatch.setenv("VIKUNJA_API_TOKEN", "tk_server")
+    with config._acting_as("tk_caller"):
+        pass
+    assert config._REQUEST_TOKEN.get() is None
+    assert config._headers()["Authorization"] == "Bearer tk_server"
+
+
+def test_the_binding_is_released_when_the_body_raises(monkeypatch):
+    """A failed request must not leave the next one on someone else's account."""
+    monkeypatch.setenv("VIKUNJA_API_TOKEN", "tk_server")
+    with pytest.raises(RuntimeError, match="boom"), config._acting_as("tk_caller"):
+        raise RuntimeError("boom")
+    assert config._REQUEST_TOKEN.get() is None
+
+
+def test_bindings_nest_and_unwind_in_order(monkeypatch):
+    monkeypatch.setenv("VIKUNJA_API_TOKEN", "tk_server")
+    with config._acting_as("tk_outer"):
+        with config._acting_as("tk_inner"):
+            assert config._REQUEST_TOKEN.get() == "tk_inner"
+        assert config._REQUEST_TOKEN.get() == "tk_outer"
+    assert config._REQUEST_TOKEN.get() is None
+
+
+def test_a_bound_token_needs_no_environment_or_file(monkeypatch, tmp_path):
+    """An HTTP-only host can hold no server-wide Vikunja token at all."""
+    monkeypatch.delenv("VIKUNJA_API_TOKEN", raising=False)
+    monkeypatch.setattr(config, "_CONFIG_FILE", tmp_path / "absent")
+    with config._acting_as("tk_caller"):
+        assert config._headers()["Authorization"] == "Bearer tk_caller"
+
+
+def test_the_url_has_no_per_request_override(monkeypatch):
+    """One server, one Vikunja instance. `api._version()` reads the version off it."""
+    monkeypatch.setenv("VIKUNJA_URL", "https://vikunja.example.com/api/v2")
+    with config._acting_as("tk_caller"):
+        assert config._base() == "https://vikunja.example.com/api/v2"
+
+
+def test_concurrent_tasks_keep_their_own_bound_token(monkeypatch):
+    """Two coroutines interleaving inside the binding, each seeing only its own."""
+    monkeypatch.setenv("VIKUNJA_API_TOKEN", "tk_server")
+    seen = {}
+
+    async def call(name, token):
+        with config._acting_as(token):
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+            seen[name] = config._headers()["Authorization"]
+
+    async def both():
+        await asyncio.gather(call("mine", "tk_mine"), call("yours", "tk_yours"))
+
+    asyncio.run(both())
+
+    assert seen == {"mine": "Bearer tk_mine", "yours": "Bearer tk_yours"}

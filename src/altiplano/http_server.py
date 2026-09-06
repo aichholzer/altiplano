@@ -1,8 +1,17 @@
 """The Streamable HTTP entry point, with a bearer-token gate in front of it.
 
 `altiplano` keeps speaking stdio. This serves the same `MCPServer`, the same tools,
-and the same prompt over HTTP, to any number of clients, with one Vikunja token
-held here on the server.
+and the same prompt over HTTP, to any number of clients.
+
+### Each client acts as its own Vikunja user
+
+The client store holds a Vikunja API token per registered client. The gate resolves
+the bearer token to a record and binds that record's Vikunja token for the rest of the
+call. Two clients on one process therefore reach Vikunja as two different users.
+
+A client with no Vikunja token on its record is refused with a 403. The server's own
+`VIKUNJA_API_TOKEN` is not a fallback for an HTTP caller: one forgotten token would
+otherwise put that client on the operator's account.
 
 ### The authentication policy is explicit
 
@@ -51,7 +60,8 @@ import uvicorn
 from mcp.server.transport_security import TransportSecuritySettings
 
 from altiplano import __version__
-from altiplano.clients import _CLIENTS_FILE, _clients, _identify, _labels
+from altiplano.clients import _CLIENTS_FILE, _clients, _resolve
+from altiplano.config import _acting_as
 from altiplano.server import mcp
 
 _LOG = logging.getLogger("altiplano.http")
@@ -149,8 +159,38 @@ async def _unauthorised(send: Send) -> None:
     await send({"type": "http.response.body", "body": body})
 
 
+async def _no_vikunja_identity(send: Send) -> None:
+    """Refuse a client Altiplano knows and has no Vikunja token for.
+
+    A 403 and not a 401: the client token was accepted, and presenting it again will
+    not help. The body says what to fix, and the operator is the only person who can
+    fix it. The server log names the label; this does not.
+    """
+    body = b'{"error":"no Vikunja identity registered for this client"}'
+    await send(
+        {
+            "type": "http.response.start",
+            "status": 403,
+            "headers": [
+                (b"content-type", b"application/json"),
+                (b"content-length", str(len(body)).encode()),
+            ],
+        }
+    )
+    await send({"type": "http.response.body", "body": body})
+
+
 class _RequireClientToken:
-    """Reject any HTTP request whose bearer token matches no registered client.
+    """Identify the caller, bind its Vikunja token, and reject anyone else.
+
+    Two refusals, and they mean different things. A bearer token matching no record
+    gets a 401. A record carrying no Vikunja token gets a 403: Altiplano knows the
+    client and has no identity to act as on its behalf. There is no fallback to the
+    server's own token, which would make one misconfigured client act as everybody.
+
+    A resolved client's Vikunja token is bound for the whole downstream call. The
+    request layer picks it up with no argument threaded through the tools, and the
+    binding is released on the way out.
 
     The store is consulted per request. A token added to a running server works
     immediately, and a revoked one stops working immediately.
@@ -167,18 +207,27 @@ class _RequireClientToken:
         if scope.get("type") != "http":
             await self._app(scope, receive, send)
             return
-        label = _identify(_bearer(scope))
-        if label is None:
-            _LOG.warning(
-                "rejected %s %s from %s",
-                scope.get("method", "?"),
-                scope.get("path", "?"),
-                _peer(scope),
-            )
+        method, path = scope.get("method", "?"), scope.get("path", "?")
+        client = _resolve(_bearer(scope))
+        if client is None:
+            _LOG.warning("rejected %s %s from %s", method, path, _peer(scope))
             await _unauthorised(send)
             return
-        _LOG.info("%s %s as %s", scope.get("method", "?"), scope.get("path", "?"), label)
-        await self._app(scope, receive, send)
+        if not client.vikunja_token:
+            _LOG.error(
+                "refused %s %s as %s: no Vikunja token on its record in %s. Re-add it "
+                "with: altiplano-clientkey add %s",
+                method,
+                path,
+                client.label,
+                _CLIENTS_FILE,
+                client.label,
+            )
+            await _no_vikunja_identity(send)
+            return
+        _LOG.info("%s %s as %s", method, path, client.label)
+        with _acting_as(client.vikunja_token):
+            await self._app(scope, receive, send)
 
 
 def _peer(scope: Scope) -> str:
@@ -196,7 +245,7 @@ def _check_policy() -> bool:
     # An unreadable store is fatal at startup whatever else is configured. Coming up
     # while unable to read who is authorised is the failure worth being loud about.
     try:
-        registered = _labels()
+        registered = _clients()
     except Exception as err:
         raise RuntimeError(
             f"{err}. The client store decides who may call, and starting without it "
@@ -233,6 +282,21 @@ def _check_policy() -> bool:
         _LOG.warning(
             "no client tokens in %s. Every request will be refused. Register one "
             "with: altiplano-clientkey add <label>",
+            _CLIENTS_FILE,
+        )
+    elif not any(client.vikunja_token for client in registered):
+        # Every client is from a store predating per-client Vikunja tokens. They all
+        # authenticate and every one of them is then refused, which looks like a
+        # working server that answers nothing. Say so at startup.
+        if not _is_loopback(host):
+            raise RuntimeError(
+                f"no client in {_CLIENTS_FILE} has a Vikunja token and the bind "
+                f"address is {host}. Every request would be refused. Re-add each "
+                "client with: altiplano-clientkey add <label>"
+            )
+        _LOG.warning(
+            "no client in %s has a Vikunja token. Every request will be refused. "
+            "Re-add each client with: altiplano-clientkey add <label>",
             _CLIENTS_FILE,
         )
     return True
@@ -288,8 +352,10 @@ def _check_report() -> int:
     print(f"version:       {__version__}")
     print(f"bind:          {_host()}:{_port()}{_path()}")
     print(f"allowed hosts: {', '.join(_list_setting('ALTIPLANO_HTTP_ALLOWED_HOSTS', _LOCAL_HOSTS))}")
+    identified = sum(1 for client in registered if client.vikunja_token)
     print(f"client store:  {_CLIENTS_FILE}")
     print(f"clients:       {len(registered)}")
+    print(f"with a token:  {identified} of {len(registered)}")
     print(f"authenticated: {'yes' if gated else 'NO'}")
     return 0
 

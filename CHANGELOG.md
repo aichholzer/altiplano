@@ -7,29 +7,42 @@ All notable changes to this project are documented here.
 ### Added
 
 - `altiplano-http`, a second entry point serving the existing tools and prompt over
-  Streamable HTTP from one always-on host. The Vikunja token stays on that host.
-  `altiplano` keeps speaking stdio, unchanged.
+  Streamable HTTP from one always-on host. `altiplano` keeps speaking stdio,
+  unchanged.
 
   Settings come from the environment: `ALTIPLANO_HTTP_HOST` (default `127.0.0.1`),
   `ALTIPLANO_HTTP_PORT` (`8000`), `ALTIPLANO_HTTP_PATH` (`/mcp`),
   `ALTIPLANO_HTTP_ALLOWED_HOSTS`, and `ALTIPLANO_HTTP_ALLOWED_ORIGINS`.
+  `VIKUNJA_URL` is server-wide and selects one API version for every client.
+
+- Each HTTP client acts as its own Vikunja user. The host holds one Vikunja API
+  token per registered client, and the transport presents that client's token to
+  Vikunja for the duration of its request. Two people sharing one service reach
+  their own projects and their own tasks, with Vikunja applying its own permissions
+  to each.
 
 - `altiplano-clientkey add|list|revoke`, which mints the bearer tokens the HTTP
   transport accepts. A token is `altp_` followed by 32 bytes from `secrets`, shown
-  once. Only its SHA-256 is stored, in `ALTIPLANO_CLIENTS` or a `clients` file
-  beside the credentials file. A revocation applies to the next request with no
-  restart.
+  once, and only its SHA-256 is stored. `add` also collects the Vikunja API token
+  the client acts with, from a hidden prompt or from stdin when the input is piped.
+  `list` reports whether each client has one. A revocation applies to the next
+  request with no restart.
+
+  The store lives in `ALTIPLANO_CLIENTS` or a `clients` file beside the credentials
+  file, and it opens with the line `# altiplano clients v2`.
 
 - `uvicorn` as a declared dependency. It was already in the tree through `mcp`.
 
 - `DEPLOYMENT.md`, covering the host side of a shared deployment: installing with
-  `uv` under a service account, a systemd unit, an OpenRC script, firewalling, and
-  a Cloudflare tunnel. The README keeps the transport, the settings, and the client
-  tokens.
+  `uv` under a service account, every environment variable the transport reads,
+  registering clients, a systemd unit, an OpenRC script, firewalling, and a
+  Cloudflare tunnel. The README covers connecting a client to a service.
 
-- `altiplano-http --check` prints the resolved settings, the client count, and
-  whether authentication is on, then exits without opening a socket. Both HTTP
-  commands take `--version`.
+- `CONTRIBUTING.md` and `CODE_OF_CONDUCT.md`.
+
+- `altiplano-http --check` prints the resolved settings, the client count, how many
+  of those clients carry a Vikunja token, and whether authentication is on, then
+  exits without opening a socket. Both HTTP commands take `--version`.
 
 - `ALTIPLANO_HTTP_ALLOW_UNAUTHENTICATED` serves with no token, for local
   development. It is refused on any bind address other than loopback.
@@ -70,9 +83,20 @@ All notable changes to this project are documented here.
   anyone else.
 - Each authenticated request logs the client label that matched. Tokens are never
   logged.
-- One Vikunja token serves every client. Client tokens control who may connect and
-  do not partition what a client may do. Use a Vikunja service account holding only
-  the scopes the exposed tools need.
+- A registered client with no Vikunja API token is refused with `403`. There is no
+  server-wide fallback for an HTTP caller. A forgotten token therefore cannot put a
+  client on the operator's Vikunja account. Starting off loopback when no registered
+  client has a Vikunja token is refused too.
+- The client store holds Vikunja API tokens in plaintext, and it is written
+  `chmod 600`. Altiplano presents each one to Vikunja on every request and needs the
+  plaintext to do it. Anyone able to read the store can act as every client in it.
+  Vikunja does the authorising: narrow each token's scopes there to the tools you
+  expose.
+- A Vikunja API token is never accepted as a command-line argument, where `ps` would
+  show it to every user on the host.
+- A Vikunja API token is limited to 8 to 512 printable ASCII characters with no
+  space and no `:`. A colon would shift the `created` field along, and a line break
+  would split the record.
 
 ## [1.2.0]
 
