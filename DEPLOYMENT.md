@@ -72,6 +72,22 @@ sudo chown altiplano:altiplano /etc/altiplano/service.env
 sudo chmod 600 /etc/altiplano/service.env
 ```
 
+Every setting the HTTP transport reads, with its default:
+
+| Variable | Default | Meaning |
+|---|---:|---|
+| `ALTIPLANO_HTTP_HOST` | `127.0.0.1` | Bind address. `0.0.0.0` listens on every IPv4 interface. |
+| `ALTIPLANO_HTTP_PORT` | `8000` | TCP port. |
+| `ALTIPLANO_HTTP_PATH` | `/mcp` | MCP endpoint path. |
+| `ALTIPLANO_HTTP_ALLOWED_HOSTS` | localhost patterns | Accepted HTTP `Host` values, comma separated. |
+| `ALTIPLANO_HTTP_ALLOWED_ORIGINS` | localhost origins | Accepted browser `Origin` values, comma separated. |
+| `ALTIPLANO_CLIENTS` | `~/.config/altiplano/clients` | Client token store. Altiplano creates it mode 600. |
+| `ALTIPLANO_HTTP_ALLOW_UNAUTHENTICATED` | unset | Serves with no token. Loopback only. |
+
+`VIKUNJA_URL` and `VIKUNJA_API_TOKEN` are read the same way here as for a local
+install, and [`README.md`](./README.md) covers the resolution order and the file
+permissions Altiplano warns about.
+
 `ALTIPLANO_HTTP_ALLOWED_HOSTS` has to contain the `Host` value clients actually
 send. A client using `http://192.168.1.50:8000/mcp` sends `192.168.1.50:8000`, which
 `192.168.1.50:*` covers. A client using `https://altiplano.home.arpa/mcp` sends a
@@ -80,6 +96,14 @@ nothing.
 
 `0.0.0.0` is a bind address and not a `Host` value. No client connects to it, and it
 does not belong in the allowlist.
+
+Test the allowlist from a client machine. A check pointed at `127.0.0.1` on the host
+exercises a `Host` value the allowlist accepts by default. A misconfigured allowlist
+then goes unnoticed until a real client tries.
+
+> `ALLOWED_HOSTS` and `ALLOWED_ORIGINS` prevent DNS rebinding. They are not
+> authentication. A device can send any `Host` header it likes. The client tokens are
+> the access control.
 
 ## Register clients
 
@@ -105,9 +129,12 @@ sudo -u altiplano env ALTIPLANO_CLIENTS=/etc/altiplano/clients \
 A revocation applies to the next request. The service keeps running.
 
 Register at least one client before starting the service on a non-loopback address.
-Altiplano refuses to start otherwise, which catches the missing key while you can
-still act on it. Authentication is on either way: an empty store denies every
-request, and an unreadable store refuses to start.
+Altiplano refuses to start otherwise. The missing key surfaces at startup.
+
+Authentication is on either way: an empty store denies every request, and an
+unreadable store refuses to start. The policy never follows from whether any keys
+happen to exist: "nobody is authorised" and "authorise everybody" are different
+answers.
 
 Check the whole configuration without opening a socket:
 

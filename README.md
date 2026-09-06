@@ -99,6 +99,8 @@ Restart or reconnect your MCP client, then call `list_projects()`. Any list, an 
 
 The service must already be running and reachable from the computer running your MCP client. Adding its URL to your client configuration connects to the service. It does not start it.
 
+Every client reaches Vikunja through the host's one Vikunja token, and they all act as the same Vikunja identity with the same permissions. Client tokens control who may connect and give each client a name in the log.
+
 ### Connect to an existing service
 
 Obtain the MCP endpoint URL and a client token from whoever operates the service. Each client should have its own token.
@@ -139,68 +141,9 @@ Keep the client token private. It grants access to the service and every tool it
 
 ### Run your own HTTP service
 
-Set up Altiplano on a host that stays available to your clients. The host has the same `uv` and Python requirements as a local install. It runs `altiplano-http` independently of any MCP client, and holds the Vikunja URL and API token together with the client token store.
+[`DEPLOYMENT.md`](./DEPLOYMENT.md) covers the host side end to end: installing with `uv` under a service account, every environment variable the transport reads, minting client tokens, a systemd unit for Debian and an OpenRC script for Alpine, firewalling the listener, putting it behind a Cloudflare tunnel, and the checks to run before the deployment counts as done.
 
-Mint a token for each client on that host:
-
-```bash
-altiplano-clientkey add stefan-laptop
-```
-
-The token prints once. Altiplano keeps only its hash. Replace a lost token by revoking the label and adding it again.
-
-```bash
-altiplano-clientkey list
-altiplano-clientkey revoke stefan-laptop
-```
-
-A revocation applies to the next request. The service keeps running.
-
-> The store lives beside the credentials file, at `~/.config/altiplano/clients`, or wherever `ALTIPLANO_CLIENTS` points. It is written `chmod 600`.
-
-Two settings decide who reaches the service. The bind address decides which interfaces accept a connection, and the Host allowlist decides which `Host` headers are answered. The allowlist defaults to localhost, and a LAN name has to be named explicitly:
-
-```bash
-ALTIPLANO_HTTP_HOST=0.0.0.0 \
-ALTIPLANO_HTTP_ALLOWED_HOSTS='altiplano.home.arpa,altiplano.home.arpa:*' \
-altiplano-http
-```
-
-| Variable                               |                       Default | Meaning                                                  |
-| -------------------------------------- | ----------------------------: | -------------------------------------------------------- |
-| `ALTIPLANO_HTTP_HOST`                  |                   `127.0.0.1` | Bind address. `0.0.0.0` listens on every IPv4 interface. |
-| `ALTIPLANO_HTTP_PORT`                  |                        `8000` | TCP port.                                                |
-| `ALTIPLANO_HTTP_PATH`                  |                        `/mcp` | MCP endpoint path.                                       |
-| `ALTIPLANO_HTTP_ALLOWED_HOSTS`         |            localhost patterns | Accepted HTTP `Host` values, comma separated.            |
-| `ALTIPLANO_HTTP_ALLOWED_ORIGINS`       |             localhost origins | Accepted browser `Origin` values, comma separated.       |
-| `ALTIPLANO_CLIENTS`                    | `~/.config/altiplano/clients` | Client token store.                                      |
-| `ALTIPLANO_HTTP_ALLOW_UNAUTHENTICATED` |                         unset | Serves with no token. Loopback only.                     |
-
-A client connecting to `http://altiplano.home.arpa:8000/mcp` sends `Host: altiplano.home.arpa:8000`, which `altiplano.home.arpa:*` covers. Over HTTPS on the default port it sends a bare `altiplano.home.arpa`. List both forms.
-
-Test the allowlist from a second machine, against the hostname clients will use. A check pointed at `127.0.0.1` on the server exercises a `Host` value the allowlist accepts by default. A misconfigured allowlist then goes unnoticed until a real client tries.
-
-`altiplano-http --check` prints the resolved settings, the client count, and whether authentication is on, then exits without opening a socket.
-
-#### Authentication is always on
-
-Every request needs a token. An empty store denies every request, and an unreadable store refuses to start. The policy never follows from whether any keys happen to exist: "nobody is authorised" and "authorise everybody" are different answers.
-
-Starting off loopback with no clients registered is refused. The missing key surfaces at startup.
-
-For local development, `ALTIPLANO_HTTP_ALLOW_UNAUTHENTICATED=1` turns the gate off. It is refused on any bind address other than loopback. Leave it unset behind a proxy or a tunnel: there the bind address describes this machine and says nothing about who is calling.
-
-> `ALLOWED_HOSTS` and `ALLOWED_ORIGINS` prevent DNS rebinding. They are not authentication. A device can send any `Host` header it likes. The client tokens are the access control.
-
-#### Running it as a managed service
-
-[`DEPLOYMENT.md`](./DEPLOYMENT.md) covers the host side: installing with `uv` under a service account, a systemd unit for Debian and an OpenRC script for Alpine, firewalling the listener, putting it behind a Cloudflare tunnel, and what to check when it does not work.
-
-#### What a shared server does not give you
-
-One Vikunja token serves every client. Every client therefore acts as the same Vikunja identity with the same permissions. Per-client tokens control who may connect and give each client a name in the log. They do not partition what a client may do.
-
-Use a dedicated Vikunja service account with only the scopes the tools you expose need. Per-user Vikunja identity would mean selecting credentials from the request context, which is a different design.
+For a local test, `uv run altiplano-http` binds `127.0.0.1:8000`. Authentication stays on, and `ALTIPLANO_HTTP_ALLOW_UNAUTHENTICATED=1` turns it off for development. Any bind address other than loopback refuses that variable.
 
 ## Tools
 
