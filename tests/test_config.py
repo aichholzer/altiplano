@@ -372,3 +372,69 @@ def test_concurrent_tasks_keep_their_own_bound_token(monkeypatch):
     asyncio.run(both())
 
     assert seen == {"mine": "Bearer tk_mine", "yours": "Bearer tk_yours"}
+
+
+# --- the shape of VIKUNJA_URL -----------------------------------------------
+# Presence alone let two unusable values reach the first request. Both passed
+# `altiplano-http --check`, and the failure surfaced on the first tool call.
+@pytest.mark.parametrize(
+    "url",
+    ["vikunja.home.arpa/api/v2", "//vikunja.home.arpa/api/v2", "/api/v2", "todo.example.com"],
+    ids=["bare host", "protocol relative", "path only", "host only"],
+)
+def test_a_url_with_no_scheme_is_refused(monkeypatch, url):
+    """httpx reads these as a relative path and joins them onto nothing."""
+    monkeypatch.setenv("VIKUNJA_URL", url)
+    with pytest.raises(RuntimeError, match="http:// or https://"):
+        config._base()
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["https:///api/v2", "http:///api/v1"],
+    ids=["https", "http"],
+)
+def test_a_url_with_no_host_is_refused(monkeypatch, url):
+    monkeypatch.setenv("VIKUNJA_URL", url)
+    with pytest.raises(RuntimeError, match="names no host"):
+        config._base()
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["ftp://vikunja.example.com/api/v2", "file:///api/v2", "ws://vikunja.example.com/api/v2"],
+    ids=["ftp", "file", "websocket"],
+)
+def test_a_scheme_other_than_http_is_refused(monkeypatch, url):
+    monkeypatch.setenv("VIKUNJA_URL", url)
+    with pytest.raises(RuntimeError, match="http:// or https://"):
+        config._base()
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://vikunja.example.com/api/v2",
+        "http://127.0.0.1:3456/api/v1",
+        "https://vikunja.home.arpa/api/v2",
+        "http://localhost/api/v1",
+        "https://user:pass@vikunja.example.com/api/v2",
+    ],
+    ids=["https", "port", "lan name", "localhost", "userinfo"],
+)
+def test_a_usable_url_is_accepted(monkeypatch, url):
+    monkeypatch.setenv("VIKUNJA_URL", url)
+    assert config._base() == url
+
+
+def test_a_trailing_slash_is_still_stripped(monkeypatch):
+    """The version suffix is matched exactly, and a stray slash would defeat it."""
+    monkeypatch.setenv("VIKUNJA_URL", "https://vikunja.example.com/api/v2/")
+    assert config._base() == "https://vikunja.example.com/api/v2"
+
+
+def test_the_error_says_where_the_version_suffix_goes(monkeypatch):
+    """The likeliest reason somebody typed a bare hostname is not knowing about it."""
+    monkeypatch.setenv("VIKUNJA_URL", "vikunja.home.arpa")
+    with pytest.raises(RuntimeError, match="/api/v1 or /api/v2"):
+        config._base()
