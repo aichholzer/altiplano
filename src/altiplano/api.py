@@ -18,6 +18,14 @@ from altiplano.config import _base, _headers
 # wire and in the database. Writing this value back is how a date is cleared.
 _NO_DATE = "0001-01-01T00:00:00Z"
 
+# v2 answers a partial update that changes nothing with 304 and an empty body.
+# httpx counts 304 as a failure, which turned an idempotent call into an error: an
+# agent marking an already-closed task done, or re-running a step, got a raised
+# HTTPStatusError. Verified on Vikunja 2.5.0 for a task priority, a task's done
+# flag, a project title, and a label title and description. v1 has no partial
+# update and always writes, so it never reaches this.
+_NOT_MODIFIED = 304
+
 
 # Vikunja 2.4.0 added a v2 API alongside v1. Paths are identical for everything
 # this server does, but the verbs for create and update differ. The version comes
@@ -91,17 +99,20 @@ def _error_detail(r: httpx.Response) -> str:
 async def _send(method: str, path: str, **kwargs: Any) -> httpx.Response:
     """One request. Raises on any non-2xx, with the server's own explanation attached.
 
-    The check is `is_success`, and a redirect counts as a failure. A redirect means
-    the configured URL is wrong, and decoding its body as a result would hide that.
+    A redirect counts as a failure. A redirect means the configured URL is wrong, and
+    decoding its body as a result would hide that. 304 is the one status outside 2xx
+    that passes, and the comment on `_NOT_MODIFIED` says why.
     """
     async with httpx.AsyncClient(base_url=_base(), headers=_headers(), timeout=30) as client:
         r = await client.request(method, path, **kwargs)
-        if not r.is_success:
+        if not r.is_success and r.status_code != _NOT_MODIFIED:
             raise httpx.HTTPStatusError(_error_detail(r), request=r.request, response=r)
         return r
 
 
 def _decode(r: httpx.Response) -> Any:
+    if r.status_code == _NOT_MODIFIED:
+        return {"ok": True, "unchanged": True}
     if r.status_code == 204 or not r.content:
         return {"ok": True}
     return r.json()

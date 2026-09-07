@@ -255,9 +255,10 @@ async def update_task(
     count from the day it was completed. A repeating task with no dates can never be
     closed: it reopens regardless.
 
-    One wrinkle in what comes back: on v2 a partial update returns the description
-    as the stored HTML. v2 does not convert on a PATCH. Call `get_task` if you need
-    it as Markdown.
+    Two wrinkles in what comes back. On v2 a partial update returns the description
+    as the stored HTML: v2 does not convert on a PATCH, so call `get_task` when you
+    need it as Markdown. And a write that changes nothing returns
+    `{"ok": true, "unchanged": true}` there, which is Vikunja answering 304.
     """
     payload: dict[str, Any] = {}
     if title is not None:

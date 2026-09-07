@@ -285,6 +285,30 @@ def test_a_redirect_is_an_error_and_names_where_it_was_sent(api, run):
         run(_request("GET", "/projects"))
 
 
+@pytest.mark.parametrize("api_version", [1, 2])
+def test_a_304_is_a_no_op_and_not_an_error(api, run, api_version):
+    """v2 answers a partial update that changes nothing with 304 and an empty body.
+
+    Writing a field the value it already holds is something an agent does
+    constantly: marking an already-closed task done, or re-running a step it is not
+    sure completed. httpx counts 304 as a failure, and this raised before.
+    """
+    api.returns_raw(304)
+    assert run(_request("PATCH", "/tasks/7", json={"done": True})) == {
+        "ok": True,
+        "unchanged": True,
+    }
+
+
+@pytest.mark.parametrize("status", [301, 302, 303, 307, 308])
+def test_the_rest_of_the_3xx_range_is_still_an_error(api, run, status):
+    """Admitting 304 must not admit every redirect. A redirect still means the
+    configured URL is wrong."""
+    api.returns_raw(status, headers={"Location": "https://vikunja.test/api/v1/projects"})
+    with pytest.raises(httpx.HTTPStatusError):
+        run(_request("GET", "/projects"))
+
+
 def test_main_starts_the_server(monkeypatch):
     started = []
     monkeypatch.setattr(server.mcp, "run", lambda: started.append(True))

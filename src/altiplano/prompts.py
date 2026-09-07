@@ -152,6 +152,10 @@ anything else uses v1. Descriptions are written as Markdown on both. What differ
 - `get_task()` returns the description as Markdown on v2.
 - A partial `update_task()` on v2 returns the description as stored HTML. v2 does
   not convert on a PATCH. Call `get_task()` when Markdown is wanted.
+- On v2 a write that changes nothing comes back as
+  `{"ok": true, "unchanged": true}`. Vikunja answers such a request with 304, and
+  `update_task()` and `set_reminders()` report it that way. The call succeeded and
+  the stored value already matched.
 """
 
 

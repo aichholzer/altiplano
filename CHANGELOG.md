@@ -77,6 +77,11 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- A v2 write that changes nothing no longer fails. Vikunja answers such a partial
+  update with `304 Not Modified`, and that counted as an error: `update_task` and
+  `set_reminders` raised when a field already held the value being written. Both now
+  return `{"ok": true, "unchanged": true}`.
+
 - `duplicate_task` returns the copied task, carrying its `id`. Vikunja answers a
   duplicate with a `duplicated_task` envelope on both API versions, and that envelope
   was passed through whole. A caller had no way to reach the copy it had just made.
