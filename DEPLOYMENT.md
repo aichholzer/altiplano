@@ -478,6 +478,16 @@ The file is `chmod 600` and owned by the service account, and the host is truste
 stay that way. On systemd, `systemd-creds` can hold the store encrypted and hand it to
 the unit at start.
 
+A store change survives a crash. The write goes to a temporary file in the same
+directory, and Altiplano syncs that file, renames it over the store, then syncs the
+directory. A revocation that reported success has reached the disk before the command
+returns. Power loss during the write leaves the previous store and no half-written one.
+
+A crash between the temporary file and the rename leaves that file behind, holding
+every Vikunja token in it. The next store change deletes any it finds. To clear them
+without waiting for one, remove `.clients-*` beside the store while the service is not
+mid-write.
+
 Altiplano stores nothing of its own, and Vikunja stays the system of record. Back up
 Vikunja, the service definition, and the client store. If the host goes down, the
 local `uvx altiplano` stdio configuration is the fallback on any machine that needs

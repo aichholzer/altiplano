@@ -177,6 +177,13 @@ All notable changes to this project are documented here.
   comparison raise and locked out every client whose record followed it.
 - The store is written through `mkstemp`. The temporary file is never readable by
   anyone else.
+- A store change survives a crash. The temporary file is synced, renamed over the
+  store, and the directory synced after it. `os.replace` alone gave atomicity, and a
+  power cut between the rename and the kernel committing it brought the machine back
+  on the previous store: a revocation reported success and left the token live, with
+  nothing to say so.
+- A temporary file orphaned by a crash is deleted at the next store change. Each one
+  held every Vikunja token in the store in plaintext, and nothing removed them.
 - Each authenticated request logs the client label that matched. Tokens are never
   logged.
 - A registered client with no Vikunja API token is refused with `403`. There is no

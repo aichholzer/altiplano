@@ -6,6 +6,7 @@ was never issued, and a label that tries to rewrite the record it lives in.
 """
 
 import os
+import stat
 import subprocess
 import sys
 import textwrap
@@ -350,6 +351,96 @@ def test_the_parent_directory_is_created_when_absent(tmp_path, monkeypatch):
     monkeypatch.setattr(clients, "_CLIENTS_FILE", nested)
     clients._add("laptop", VIKUNJA)
     assert nested.exists()
+
+
+# --- surviving a crash ------------------------------------------------------
+# `os.replace` makes the write atomic. A reader sees the old store or the new one, and
+# that was already true. Durability is separate: until the file and then the directory
+# are synced, a power cut can bring the machine back on the previous store. Revocation
+# is the write where that matters, and it is the one whose failure says nothing.
+def test_the_write_syncs_the_file_then_renames_then_syncs_the_directory(store, monkeypatch):
+    """The order is the substance of this, and it is what a later edit would break.
+
+    Syncing after the rename leaves the data uncommitted. Syncing the directory before
+    it commits the absence of the entry. Neither shows up in any test that only reads
+    the store back.
+    """
+    order = []
+    real_fsync, real_replace = clients.os.fsync, clients.os.replace
+
+    def spy_fsync(handle):
+        # fstat on the descriptor, which holds on any platform. Resolving the
+        # descriptor to a path would tie the test to /dev/fd or /proc.
+        kind = "directory" if stat.S_ISDIR(os.fstat(handle).st_mode) else "file"
+        order.append(f"fsync-{kind}")
+        return real_fsync(handle)
+
+    def spy_replace(src, dst):
+        order.append("replace")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(clients.os, "fsync", spy_fsync)
+    monkeypatch.setattr(clients.os, "replace", spy_replace)
+    clients._add("laptop", VIKUNJA)
+
+    assert order == ["fsync-file", "replace", "fsync-directory"]
+
+
+def test_a_revocation_is_synced_the_same_way(store, monkeypatch):
+    """Every store change goes through `_write`, and revocation is the one that has to
+    hold. A token the operator believes is dead coming back is the failure this
+    prevents."""
+    clients._add("laptop", VIKUNJA)
+    synced = []
+    real_fsync = clients.os.fsync
+    monkeypatch.setattr(
+        clients.os, "fsync", lambda handle: (synced.append(handle), real_fsync(handle))[1]
+    )
+    assert clients._remove("laptop") is True
+    assert len(synced) == 2
+
+
+def test_a_temporary_file_a_crash_left_behind_is_swept_on_the_next_write(store, tmp_path):
+    """A crash between `mkstemp` and the rename leaves a full copy of the store, every
+    Vikunja token in it in plaintext. Nothing else ever deletes it."""
+    orphan = tmp_path / ".clients-crashed"
+    orphan.write_text("laptop:" + "b" * 64 + f":{VIKUNJA}:2026-09-05T00:00:00Z\n")
+    orphan.chmod(0o600)
+
+    token = clients._add("laptop", VIKUNJA)
+
+    assert not orphan.exists()
+    assert [p.name for p in tmp_path.iterdir() if p.name.startswith(".clients-")] == []
+    # The store itself came through the sweep intact.
+    clients._file_cache = None
+    assert label_of(token) == "laptop"
+
+
+def test_the_sweep_only_touches_its_own_temporary_files(store, tmp_path):
+    innocent = tmp_path / "clients.backup"
+    innocent.write_text("keep me")
+    clients._add("laptop", VIKUNJA)
+    assert innocent.read_text() == "keep me"
+
+
+def test_a_sweep_that_cannot_delete_still_lets_the_write_through(store, tmp_path, monkeypatch):
+    """A leftover file nobody can remove is not a reason to refuse a revocation."""
+    orphan = tmp_path / ".clients-stubborn"
+    orphan.write_text("whatever")
+
+    real_unlink = clients.Path.unlink
+
+    def refuse(self, *args, **kwargs):
+        if self.name == ".clients-stubborn":
+            raise OSError("held open")
+        return real_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(clients.Path, "unlink", refuse)
+    token = clients._add("laptop", VIKUNJA)
+
+    clients._file_cache = None
+    assert label_of(token) == "laptop"
+    assert orphan.exists()
 
 
 # --- permissions and readability --------------------------------------------

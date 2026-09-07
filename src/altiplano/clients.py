@@ -76,6 +76,11 @@ except ImportError:  # pragma: no cover
 
 _CLIENTS_FILE = Path(os.environ.get("ALTIPLANO_CLIENTS", _CONFIG_FILE.parent / "clients"))
 
+# The temporary file every store write goes through. Named here because two functions
+# need to agree on it: `_write` creates one, and `_sweep_orphans` deletes the ones a
+# crash left behind.
+_TEMP_PREFIX = ".clients-"
+
 # Prefixed so the value is recognisable in a client config, and so a secret scanner
 # has something to match on.
 _TOKEN_PREFIX = "altp_"
@@ -295,6 +300,46 @@ def _labels() -> tuple[str, ...]:
     return tuple(client.label for client in _clients())
 
 
+def _sweep_orphans() -> None:
+    """Delete temporary files a crash left behind. Call this holding the lock.
+
+    Each one is a full copy of the store, every Vikunja token in it in plaintext. The
+    handler in `_write` unlinks its own temporary file when the write raises, and a
+    power loss gives it no chance to run.
+
+    Holding the lock is what makes deleting them unconditionally correct. Every caller
+    of `_write` holds it, a platform without `fcntl` refuses to write at all, and no
+    other writer can therefore be between its `mkstemp` and its rename. Anything
+    matching the prefix right now is orphaned. That beats guessing at an age.
+
+    A failure here is ignored. Losing a race to delete one is not a reason to refuse a
+    revocation.
+    """
+    for leftover in _CLIENTS_FILE.parent.glob(f"{_TEMP_PREFIX}*"):
+        try:
+            leftover.unlink()
+        except OSError:
+            pass
+
+
+def _fsync_directory(path: Path) -> None:
+    """Commit a rename inside `path` to disk.
+
+    A rename is a change to the directory, and syncing the file says nothing about it.
+    Without this the store survives as a complete file that the directory entry does
+    not point at yet, and a reboot serves the previous contents.
+
+    On macOS `fsync` does not promise the drive's own write cache is flushed, where
+    `fcntl.F_FULLFSYNC` would. The target is a Linux host and the distinction does not
+    arise there.
+    """
+    handle = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(handle)
+    finally:
+        os.close(handle)
+
+
 def _write(records: tuple[_Client, ...]) -> None:
     """Replace the store, through a temporary file in the same directory.
 
@@ -302,18 +347,28 @@ def _write(records: tuple[_Client, ...]) -> None:
     for the moment between creation and the rename. `os.replace` is atomic within
     one filesystem: a reader sees the old store or the new one.
 
+    Atomic is not durable, and both are wanted here. Sync the temporary file, rename,
+    then sync the directory. That order is what matters: a sync after the rename leaves
+    the data uncommitted, and one before it commits the absence of the entry. A
+    revocation that reported success and then lost a power cut would leave a live token
+    the operator believes is dead, with nothing anywhere to say so.
+
     Call this inside `_locked`.
     """
     global _file_cache
     _CLIENTS_FILE.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    _sweep_orphans()
     body = f"{_HEADER}\n" + "".join(
         f"{c.label}:{c.digest}:{c.vikunja_token}:{c.created}\n" for c in records
     )
-    handle, temporary = tempfile.mkstemp(dir=_CLIENTS_FILE.parent, prefix=".clients-")
+    handle, temporary = tempfile.mkstemp(dir=_CLIENTS_FILE.parent, prefix=_TEMP_PREFIX)
     try:
         with os.fdopen(handle, "w") as out:
             out.write(body)
+            out.flush()
+            os.fsync(out.fileno())
         os.replace(temporary, _CLIENTS_FILE)
+        _fsync_directory(_CLIENTS_FILE.parent)
     except BaseException:
         Path(temporary).unlink(missing_ok=True)
         raise
