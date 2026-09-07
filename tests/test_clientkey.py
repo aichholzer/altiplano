@@ -94,7 +94,7 @@ def test_add_refuses_an_unusable_vikunja_token(store, capsys, monkeypatch):
 
 def test_list_reports_an_empty_store(store, capsys):
     assert clientkey.main(["list"]) == 0
-    assert "no clients registered" in capsys.readouterr().out
+    assert "no clients registered" in capsys.readouterr().out.lower()
 
 
 def test_list_shows_every_label_and_no_digest(store, capsys):
@@ -138,13 +138,13 @@ def test_revoke_removes_the_client(store, capsys):
     capsys.readouterr()
 
     assert clientkey.main(["revoke", "laptop"]) == 0
-    assert "revoked laptop" in capsys.readouterr().out
+    assert "revoked laptop" in capsys.readouterr().out.lower()
     assert clients._labels() == ()
 
 
 def test_revoking_something_absent_exits_non_zero(store, capsys):
     assert clientkey.main(["revoke", "ghost"]) == 1
-    assert "no client named" in capsys.readouterr().err
+    assert "no client named" in capsys.readouterr().err.lower()
 
 
 def test_a_platform_without_locking_is_reported_rather_than_risked(store, capsys, monkeypatch):
@@ -205,17 +205,26 @@ def test_update_replaces_the_vikunja_token_and_keeps_the_client_token(store, cap
         patch.setattr(clientkey, "_read_vikunja_token", lambda label: fresh)
         assert clientkey.main(["update", "laptop"]) == 0
 
-    assert "updated laptop" in capsys.readouterr().out
+    assert "replaced the vikunja api token laptop acts with" in capsys.readouterr().out.lower()
     resolved = clients._resolve(token)
     assert resolved.label == "laptop", "the client token still authenticates"
     assert resolved.vikunja_token == fresh
 
 
-def test_update_says_the_client_needs_no_reconfiguring(store, capsys):
+def test_update_names_which_token_changed_and_which_did_not(store, capsys):
+    """Both tokens get named. Naming only one read as nothing having happened.
+
+    The message said "Its Altiplano client token is unchanged" without saying the
+    Vikunja token had been replaced, and three consecutive successful updates were
+    read as three refusals.
+    """
     clientkey.main(["add", "laptop"])
     capsys.readouterr()
     clientkey.main(["update", "laptop"])
-    assert "needs no reconfiguring" in capsys.readouterr().out
+
+    out = capsys.readouterr().out.lower()
+    assert "replaced the vikunja api token" in out, "says what changed"
+    assert "altiplano client token laptop presents is untouched" in out, "and what did not"
 
 
 def test_update_never_prints_the_vikunja_token_back(store, capsys):
@@ -227,7 +236,7 @@ def test_update_never_prints_the_vikunja_token_back(store, capsys):
 
 def test_update_on_an_absent_label_exits_non_zero(store, capsys):
     assert clientkey.main(["update", "ghost"]) == 1
-    assert "no client named" in capsys.readouterr().err
+    assert "no client named" in capsys.readouterr().err.lower()
 
 
 def test_update_refuses_an_unusable_vikunja_token(store, capsys, monkeypatch):

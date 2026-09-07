@@ -72,17 +72,19 @@ def _add_command(label: str) -> int:
 def _update_command(label: str) -> int:
     vikunja_token = _read_vikunja_token(label)
     if not _set_vikunja_token(label, vikunja_token):
-        print(f"no client named {label!r} in {_CLIENTS_FILE}", file=sys.stderr)
+        print(f"No client named {label!r} in {_CLIENTS_FILE}", file=sys.stderr)
         return 1
-    print(f"updated {label}. It takes effect on the next request, with no restart.")
-    print(f"Its Altiplano client token is unchanged. {label} needs no reconfiguring.")
+    print(f"Replaced the Vikunja API token {label} acts with.")
+    print("It takes effect on the next request, with no restart.")
+    print()
+    print(f"The Altiplano client token {label} presents is untouched. Its MCP configuration needs no change.")
     return 0
 
 
 def _list_command() -> int:
     registered = _clients()
     if not registered:
-        print(f"no clients registered in {_CLIENTS_FILE}")
+        print(f"No clients registered in {_CLIENTS_FILE}")
         return 0
     width = max(len(client.label) for client in registered)
     print(f"{'LABEL'.ljust(width)}  VIKUNJA  CREATED")
@@ -91,16 +93,15 @@ def _list_command() -> int:
         print(f"{client.label.ljust(width)}  {vikunja}  {client.created or 'unknown'}")
     if any(not client.vikunja_token for client in registered):
         print()
-        print("A client marked MISSING is refused on every request. Give it a Vikunja")
-        print("token with: altiplano-clientkey update <label>")
+        print("A client marked MISSING is refused on every request. Give it a Vikunja token with: altiplano-clientkey update <label>")
     return 0
 
 
 def _revoke_command(label: str) -> int:
     if not _remove(label):
-        print(f"no client named {label!r} in {_CLIENTS_FILE}", file=sys.stderr)
+        print(f"No client named {label!r} in {_CLIENTS_FILE}", file=sys.stderr)
         return 1
-    print(f"revoked {label}. It takes effect on the next request, with no restart.")
+    print(f"Revoked {label}. It takes effect on the next request, with no restart.")
     return 0
 
 
@@ -127,10 +128,10 @@ def _parser() -> argparse.ArgumentParser:
         "update",
         help="replace the Vikunja token a client acts with",
         description=(
-            "Replace the Vikunja API token an existing client acts with. Its Altiplano "
-            "client token is unchanged and the client needs no reconfiguring. The "
-            "Vikunja token is read from a hidden prompt, or from stdin when the input "
-            "is piped."
+            "Replace the Vikunja API token an existing client acts with. The Altiplano "
+            "client token it presents is untouched, and its MCP configuration needs no "
+            "change. The Vikunja token is read from a hidden prompt, or from stdin "
+            "when the input is piped."
         ),
     )
     update.add_argument("label", help="the client to update")
