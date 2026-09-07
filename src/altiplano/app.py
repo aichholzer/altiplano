@@ -32,7 +32,8 @@ Before writing anything:
   `done = false && priority >= 4`.
 
 Fetch the `altiplano_guide` prompt for the rest: cross-tool sequencing, batching,
-kanban behaviour, relations, and the differences between the v1 and v2 APIs.
+kanban behaviour, relations, the differences between the v1 and v2 APIs, and what
+breaks when deploying `altiplano-http` as a shared service for several clients.
 """
 
 # The version is declared so it appears in the MCP handshake. `uvx` can serve a

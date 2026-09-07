@@ -6,75 +6,156 @@
 [![codecov](https://codecov.io/gh/aichholzer/altiplano/graph/badge.svg?token=l7Svxa1x0X)](https://codecov.io/gh/aichholzer/altiplano)
 [![Python](https://img.shields.io/badge/python-%3E%3D3.10-blue.svg)](https://www.python.org/)
 [![PyPI version](https://img.shields.io/pypi/v/altiplano.svg)](https://pypi.org/project/altiplano/)
-[![Altiplano MCP server](https://glama.ai/mcp/servers/aichholzer/altiplano/badges/score.svg)](https://glama.ai/mcp/servers/aichholzer/altiplano)
 [![License](https://img.shields.io/github/license/aichholzer/altiplano)](LICENSE)
+[![Altiplano MCP server](https://glama.ai/mcp/servers/aichholzer/altiplano/badges/score.svg)](https://glama.ai/mcp/servers/aichholzer/altiplano)
 
 A small, dependable MCP server for [Vikunja](https://vikunja.io).<br />
 Named after the Andean altiplano, the high plateau that is the Vicuña's native habitat.
 
-Requires Python 3.10 or later.
+Altiplano runs locally through `uvx`, or as a stand-alone HTTP service that several people share on one endpoint, each acting as their own Vikunja user. Both modes expose the same tools and the same guidance.
 
-## Install
+## Choose how to use Altiplano
+
+|                                    | Local, through `uvx`                                            | Shared, over HTTP                                                                 |
+| ---------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Where Altiplano runs               | On your computer, launched by your MCP client.                  | On a host running Altiplano as a stand-alone service.                             |
+| How your MCP client connects       | Runs `uvx` and communicates over stdio.                         | Connects to the service URL with a valid bearer token.                            |
+| Requirements on your computer      | `uv`, Python 3.10 or later, and an MCP client supporting stdio. | An MCP client supporting Streamable HTTP and a configured `Authorization` header. |
+| Where the Vikunja credentials live | On each computer running Altiplano.                             | On the service host, one token per client.                                        |
+| Setup                              | [Use locally](#use-locally-with-uvx)                            | [Use over HTTP](#use-over-http)                                                   |
+
+> Connecting to an existing HTTP service needs its URL and an Altiplano client token. You do not need to install Altiplano, `uv`, or Python on the client.
+
+The configuration examples below use an `mcpServers` block. Adapt the surrounding structure to your MCP client's configuration format.
+
+## Use locally with uvx
+
+Your MCP client launches Altiplano as a local subprocess and communicates with it over stdio. Each client manages its own Altiplano process.
 
 ### 1. Install uv
 
-`uv` provides `uvx`, which runs Altiplano without a checkout. See [installation guide](https://docs.astral.sh/uv/getting-started/installation/).
+[`uv`](https://docs.astral.sh/uv/getting-started/installation/) provides the `uvx` command, which runs Altiplano from PyPI without a repository checkout.
 
-### 2. Vikunja API token
+### 2. Configure Vikunja credentials
 
-In Vikunja, open Settings from the menu under your username, then API Tokens. See [Vikunja's API documentation](https://vikunja.io/docs/api-documentation/).
-
-Give the token scopes covering the tools you intend to call.
-
-### 3. Store the credentials
+Create an API token in Vikunja under Settings → API Tokens, reachable from the menu under your username. Give it the scopes covering the tools you intend to call. See [Vikunja's API documentation](https://vikunja.io/docs/api-documentation/).
 
 ```bash
 mkdir -p ~/.config/altiplano
-printf 'VIKUNJA_URL=https://todo.example.com/api/v2\nVIKUNJA_API_TOKEN=tk_xxx\n' > ~/.config/altiplano/env
+```
+
+Create `~/.config/altiplano/env` containing:
+
+```dotenv
+VIKUNJA_URL=https://altiplano.example.com/api/v2
+VIKUNJA_API_TOKEN=tk_replace_me
+```
+
+Restrict the file's permissions:
+
+```bash
 chmod 600 ~/.config/altiplano/env
 ```
 
-> `VIKUNJA_URL` must end in `/api/v1` or `/api/v2`. That suffix selects the version, for example `https://todo.example.com/api/v2`.
-
-> Vikunja 2.4.0 introduced `/api/v2`. Altiplano strips trailing slashes and enables v2 only for a URL ending in `/api/v2`; every other URL keeps its configured path and uses v1 request verbs. Use `/api/v2` when the server supports it.
-
 Altiplano checks these sources in order:
 
-1. `VIKUNJA_URL` and `VIKUNJA_API_TOKEN` environment variables.
+1. The `VIKUNJA_URL` and `VIKUNJA_API_TOKEN` environment variables.
 2. A file containing `KEY=VALUE` pairs, defaulting to `~/.config/altiplano/env`.
 
-Set `ALTIPLANO_CONFIG` before starting Altiplano to use a different file. Use absolute paths; `~` is not expanded in custom paths.
+Set `ALTIPLANO_CONFIG` before starting Altiplano to read a different file. Use absolute paths; `~` is not expanded in custom paths.
 
-> Permissions broader than `600` produce a warning (on POSIX) but do not prevent startup. An unreadable file is ignored after a warning.
+> `VIKUNJA_URL` must end in `/api/v1` or `/api/v2`. That suffix selects the version, for example `https://altiplano.example.com/api/v2`.
 
-### 4. Add the MCP server entry
+> Vikunja 2.4.0 introduced `/api/v2`. Altiplano strips trailing slashes and enables v2 only for a URL ending in `/api/v2`. Every other URL keeps its configured path and uses v1 request verbs. Use `/api/v2` when the server supports it.
 
-In your client's MCP configuration:
+> Permissions broader than `600` produce a warning on POSIX systems and startup continues. An unreadable file is ignored after a warning.
+
+### 3. Configure your MCP client
+
+Add a local server entry:
 
 ```json
 {
-  "altiplano": {
-    "command": "uvx",
-    "args": ["--refresh-package", "altiplano", "altiplano@latest"]
+  "mcpServers": {
+    "altiplano": {
+      "command": "uvx",
+      "args": ["--refresh-package", "altiplano", "altiplano@latest"]
+    }
   }
 }
 ```
 
-> `--refresh-package altiplano` checks PyPI for a current release; if an older version still starts, close the client and run `uv cache clean altiplano`.
+> `--refresh-package altiplano` checks PyPI for a current release. If an older version still starts, close the client and run `uv cache clean altiplano`.
 
-### 5. Verify with one call
+### 4. Verify with one call
 
-Restart the client so it launches the server, then call `list_projects()`. Any list, an empty one included, means the install works.
+Restart or reconnect your MCP client, then call `list_projects()`. Any list, an empty one included, confirms that Altiplano reaches Vikunja with the configured credentials.
 
-> Altiplano speaks MCP over stdio. `uvx altiplano` prints nothing and waits for a client.
+> Altiplano speaks MCP over stdio. Running `uvx altiplano` in a terminal prints nothing and waits for a client on stdin and stdout.
+
+## Use over HTTP
+
+`altiplano-http` serves the same tools over Streamable HTTP from one always-on host. Each client presents its own bearer token, which Altiplano mints, stores as a SHA-256 hash, and revokes one at a time.
+
+The service must already be running and reachable from the computer running your MCP client. Adding its URL to your client configuration connects to the service. It does not start it. [`DEPLOYMENT.md`](./DEPLOYMENT.md) covers standing one up, and [Docker](./DEPLOYMENT.md#docker) is the shortest path there.
+
+One endpoint serves several people, each as their own Vikunja user. There is no shared Vikunja API token: the host holds one per registered client, and a request is made with the token belonging to the client that sent it. Two people on one service reach their own projects and their own tasks, with Vikunja applying its own permissions to each.
+
+> Registering a client is a manual step for whoever operates the host. An unrecognised client token is refused with `401`. A registered client whose record holds no Vikunja token is refused with `403`.
+
+### Connect to an existing service
+
+Obtain the MCP endpoint URL and a client token from whoever operates the host server. If that is you, [Register clients](./DEPLOYMENT.md#register-clients) has the steps.
+
+> Use one client token per client. Sharing one works, at two costs: the clients all act as the same Vikunja user, and revoking it cuts off every one of them.
+
+```bash
+claude mcp add --transport http altiplano \
+  https://altiplano.example.com/mcp \
+  --header "Authorization: Bearer altp_replace_me"
+```
+
+The equivalent in a client's own configuration:
+
+```json
+{
+  "mcpServers": {
+    "altiplano": {
+      "type": "http",
+      "url": "https://altiplano.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer altp_replace_me"
+      }
+    }
+  }
+}
+```
+
+- **type:** Not part of the MCP protocol, which covers the wire format and leaves the configuration shape to each client. They disagree: some require `type`, some spell the value `streamable-http` and others `http`, some call the key `transport`, and some infer the transport from `url` alone. Use the form your client documents.
+
+- **url:** Replace it with the real endpoint, including its port and path where required. The example assumes HTTPS is configured for the service.
+
+- **headers:** The bearer token here is an **Altiplano client token**, issued by `altiplano-clientkey`, and it says which client is calling. Your **Vikunja API token** is a separate thing: it stays on the service host, registered against your client, and it is the identity your requests act as. Give the operator a token from your own Vikunja account.
+
+A client that only launches subprocesses cannot reach an HTTP URL at all. Keep the stdio entry on those machines.
+
+Restart or reconnect your MCP client, then call `list_projects()`. A successful response confirms the connection, the client token, and access to Vikunja.
+
+Keep the client token private. It grants access to the service and every tool it exposes. Ask the operator to revoke and replace a lost or exposed token. A revocation applies to the next request.
+
+> The supported path is a client that sends the header you configure. Altiplano answers an unauthenticated request with a bare `WWW-Authenticate: Bearer` challenge and publishes no OAuth metadata. A client may still probe the well-known metadata URLs on its own initiative and will get a `404`. A client that can only obtain credentials through an OAuth flow is not supported here.
 
 ## Tools
 
 <details>
 <summary>Projects</summary>
 
-- `list_projects()`: includes `parent_project_id` for sub-projects.
+- `list_projects(include_archived=False)`: includes `parent_project_id` for sub-projects and `is_archived`. Vikunja omits archived projects from this endpoint; `include_archived=True` adds them back alongside the active ones.
 - `create_project(title, parent_project_id?, description?)`: pass `parent_project_id` to create a sub-project.
+- `update_project(project_id, title?, description?, parent_project_id?, is_archived?, hex_color?)`: changes only the supplied fields and requires at least one. `is_archived` archives and unarchives, and Vikunja has no separate archive endpoint. `hex_color` is six hexadecimal digits without `#`.
+- `delete_project(project_id)`: deletes the project, its sub-projects, and every task in all of them, along with each task's comments, labels, and assignees. Vikunja retains them for 30 days and provides no restore endpoint. Treat deletion as irreversible, and prefer `update_project(project_id, is_archived=True)` to set a project aside.
+
+> Archiving hides a project from `list_projects` unless `include_archived=True`. Vikunja also refuses every other edit to an archived project, and to the tasks in it, with a `412`. Unarchive it first.
 
 </details>
 
@@ -101,9 +182,10 @@ Restart the client so it launches the server, then call `list_projects()`. Any l
 - `list_kanban_views(project_id)`: includes the default and done bucket IDs.
 - `list_buckets(project_id, view_id?)`: returns columns in board order and marks the default and done columns.
 - `create_bucket(project_id, title, view_id?, limit?)`: adds a column at the right. Omit `limit`, or pass `0`, for no limit.
+- `update_bucket(project_id, bucket_id, title?, limit?, view_id?)`: renames a column or changes its limit, and requires at least one field. Neither API version offers a partial update here. The call reads the column and writes it back whole. Column order is not writable.
 - `delete_bucket(project_id, bucket_id, view_id?)`: moves the column's tasks to the default column. Vikunja will not remove the last column.
-- `list_bucket_tasks(project_id, view_id?, filter?)`: returns columns and their tasks. `task_count` remains the full count when Vikunja caps the returned task list.
-- `list_task_buckets(task_id)`: returns one bucket for each kanban view.
+- `list_board(project_id, view_id?, filter?)`: returns columns and their tasks. `task_count` remains the full count when Vikunja caps the returned task list. Takes the same arguments as `list_buckets` and adds the tasks and their counts.
+- `list_task_placements(task_id)`: returns the column holding the task, one entry for each kanban view.
 - `move_task_to_bucket(task_id, bucket_id, view_id?)`: reads the project ID from the task.
 
 Bucket behaviour:
@@ -132,9 +214,9 @@ Bucket behaviour:
 <details>
 <summary>Labels</summary>
 
-`list_labels()`, `create_label(title, hex_color?, description?)`, `delete_label(label_id)`, `add_label(task_id, label_id)`, `remove_label(task_id, label_id)`.
+`list_labels()`, `create_label(title, hex_color?, description?)`, `update_label(label_id, title?, hex_color?, description?)`, `delete_label(label_id)`, `add_label(task_id, label_id)`, `remove_label(task_id, label_id)`.
 
-> `hex_color` is six hexadecimal digits without `#`. Deleting a label removes it from every task.
+> `hex_color` is six hexadecimal digits without `#`. `update_label` changes only the supplied fields and requires at least one; every task with the label shows the change. Deleting a label removes it from every task.
 
 </details>
 
@@ -158,11 +240,12 @@ Bucket behaviour:
 
 ## Guidance
 
-Altiplano documents its own use in three places.
+Altiplano documents its own use in four places.
 
 - The handshake sends usage rules: resolve ids by name, which calls cannot be undone, how to close a task. Clients apply them on connect.
 - The `altiplano_guide` prompt holds the full version, with cross-tool sequencing and the v1 and v2 differences. Clients list it as `Using Altiplano`.
-- `AGENTS.md` covers working on this repository, and installing Altiplano for someone else. `CLAUDE.md` imports it, for Claude Code.
+- [`AGENTS.md`](./AGENTS.md) covers working on this repository, and installing Altiplano for someone else. [`CLAUDE.md`](./CLAUDE.md) imports it, for Claude Code.
+- [`DEPLOYMENT.md`](./DEPLOYMENT.md) covers running the HTTP transport as a service on a host: [Docker](./DEPLOYMENT.md#docker) with a `Dockerfile` and a compose file, a two-command `uv` path with no clone, every environment variable the transport reads, minting client tokens, encrypting the connection, four checks that say whether it works, and an FAQ of the ways it fails.
 
 ## Task behaviour
 
@@ -221,42 +304,12 @@ Tested with Vikunja 2.5.0 against `/api/v1` and `/api/v2`.
 
 Identified issues:
 
-- On Vikunja 2.5.0, the v2 grouped-bucket route used by `list_bucket_tasks` may return HTTP 401 when the token works elsewhere. Try a new full-permission token or `/api/v1`. The same diagnosis is returned for every v2 HTTP 401 from that route. Verify the token itself too.
+- On Vikunja 2.5.0, the v2 grouped-bucket route used by `list_board` may return HTTP 401 when the token works elsewhere. Try a new full-permission token or `/api/v1`. The same diagnosis is returned for every v2 HTTP 401 from that route. Verify the token itself too. `list_buckets` reads a different route and is unaffected.
 - On Vikunja 2.3.0, `list_assignees` returns HTTP 500. The endpoint worked on 2.5.0.
 
 ## Contributing
 
-Enable the pre-commit hook once per clone:
-
-```bash
-git config core.hooksPath hooks
-```
-
-The hook runs Ruff 0.16.4 over `src` and `tests`, then pytest with a 90 percent coverage minimum. CI runs Ruff in one job and pytest on Python 3.10 and 3.13.
-
-## Run
-
-```bash
-uv run altiplano                                      # development checkout
-uvx --from /your/local/path altiplano                 # local package path
-uvx --refresh-package altiplano altiplano@latest      # current PyPI release
-```
-
-## Layout
-
-```text
-src/altiplano/
-  app.py       MCP instance imported by the tool and prompt modules
-  config.py    Credential resolution and credential-file parsing
-  api.py       API-version handling, requests, and response shaping
-  prompts.py   The usage guidance, served as a prompt
-  tools/       One module for each tool group
-  server.py    Registration and the main entry point
-```
-
-Register a tool group by adding its module and importing it from `server.py`. Add its tools to the routing-table test and the smoke test's exact list.
-
-> Pull requests are always welcome.
+Pull requests are always welcome. [`CONTRIBUTING.md`](./CONTRIBUTING.md) covers the development setup, the commands, the pre-commit hook, the source layout, and what a pull request needs. Taking part means agreeing to the [code of conduct](./CODE_OF_CONDUCT.md).
 
 ## Licence
 

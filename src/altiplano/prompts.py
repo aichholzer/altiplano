@@ -3,7 +3,7 @@
 `GUIDE` covers what a single tool description cannot: which tool to reach for, the
 order calls happen in, and the calls that do more than they appear to.
 
-Tool references carry parentheses, `list_buckets()`. `tests/test_guidance.py`
+Tool references are written with parentheses, `list_buckets()`. `tests/test_guidance.py`
 extracts them and checks each against the registry. Parameter names never take
 parentheses.
 """
@@ -32,6 +32,23 @@ remembered from an earlier session:
 
 When a name matches nothing, say so. When several match, confirm which was meant
 before writing anything.
+
+## Projects
+
+`update_project()` changes only the fields passed to it, and `parent_project_id`
+is how a project becomes a sub-project of another.
+
+Archiving is `is_archived` on that same call. Vikunja exposes no archive endpoint,
+and there is no separate archive tool to look for.
+
+Archiving hides the project. `list_projects()` leaves archived projects out, and
+`list_projects(include_archived=True)` puts them back alongside the rest with
+`is_archived` set on each. Vikunja also refuses every other edit to an archived
+project, and to the tasks in it, with a 412 naming the archive. Call
+`update_project()` with `is_archived: false` before changing anything else on it.
+
+`delete_project()` destroys more than the project it names. See the section on
+calls that cannot be undone.
 
 ## Finding tasks
 
@@ -80,8 +97,20 @@ refuses the entire request, and nothing changes.
 
 ## Kanban
 
+Four tools read a board, and they answer four different questions:
+
+| The question                                 | The tool                 |
+| -------------------------------------------- | ------------------------ |
+| The whole board, columns and their cards     | `list_board()`           |
+| The columns alone                            | `list_buckets()`         |
+| Where one task sits                          | `list_task_placements()` |
+| Which views exist, and their special columns | `list_kanban_views()`    |
+
+`list_board()` and `list_buckets()` take the same arguments and differ in what comes
+back: the second omits the tasks, and it omits the task counts with them.
+
 A task holds a position in every kanban view of its project. A project with two
-boards puts that task in two columns, and `list_task_buckets()` reports them all.
+boards puts that task in two columns, and `list_task_placements()` reports them all.
 Read any other way, a task's `bucket_id` is `0`. The field only means something
 inside a view.
 
@@ -99,14 +128,21 @@ Read `bucket_configuration_mode` from `list_kanban_views()` first. In `filter`
 mode Vikunja derives each column from its filters, and moving a task between
 columns is unavailable.
 
-`list_bucket_tasks()` reports `task_count` as the column's true size, which can
-exceed the tasks returned. Vikunja caps how many it sends per column. Pass
-`filter` to narrow the result.
+`list_board()` reports `task_count` as the column's true size, which can exceed the
+tasks returned. Vikunja caps how many it sends per column. Pass `filter` to narrow
+the result.
+
+`update_bucket()` renames a column or changes its task limit, where `0` means no
+limit. Lowering a limit below the number of tasks already in the column keeps them
+and refuses the next move in. Column order is not writable through this API.
 
 `delete_bucket()` keeps the tasks it held: Vikunja moves them to the default
 column. A view always keeps one column, and the last one cannot be deleted.
 
 ## Labels
+
+`update_label()` changes the label itself. Every task with the label shows the new
+title, colour, or description.
 
 `remove_label()` takes a label off one task. `delete_label()` destroys the label
 everywhere, stripping it from every task that has it. Confirm which of the two is
@@ -138,6 +174,13 @@ to list or restore anything deleted. Through this API the call is permanent.
 Confirm the id with `get_task()` first. `delete_label()` and `delete_comment()`
 are equally final.
 
+`delete_project()` is the widest of these. It takes the project's sub-projects,
+every task in all of them, and each task's comments, labels, and assignees. Read
+`list_projects()` first and look for a `parent_project_id` naming the project
+about to go: anything that names it goes too. When the intent is to put a project
+away and keep it, `update_project()` with `is_archived: true` does that and can be
+undone.
+
 `set_reminders()` replaces the task's reminders with the list given. An existing
 reminder survives only by being passed again. An empty list clears them.
 
@@ -152,13 +195,49 @@ anything else uses v1. Descriptions are written as Markdown on both. What differ
 - `get_task()` returns the description as Markdown on v2.
 - A partial `update_task()` on v2 returns the description as stored HTML. v2 does
   not convert on a PATCH. Call `get_task()` when Markdown is wanted.
+- On v2 a write that changes nothing comes back as
+  `{"ok": true, "unchanged": true}`. Vikunja answers such a request with 304, and
+  `update_task()` and `set_reminders()` report it that way. The call succeeded and
+  the stored value already matched.
+
+## Deploying a shared HTTP service
+
+`altiplano-http` serves these same tools to several clients over Streamable HTTP,
+each acting as its own Vikunja user. This section applies when asked to stand such
+a service up. Connecting to one that already exists needs an endpoint URL and a
+client token and nothing else.
+
+What breaks on a first attempt:
+
+Register a client before the first start. A non-loopback bind with an empty client
+store refuses to come up, and a container set to restart will loop on it.
+`altiplano-clientkey add <label>` writes the store without starting a server.
+
+`ALTIPLANO_HTTP_ALLOWED_HOSTS` replaces its loopback defaults once set. It has to
+name every address clients dial, and a `Host` header outside the list gets a `421`.
+List `host` and `host:*` both: the bare form matches a `Host` with no port and the
+starred form matches one with a port.
+
+Running it through `uv run`, `--env-file` is not read by default. Leaving the flag
+off means every setting falls back to its default.
+
+A registered client with no Vikunja token gets a `403`. The bearer token was
+accepted, and the record holds no Vikunja identity to act as.
+`altiplano-clientkey list` marks that client `MISSING`, and
+`altiplano-clientkey update <label>` repairs it.
+
+`altiplano-http --check` validates what startup validates and opens no socket. Run
+it before the first start.
+
+`DEPLOYMENT.md` in the repository has the Docker and `uv` sequences in full.
 """
 
 
 @mcp.prompt(title="Using Altiplano")
 def altiplano_guide() -> str:
     """How to drive Altiplano's tools: resolving ids, sequencing calls across
-    tools, the calls that cannot be undone, and the v1 and v2 differences. Load
-    this before making changes through the tools.
+    tools, the calls that cannot be undone, the v1 and v2 differences, and what
+    breaks when deploying `altiplano-http` as a shared service. Load this before
+    making changes through the tools.
     """
     return GUIDE

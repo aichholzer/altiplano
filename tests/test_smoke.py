@@ -6,14 +6,16 @@ console script resolves, and the two places the version lives agree with each
 other.
 
 Two constraints shape these tests. They never call `main()`, which starts the
-server and never returns. And they need no Vikunja credentials, because
-`server.py` reads config inside the request helpers, well after import time.
+server and never returns. And they need no Vikunja credentials: `server.py` reads
+config inside the request helpers, well after import time.
 """
 
 import asyncio
 import json
 from importlib.metadata import entry_points, version
 from pathlib import Path
+
+import pytest
 
 import altiplano
 from altiplano.server import mcp
@@ -25,6 +27,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 EXPECTED_TOOLS = {
     "list_projects",
     "create_project",
+    "update_project",
+    "delete_project",
     "list_tasks",
     "get_task",
     "create_task",
@@ -32,6 +36,7 @@ EXPECTED_TOOLS = {
     "set_reminders",
     "delete_task",
     "list_labels",
+    "update_label",
     "add_label",
     "remove_label",
     "list_comments",
@@ -48,9 +53,10 @@ EXPECTED_TOOLS = {
     "list_kanban_views",
     "list_buckets",
     "create_bucket",
+    "update_bucket",
     "delete_bucket",
-    "list_bucket_tasks",
-    "list_task_buckets",
+    "list_board",
+    "list_task_placements",
     "move_task_to_bucket",
     "add_relation",
     "remove_relation",
@@ -66,9 +72,12 @@ def test_every_tool_registers():
     assert names == EXPECTED_TOOLS
 
 
-def test_console_script_resolves():
-    scripts = [e for e in entry_points(group="console_scripts") if e.name == "altiplano"]
-    assert len(scripts) == 1, "the altiplano console script is not installed"
+@pytest.mark.parametrize(
+    "name", ["altiplano", "altiplano-http", "altiplano-clientkey"]
+)
+def test_console_script_resolves(name):
+    scripts = [e for e in entry_points(group="console_scripts") if e.name == name]
+    assert len(scripts) == 1, f"the {name} console script is not installed"
     assert callable(scripts[0].load())
 
 

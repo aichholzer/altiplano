@@ -2,6 +2,251 @@
 
 All notable changes to this project are documented here.
 
+## [2.0.0]
+
+### Breaking
+
+- Two kanban tools are renamed. `list_bucket_tasks` is now `list_board`, and
+  `list_task_buckets` is now `list_task_placements`. Their arguments, return shapes,
+  and behaviour are unchanged, and the old names are gone with no alias.
+
+  The two differed only by word order, which left an agent choosing between them with
+  nothing to discriminate on. `list_board` also separates that tool from
+  `list_buckets`, which takes the same arguments and answers the narrower question of
+  the columns alone.
+
+  Update any client or script that calls either name. Nothing else in the surface
+  moved.
+
+### Added
+
+- `list_projects(include_archived=False)`. Vikunja omits archived projects from that
+  endpoint, and passing `true` adds them back alongside the active ones. Without it an
+  archived project cannot be found through the tools, and its id is what
+  `update_project` needs to bring it back.
+
+- Four tools closing the lifecycle gaps, taking the surface to 39. Projects had only
+  list and create; labels and buckets had no update at all.
+
+  - `update_project(project_id, title?, description?, parent_project_id?, is_archived?,
+    hex_color?)`. `is_archived` archives and unarchives, and Vikunja exposes no archive
+    endpoint. Archiving hides the project from `list_projects` and makes Vikunja refuse
+    every other edit to it, and to its tasks, with a `412`.
+  - `delete_project(project_id)`. This cascades to sub-projects, every task in all of
+    them, and each task's comments, labels, and assignees. Vikunja retains them for 30
+    days and offers no restore endpoint. Treat it as irreversible.
+  - `update_label(label_id, title?, hex_color?, description?)`. Every task with the
+    label shows the change.
+  - `update_bucket(project_id, bucket_id, title?, limit?, view_id?)`. Renames a column
+    or changes its task limit. Column order stays unwritable: Vikunja exposes no
+    ordering call.
+
+  Each takes at least one field and changes only the fields passed. Three of the four
+  endpoints reset fields a partial body omits. Those writes read the resource first and
+  merge, the way `update_task` already does. On v1 a title-only project write
+  un-archived an archived project and cleared its colour; a title-only label write
+  cleared its colour and description; and a bucket write reset its limit to 0 on both
+  versions.
+
+- `altiplano-http`, a second entry point serving the existing tools and prompt over
+  Streamable HTTP from one always-on host. `altiplano` keeps speaking stdio,
+  unchanged.
+
+  Settings come from the environment: `ALTIPLANO_HTTP_HOST` (default `127.0.0.1`),
+  `ALTIPLANO_HTTP_PORT` (`8000`), `ALTIPLANO_HTTP_PATH` (`/mcp`),
+  `ALTIPLANO_HTTP_ALLOWED_HOSTS`, and `ALTIPLANO_HTTP_ALLOWED_ORIGINS`.
+  `VIKUNJA_URL` is server-wide and selects one API version for every client.
+
+- Each HTTP client acts as its own Vikunja user. The host holds one Vikunja API
+  token per registered client, and the transport presents that client's token to
+  Vikunja for the duration of its request. Two people sharing one service reach
+  their own projects and their own tasks, with Vikunja applying its own permissions
+  to each.
+
+- `altiplano-clientkey update <label>` replaces the Vikunja API token a client acts
+  with and leaves its Altiplano client token alone. The client needs no
+  reconfiguring. It is how a client is moved to a different Vikunja token, and how a
+  record from a store predating per-client tokens is repaired. `add` continues to
+  refuse a label that already exists.
+
+- `altiplano-clientkey add|list|revoke`, which mints the bearer tokens the HTTP
+  transport accepts. A token is `altp_` followed by 32 bytes from `secrets`, shown
+  once, and only its SHA-256 is stored. `add` also collects the Vikunja API token
+  the client acts with, from a hidden prompt or from stdin when the input is piped.
+  `list` reports whether each client has one. A revocation applies to the next
+  request with no restart.
+
+  The store lives in `ALTIPLANO_CLIENTS` or a `clients` file beside the credentials
+  file, and it opens with the line `# altiplano clients v2`.
+
+- `uvicorn` as a declared dependency. It was already in the tree through `mcp`.
+
+- `Dockerfile` and `docker-compose.yml`, for running the HTTP transport with nothing on
+  the host but Docker. Alpine, multi-stage, unprivileged, and both commands on the path:
+  `altiplano-http` serves and `altiplano-clientkey` registers the clients allowed to
+  call it. `ALPINE_VERSION` defaults to `latest` and pins for a reproducible build.
+
+  Settings come from a `.env` file. `ALTIPLANO_HTTP_PORT` drives both sides of the port
+  mapping, and several containers on one host differ by that line alone. No Vikunja
+  token belongs in the file: each client's token goes into the store on the volume.
+
+  Register a client before the first start. A container binds every interface, which
+  counts as reachable, and Altiplano refuses to start with an empty store.
+  `docker compose run --rm altiplano altiplano-clientkey add <label>` writes the volume
+  without starting the server.
+
+  The client store lives on one named volume at `/var/lib/altiplano`. The healthcheck
+  opens a TCP connection to the listener: Altiplano serves no unauthenticated endpoint,
+  and a check that went out to Vikunja would restart the container for an outage
+  elsewhere.
+
+- `DEPLOYMENT.md`, covering the host side of a shared deployment: Docker with the
+  compose file above, a `uv` path that needs no clone, every environment variable the
+  transport reads, registering clients, encrypting the connection, four checks that say
+  whether it works, and an FAQ of the ways it fails. `.env.example` documents every
+  setting. The README covers connecting a client to a service.
+
+  On the `uv` path the whole configuration goes in one file, read with
+  `uv run --env-file .env`. That flag is not read by default, and it reaches every
+  setting the transport takes from the environment. The credentials file only ever
+  supplies `VIKUNJA_URL` and `VIKUNJA_API_TOKEN`.
+
+- `## Deploying a shared HTTP service` in the `altiplano_guide` prompt, naming what
+  breaks on a first attempt: the empty-store refusal on a non-loopback bind,
+  `ALTIPLANO_HTTP_ALLOWED_HOSTS` replacing its loopback defaults, `--env-file` going
+  unread under `uv run`, and the `403` for a registered client with no Vikunja token.
+  The handshake instructions name the section. An agent working from a wheel has no
+  checkout to read `DEPLOYMENT.md` in.
+
+- `CONTRIBUTING.md` and `CODE_OF_CONDUCT.md`.
+
+- `scripts/acceptance.py`, which checks a deployed endpoint from a client machine: the
+  401 for an anonymous caller, that no `mcp-session-id` is issued, and the tool set.
+
+  `--write` calls all 39 tools once per account, with a per-run nonce in every payload
+  that traces an object back to the account that made it. The tour runs twice, both
+  accounts concurrently and then one after the other, and a check at the end names any
+  tool no account reached. Between the two runs it confirms that a search for the other
+  account's nonce returns nothing, that direct reads of the other account's task,
+  comments, and project are all refused, and that `created_by` on a freshly created
+  task names the expected Vikunja user.
+
+  It writes only into projects it creates: one project and a sub-project of it per
+  account. Everything is deleted afterwards, and two closing checks confirm that no
+  task and no project with the run's nonce survived.
+
+  Repository only, and it declares its own dependencies for `uv run --script`.
+
+- `tests/test_http_integration.py`, which drives the application `altiplano-http`
+  serves: the real ASGI app with its lifespan running, requests over
+  `httpx2.ASGITransport`, and the MCP client library itself. Only Vikunja is
+  synthetic. Five of its eight tests fail against a stateful transport.
+
+- `altiplano-http --check` prints the resolved settings, the Vikunja URL, both
+  allowlists, the client count, how many of those clients have a Vikunja token, and
+  whether authentication is on, then exits without opening a socket. It validates the
+  same settings startup validates. A configuration it approves is one the server can
+  serve. Both HTTP commands take `--version`.
+
+- `ALTIPLANO_HTTP_ALLOW_UNAUTHENTICATED` serves with no token, for local
+  development. It is refused on any bind address other than loopback.
+
+### Fixed
+
+- A v2 write that changes nothing no longer fails. Vikunja answers such a partial
+  update with `304 Not Modified`, and that counted as an error: `update_task` and
+  `set_reminders` raised when a field already held the value being written. Both now
+  return `{"ok": true, "unchanged": true}`.
+
+- `create_label` converts a Markdown description on v2. A label description is rich
+  text, stored as HTML, and the request omitted `?format=markdown`. A description
+  written as Markdown was stored and displayed as literal text.
+
+- `duplicate_task` returns the copied task, with its `id`. Vikunja answers a
+  duplicate with a `duplicated_task` envelope on both API versions, and that envelope
+  was passed through whole. A caller had no way to reach the copy it had just made.
+
+### Security
+
+- The HTTP transport is stateless and issues no `mcp-session-id`. In the SDK's
+  stateful mode every request after `initialize` is keyed on that id alone, and the
+  bearer-token gate cannot say which client a session belongs to. A client holding any
+  valid token could send requests on another client's session and could delete it,
+  after which the owner received `404` and an in-flight response was lost. Stateless
+  removes the session. There is no id to borrow or terminate, and no session table to
+  grow on a reconnecting client or a rejected request.
+
+  The cost is server-initiated requests: sampling, elicitation, progress over a
+  standalone stream, and resumability. Altiplano uses none of them, and a client needs
+  no configuration change.
+
+- `VIKUNJA_URL` is checked for shape as well as presence, and parsed with the same
+  parser that builds the request. It needs an `http` or `https` scheme, a host, and a
+  port inside 1 to 65535. `vikunja.home.arpa/api/v2`, `https:///api/v2`,
+  `https://vikunja.test:abc/api/v2` and `https://[::1/api/v2` are all refused at
+  startup with a message. Every one of them was accepted before, and the last two
+  reached the operator as a failed tool call and a traceback.
+
+- A client token is a bearer credential and needs confidentiality in transit. Serve
+  the endpoint behind TLS or an encrypted tunnel on any network, a LAN included, and
+  bind Altiplano to loopback when something terminates TLS in front of it.
+
+- Authentication is always on. Every HTTP request needs a registered token. An
+  empty store denies every request, and an unreadable store refuses to start. The
+  policy is independent of the contents of the store, and
+  `ALTIPLANO_HTTP_ALLOW_UNAUTHENTICATED` is the only way to turn it off.
+- Binding a non-loopback address with an empty client store is refused at startup.
+- A request with no recognised token gets `401` with
+  `WWW-Authenticate: Bearer realm="altiplano"`, and no OAuth metadata is
+  advertised. Clients configured to send the header directly are the supported
+  path.
+- Client key changes hold an exclusive lock on a sibling `clients.lock` for the
+  whole read-modify-write. An add overlapping a revoke can no longer write back a
+  snapshot that resurrects the revoked token. A platform without POSIX `fcntl`
+  refuses to change the store, in place of proceeding unlocked. Reading needs no
+  lock and is unaffected.
+- The client store is opened on every read, and the parse is cached against the
+  descriptor's device, inode, size, mtime, and ctime. Removing read permission
+  changes neither mtime nor size, and a cache keyed on `stat` alone kept authorising
+  tokens after the server lost read access to the store. The wider key also notices
+  a store replaced by a different file of the same length.
+- Label and digest patterns are applied with `fullmatch`. `$` also matches just
+  before a final newline, which let a label like `laptop\n` pass validation and
+  split its own record across two lines. `add` reported success and handed over a
+  token that could never authenticate.
+- A client label is limited to 1 to 64 characters of letters, digits, `.`, `_`, and
+  `-`, starting alphanumeric. A label with a line break could previously store a
+  record that read back under a different label, leaving a live token that could not
+  be revoked by name.
+- A stored digest must be exactly 64 hexadecimal characters. A malformed record is
+  skipped with a warning naming the line. One non-ASCII digest previously made
+  comparison raise and locked out every client whose record followed it.
+- The store is written through `mkstemp`. The temporary file is never readable by
+  anyone else.
+- A store change survives a crash. The temporary file is synced, renamed over the
+  store, and the directory synced after it. `os.replace` alone gave atomicity, and a
+  power cut between the rename and the kernel committing it brought the machine back
+  on the previous store: a revocation reported success and left the token live, with
+  nothing to say so.
+- A temporary file orphaned by a crash is deleted at the next store change. Each one
+  held every Vikunja token in the store in plaintext, and nothing removed them.
+- Each authenticated request logs the client label that matched. Tokens are never
+  logged.
+- A registered client with no Vikunja API token is refused with `403`. There is no
+  server-wide fallback for an HTTP caller. A forgotten token therefore cannot put a
+  client on the operator's Vikunja account. Starting off loopback when no registered
+  client has a Vikunja token is refused too.
+- The client store holds Vikunja API tokens in plaintext, and it is written
+  `chmod 600`. Altiplano presents each one to Vikunja on every request and needs the
+  plaintext to do it. Anyone able to read the store can act as every client in it.
+  Vikunja does the authorising: narrow each token's scopes there to the tools you
+  expose.
+- A Vikunja API token is never accepted as a command-line argument, where `ps` would
+  show it to every user on the host.
+- A Vikunja API token is limited to 8 to 512 printable ASCII characters with no
+  space and no `:`. A colon would shift the `created` field along, and a line break
+  would split the record.
+
 ## [1.2.0]
 
 ### Added

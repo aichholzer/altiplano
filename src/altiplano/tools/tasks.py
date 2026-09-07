@@ -255,9 +255,10 @@ async def update_task(
     count from the day it was completed. A repeating task with no dates can never be
     closed: it reopens regardless.
 
-    One wrinkle in what comes back: on v2 a partial update returns the description
-    as the stored HTML. v2 does not convert on a PATCH. Call `get_task` if you need
-    it as Markdown.
+    Two wrinkles in what comes back. On v2 a partial update returns the description
+    as the stored HTML. v2 does not convert on a PATCH. Call `get_task` when you need
+    it as Markdown. And a write that changes nothing returns
+    `{"ok": true, "unchanged": true}` there, which is Vikunja answering 304.
     """
     payload: dict[str, Any] = {}
     if title is not None:
@@ -324,8 +325,15 @@ async def duplicate_task(task_id: int) -> dict:
     The copy lands in the same project as the original and links back to it with a
     `copiedfrom` relation. Vikunja offers no way to duplicate straight into another
     project; call `move_task` on the copy for that.
+
+    Returns the copy, with the `id` a caller needs to act on it. Vikunja wraps
+    this one response in a `duplicated_task` envelope on both API versions, and that
+    wrapper is removed here. A body without the key is passed through whole.
     """
-    return await _request(_verb("create"), f"/tasks/{task_id}/duplicate")
+    copy = await _request(_verb("create"), f"/tasks/{task_id}/duplicate")
+    if isinstance(copy, dict) and isinstance(copy.get("duplicated_task"), dict):
+        return copy["duplicated_task"]
+    return copy
 
 
 @mcp.tool()
@@ -361,10 +369,10 @@ async def _replace_task(task_id: int, changes: dict[str, Any]) -> dict:
     There is a reason per API version to go the long way round.
 
     On v1 there is no partial update at all. `POST /tasks/{id}` is a replace: a body
-    carrying only the changed fields resets every other field to its zero value, so
-    passing `priority` blanks the description and closing a task with `done`
-    discards its description, priority, and dates. Reading first and merging is the
-    only way to change one field while the rest survive.
+    with only the changed fields resets every other field to its zero value. Passing
+    `priority` blanks the description, and closing a task with `done` discards its
+    description, priority, and dates. Reading first and merging is the only way to
+    change one field while the rest survive.
 
     On v2 there is `PATCH`. It silently ignores ?format=markdown: the response is
     200 and the Markdown lands verbatim in a field rendered as HTML. A description

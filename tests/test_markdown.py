@@ -13,6 +13,7 @@ import pytest
 
 from altiplano.tools import (
     comments,
+    labels,
     projects,
     tasks,
 )
@@ -30,6 +31,9 @@ RICH_TEXT_CALLS = [
     pytest.param(lambda: comments.list_comments(7), id="list_comments"),
     pytest.param(lambda: tasks.create_task(3, "T", description=MD), id="create_task"),
     pytest.param(lambda: projects.create_project("P", description=MD), id="create_project"),
+    # A label description is rich text too. This one shipped without the parameter,
+    # storing Markdown verbatim into a field Vikunja renders as HTML.
+    pytest.param(lambda: labels.create_label("L", description=MD), id="create_label"),
     pytest.param(lambda: comments.add_comment(7, MD), id="add_comment"),
     pytest.param(lambda: comments.update_comment(7, 21, MD), id="update_comment"),
 ]
@@ -98,7 +102,7 @@ def test_v2_replace_preserves_fields_it_was_not_given(api, run, api_version):
 
 @pytest.mark.parametrize("api_version", [2])
 def test_v2_replace_drops_the_schema_key_it_read_back(api, run, api_version):
-    """`$schema` is v2 response metadata, not a writable field."""
+    """`$schema` is v2 response metadata. The replace strips it from the body it builds."""
     api.returns({"$schema": "https://example.test/schema.json", "id": 7, "description": "old"})
     run(tasks.update_task(7, description=MD))
 

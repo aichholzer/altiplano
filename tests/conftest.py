@@ -11,8 +11,31 @@ from typing import Any
 import httpx
 import pytest
 
+from altiplano import config
+
 HOST = "https://vikunja.test"
 TOKEN = "tk_notarealtoken"
+
+# Captured at import, before the autouse fixture below repoints it. The one test about
+# where the store sits relative to the credentials file needs the real default.
+REAL_CONFIG_FILE = config._CONFIG_FILE
+
+
+@pytest.fixture(autouse=True)
+def _ignore_the_developers_credentials(monkeypatch, tmp_path):
+    """Point credential resolution at nothing, for every test in the suite.
+
+    `config._CONFIG_FILE` defaults to `~/.config/altiplano/env`, and a developer
+    running Altiplano has one. Five tests passed on such a machine and failed in CI,
+    where no such file exists. They were reading real credentials nobody had given
+    them. A test that needs credentials sets them itself.
+    """
+    monkeypatch.delenv("VIKUNJA_URL", raising=False)
+    monkeypatch.delenv("VIKUNJA_API_TOKEN", raising=False)
+    monkeypatch.setattr(config, "_CONFIG_FILE", tmp_path / "no-credentials-file")
+    config._file_cache = None
+    yield
+    config._file_cache = None
 
 
 class RecordingAPI:

@@ -30,7 +30,7 @@ jobs:
           version: "0.12.5"
 
       - name: Ruff
-        run: uvx ruff@0.16.4 check src tests
+        run: uvx ruff@0.16.4 check src tests scripts
 
   test:
     name: test (python ${{ matrix.python-version }})
