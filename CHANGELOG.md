@@ -47,11 +47,19 @@ All notable changes to this project are documented here.
 - `CONTRIBUTING.md` and `CODE_OF_CONDUCT.md`.
 
 - `scripts/acceptance.py`, which checks a deployed endpoint from a client machine: the
-  401 for an anonymous caller, that no `mcp-session-id` is issued, the tool set, and
-  that two clients reach two Vikunja accounts. `--write` adds the conclusive check,
-  creating one task per client to read `created_by` off it, confirming neither client
-  can read the other's, and deleting both. Repository only, and it carries its own
-  dependencies for `uv run --script`.
+  401 for an anonymous caller, that no `mcp-session-id` is issued, and the tool set.
+
+  `--write` calls all 35 tools once per account, with a per-run nonce in every payload
+  that traces an object back to the account that made it. The tour runs twice, both
+  accounts concurrently and then one after the other, and a check at the end names any
+  tool no account reached. Between the two runs it confirms that a search for the other
+  account's nonce returns nothing, that direct reads of the other account's task,
+  comments, and project are all refused, and that `created_by` on a freshly created
+  task names the expected Vikunja user. Everything is deleted afterwards. Projects are
+  the exception. Altiplano exposes no `delete_project`, and each one is reported by id
+  and title for removal in Vikunja.
+
+  Repository only, and it carries its own dependencies for `uv run --script`.
 
 - `tests/test_http_integration.py`, which drives the application `altiplano-http`
   serves: the real ASGI app with its lifespan running, requests over
