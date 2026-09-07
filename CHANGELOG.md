@@ -2,56 +2,6 @@
 
 All notable changes to this project are documented here.
 
-## [2.1.2]
-
-### Added
-
-- `## Deploying a shared HTTP service` in the `altiplano_guide` prompt, naming what
-  breaks on a first attempt: the empty-store refusal on a non-loopback bind,
-  `ALTIPLANO_HTTP_ALLOWED_HOSTS` replacing its loopback defaults, `--env-file` going
-  unread under `uv run`, and the `403` for a registered client with no Vikunja token.
-  The handshake instructions name the section. An agent working from a wheel has no
-  checkout to read `DEPLOYMENT.md` in.
-
-## [2.1.1]
-
-### Changed
-
-- `DEPLOYMENT.md` drops the service-manager and firewall sections and runs the
-  non-Docker path off PyPI with no clone:
-  `uv run --no-project --env-file .env --with altiplano altiplano-http`. `--env-file`
-  is not read by default, and it covers every setting the transport reads, which the
-  credentials file does not.
-
-- Tool descriptions and command help reworded. No argument, return shape, or
-  behaviour changed.
-
-## [2.1.0]
-
-### Added
-
-- `Dockerfile` and `docker-compose.yml`, for running the HTTP transport with nothing on
-  the host but Docker. Alpine, multi-stage, unprivileged, and both commands on the path:
-  `altiplano-http` serves and `altiplano-clientkey` registers the clients allowed to
-  call it. `ALPINE_VERSION` defaults to `latest` and pins for a reproducible build.
-
-  Settings come from a `.env` file. `ALTIPLANO_HTTP_PORT` drives both sides of the port
-  mapping, and several containers on one host differ by that line alone. No Vikunja
-  token belongs in the file: each client's token goes into the store on the volume.
-
-  Register a client before the first start. A container binds every interface, which
-  counts as reachable, and Altiplano refuses to start with an empty store.
-  `docker compose run --rm altiplano altiplano-clientkey add <label>` writes the volume
-  without starting the server.
-
-  The client store lives on one named volume at `/var/lib/altiplano`. The healthcheck
-  opens a TCP connection to the listener: Altiplano serves no unauthenticated endpoint,
-  and a check that went out to Vikunja would restart the container for an outage
-  elsewhere.
-
-  `DEPLOYMENT.md` opens with the whole sequence, and `.env.example` documents every
-  setting.
-
 ## [2.0.0]
 
 ### Breaking
@@ -131,10 +81,42 @@ All notable changes to this project are documented here.
 
 - `uvicorn` as a declared dependency. It was already in the tree through `mcp`.
 
-- `DEPLOYMENT.md`, covering the host side of a shared deployment: running it with
-  `uv` and no clone, every environment variable the transport reads, registering
-  clients, encrypting the connection, and the acceptance checks to run from a client
-  machine. The README covers connecting a client to a service.
+- `Dockerfile` and `docker-compose.yml`, for running the HTTP transport with nothing on
+  the host but Docker. Alpine, multi-stage, unprivileged, and both commands on the path:
+  `altiplano-http` serves and `altiplano-clientkey` registers the clients allowed to
+  call it. `ALPINE_VERSION` defaults to `latest` and pins for a reproducible build.
+
+  Settings come from a `.env` file. `ALTIPLANO_HTTP_PORT` drives both sides of the port
+  mapping, and several containers on one host differ by that line alone. No Vikunja
+  token belongs in the file: each client's token goes into the store on the volume.
+
+  Register a client before the first start. A container binds every interface, which
+  counts as reachable, and Altiplano refuses to start with an empty store.
+  `docker compose run --rm altiplano altiplano-clientkey add <label>` writes the volume
+  without starting the server.
+
+  The client store lives on one named volume at `/var/lib/altiplano`. The healthcheck
+  opens a TCP connection to the listener: Altiplano serves no unauthenticated endpoint,
+  and a check that went out to Vikunja would restart the container for an outage
+  elsewhere.
+
+- `DEPLOYMENT.md`, covering the host side of a shared deployment: Docker with the
+  compose file above, a `uv` path that needs no clone, every environment variable the
+  transport reads, registering clients, encrypting the connection, four checks that say
+  whether it works, and an FAQ of the ways it fails. `.env.example` documents every
+  setting. The README covers connecting a client to a service.
+
+  On the `uv` path the whole configuration goes in one file, read with
+  `uv run --env-file .env`. That flag is not read by default, and it reaches every
+  setting the transport takes from the environment. The credentials file only ever
+  supplies `VIKUNJA_URL` and `VIKUNJA_API_TOKEN`.
+
+- `## Deploying a shared HTTP service` in the `altiplano_guide` prompt, naming what
+  breaks on a first attempt: the empty-store refusal on a non-loopback bind,
+  `ALTIPLANO_HTTP_ALLOWED_HOSTS` replacing its loopback defaults, `--env-file` going
+  unread under `uv run`, and the `403` for a registered client with no Vikunja token.
+  The handshake instructions name the section. An agent working from a wheel has no
+  checkout to read `DEPLOYMENT.md` in.
 
 - `CONTRIBUTING.md` and `CODE_OF_CONDUCT.md`.
 

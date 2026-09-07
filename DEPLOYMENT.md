@@ -133,7 +133,7 @@ uv run --no-project --env-file .env --with altiplano altiplano-http
 - Run as a dedicated account. The client store beside `.env` holds every client's
   Vikunja token in plaintext, and Altiplano writes it `chmod 600`.
 - `--with altiplano` resolves the newest release on each run. Pin it,
-  `--with altiplano==2.1.2`, for a service that restarts on its own.
+  `--with altiplano==2.0.0`, for a service that restarts on its own.
 
 To start on boot, wrap the serve line in whatever the host uses for services. On
 systemd that is a unit with `ExecStart` set to the full `uv run` command and
