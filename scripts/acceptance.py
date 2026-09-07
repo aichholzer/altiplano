@@ -527,15 +527,25 @@ async def tour(report: Report, client: Client, nonce: str) -> Made:
         )
         made.project_title = _find(listed, target).get("title") or made.project_title
 
+        # Archiving hides the project from the default listing, and the id is only
+        # reachable again through include_archived. Both halves are checked here. A
+        # one-way door would make the flag unusable.
         await client.call("update_project", {"project_id": target, "is_archived": True})
-        listed = await client.call_list("list_projects", {})
-        archived = _find(listed, target).get("is_archived")
+        plain = await client.call_list("list_projects", {})
+        with_archived = await client.call_list("list_projects", {"include_archived": True})
+        step(
+            not _find(plain, target)
+            and _find(with_archived, target).get("is_archived") is True,
+            "archives a project, which hides it from the default listing",
+            f"in plain list: {bool(_find(plain, target))}, "
+            f"in include_archived list: {bool(_find(with_archived, target))}",
+        )
+
         await client.call("update_project", {"project_id": target, "is_archived": False})
         listed = await client.call_list("list_projects", {})
         step(
-            archived is True and _find(listed, target).get("is_archived") is False,
-            "archives a project and brings it back",
-            f"archived {archived}, now {_find(listed, target).get('is_archived')}",
+            _find(listed, target).get("is_archived") is False,
+            "unarchives it and it returns to the default listing",
         )
     except ToolFailed as err:
         step(False, "completes the project lifecycle tour", str(err))

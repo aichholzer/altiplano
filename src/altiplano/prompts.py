@@ -39,9 +39,13 @@ before writing anything.
 is how a project becomes a sub-project of another.
 
 Archiving is `is_archived` on that same call. Vikunja exposes no archive endpoint,
-and there is no separate archive tool to look for. An archived project stays in
-`list_projects()` with the flag set, and Vikunja refuses writes to anything inside
-it. `is_archived: false` brings it back.
+and there is no separate archive tool to look for.
+
+Archiving hides the project. `list_projects()` leaves archived projects out, and
+`list_projects(include_archived=True)` puts them back alongside the rest with
+`is_archived` set on each. Vikunja also refuses every other edit to an archived
+project, and to the tasks in it, with a 412 naming the archive. Call
+`update_project()` with `is_archived: false` before changing anything else on it.
 
 `delete_project()` destroys more than the project it names. See the section on
 calls that cannot be undone.

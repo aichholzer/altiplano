@@ -6,13 +6,18 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- `list_projects(include_archived=False)`. Vikunja omits archived projects from that
+  endpoint, and passing `true` adds them back alongside the active ones. Without it an
+  archived project cannot be found through the tools, and its id is what
+  `update_project` needs to bring it back.
+
 - Four tools closing the lifecycle gaps, taking the surface to 39. Projects had only
   list and create; labels and buckets had no update at all.
 
   - `update_project(project_id, title?, description?, parent_project_id?, is_archived?,
-    hex_color?)`. `is_archived` archives and unarchives. Vikunja exposes no archive
-    endpoint, and an archived project stays in `list_projects` with the flag set while
-    Vikunja refuses writes to anything inside it.
+    hex_color?)`. `is_archived` archives and unarchives, and Vikunja exposes no archive
+    endpoint. Archiving hides the project from `list_projects` and makes Vikunja refuse
+    every other edit to it, and to its tasks, with a `412`.
   - `delete_project(project_id)`. This cascades to sub-projects, every task in all of
     them, and each task's comments, labels, and assignees. Vikunja retains them for 30
     days and offers no restore endpoint. Treat it as irreversible.

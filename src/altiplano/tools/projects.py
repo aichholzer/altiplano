@@ -7,9 +7,16 @@ from altiplano.app import mcp
 
 
 @mcp.tool()
-async def list_projects() -> list[dict]:
-    """List all projects (boards). `parent_project_id` shows sub-project nesting."""
-    data = await _request("GET", "/projects")
+async def list_projects(include_archived: bool = False) -> list[dict]:
+    """List all projects (boards). `parent_project_id` shows sub-project nesting.
+
+    Vikunja leaves archived projects out of this endpoint. `include_archived` adds
+    them back alongside the active ones, and `is_archived` on each result says which
+    is which. An archived project is otherwise unreachable through this tool, and its
+    id is what `update_project` needs to bring it back.
+    """
+    params = {"is_archived": "true"} if include_archived else {}
+    data = await _request("GET", "/projects", params=params)
     return [
         {
             "id": p["id"],
@@ -47,9 +54,12 @@ async def update_project(
 ) -> dict:
     """Update a project. Only the fields you pass change.
 
-    `is_archived` archives and unarchives. Vikunja has no archive endpoint, and there
-    is no separate tool for it. An archived project stays visible to `list_projects`,
-    which reports the flag, and Vikunja refuses writes to anything inside it.
+    `is_archived` archives and unarchives, and Vikunja has no separate archive
+    endpoint. Archiving has two consequences worth knowing before using it. The
+    project drops out of `list_projects` unless that call is given
+    `include_archived: true`. And Vikunja then refuses every other edit to it, and to
+    the tasks in it, with a 412 naming the archive. Unarchive it before changing
+    anything else on it.
 
     `parent_project_id` re-parents the project, making it a sub-project of the id
     given. `hex_color` is six hex digits with no leading `#`, and an empty string

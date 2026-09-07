@@ -23,7 +23,7 @@ _NO_DATE = "0001-01-01T00:00:00Z"
 # agent marking an already-closed task done, or re-running a step, got a raised
 # HTTPStatusError. Verified on Vikunja 2.5.0 for a task priority, a task's done
 # flag, a project title, and a label title and description. v1 has no partial
-# update and always writes, so it never reaches this.
+# update and always writes. It never reaches this.
 _NOT_MODIFIED = 304
 
 

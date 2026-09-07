@@ -146,12 +146,12 @@ Keep the client token private. It grants access to the service and every tool it
 <details>
 <summary>Projects</summary>
 
-- `list_projects()`: includes `parent_project_id` for sub-projects and `is_archived`.
+- `list_projects(include_archived=False)`: includes `parent_project_id` for sub-projects and `is_archived`. Vikunja omits archived projects from this endpoint; `include_archived=True` adds them back alongside the active ones.
 - `create_project(title, parent_project_id?, description?)`: pass `parent_project_id` to create a sub-project.
 - `update_project(project_id, title?, description?, parent_project_id?, is_archived?, hex_color?)`: changes only the supplied fields and requires at least one. `is_archived` archives and unarchives, and Vikunja has no separate archive endpoint. `hex_color` is six hexadecimal digits without `#`.
 - `delete_project(project_id)`: deletes the project, its sub-projects, and every task in all of them, along with each task's comments, labels, and assignees. Vikunja retains them for 30 days and provides no restore endpoint. Treat deletion as irreversible, and prefer `update_project(project_id, is_archived=True)` to set a project aside.
 
-> An archived project stays visible to `list_projects` with `is_archived` set. Vikunja refuses writes to anything inside it.
+> Archiving hides a project from `list_projects` unless `include_archived=True`. Vikunja also refuses every other edit to an archived project, and to the tasks in it, with a `412`. Unarchive it first.
 
 </details>
 

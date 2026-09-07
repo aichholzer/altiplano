@@ -1158,6 +1158,17 @@ def test_a_label_replace_that_fails_for_another_reason_keeps_the_real_error(api,
 
 
 # --- query parameters -------------------------------------------------------
+@pytest.mark.parametrize("api_version", [1, 2])
+def test_list_projects_omits_archived_projects_by_default(api, run, api_version):
+    """Vikunja leaves archived projects out of this endpoint, and asks for them by
+    query parameter. Sending it unconditionally would change the default listing."""
+    run(projects.list_projects())
+    assert dict(api.last.url.params) == {}
+
+    run(projects.list_projects(include_archived=True))
+    assert dict(api.last.url.params) == {"is_archived": "true"}
+
+
 def test_list_tasks_always_paginates(api, run):
     run(tasks.list_tasks(3))
     assert dict(api.last.url.params) == {"page": "1", "per_page": "50"}
