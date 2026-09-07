@@ -149,7 +149,7 @@ def _base() -> str:
 # caller is known; on stdio it stays unset.
 #
 # A ContextVar and not an argument because the alternative is threading an identity
-# through 35 tool signatures and every helper in `api.py`. A ContextVar set in ASGI
+# through every tool signature and every helper in `api.py`. A ContextVar set in ASGI
 # middleware reaches the tool coroutine and stays isolated per request, including
 # across overlapping calls on one long-lived session. `tests/test_clients.py` holds
 # the test that says so.

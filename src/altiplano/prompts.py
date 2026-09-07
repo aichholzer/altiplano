@@ -33,6 +33,19 @@ remembered from an earlier session:
 When a name matches nothing, say so. When several match, confirm which was meant
 before writing anything.
 
+## Projects
+
+`update_project()` changes only the fields passed to it, and `parent_project_id`
+is how a project becomes a sub-project of another.
+
+Archiving is `is_archived` on that same call. Vikunja exposes no archive endpoint,
+and there is no separate archive tool to look for. An archived project stays in
+`list_projects()` with the flag set, and Vikunja refuses writes to anything inside
+it. `is_archived: false` brings it back.
+
+`delete_project()` destroys more than the project it names. See the section on
+calls that cannot be undone.
+
 ## Finding tasks
 
 `list_tasks()` needs a project. `search_tasks()` does not. Reach for the second
@@ -103,10 +116,17 @@ columns is unavailable.
 exceed the tasks returned. Vikunja caps how many it sends per column. Pass
 `filter` to narrow the result.
 
+`update_bucket()` renames a column or changes its task limit, where `0` means no
+limit. Lowering a limit below the number of tasks already in the column keeps them
+and refuses the next move in. Column order is not writable through this API.
+
 `delete_bucket()` keeps the tasks it held: Vikunja moves them to the default
 column. A view always keeps one column, and the last one cannot be deleted.
 
 ## Labels
+
+`update_label()` changes the label itself. Every task carrying it shows the new
+title, colour, or description.
 
 `remove_label()` takes a label off one task. `delete_label()` destroys the label
 everywhere, stripping it from every task that has it. Confirm which of the two is
@@ -137,6 +157,13 @@ soft-deletes and documents a 30 day retention window, while exposing no endpoint
 to list or restore anything deleted. Through this API the call is permanent.
 Confirm the id with `get_task()` first. `delete_label()` and `delete_comment()`
 are equally final.
+
+`delete_project()` is the widest of these. It takes the project's sub-projects,
+every task in all of them, and each task's comments, labels, and assignees. Read
+`list_projects()` first and look for a `parent_project_id` naming the project
+about to go: anything that names it goes too. When the intent is to put a project
+away and keep it, `update_project()` with `is_archived: true` does that and can be
+undone.
 
 `set_reminders()` replaces the task's reminders with the list given. An existing
 reminder survives only by being passed again. An empty list clears them.

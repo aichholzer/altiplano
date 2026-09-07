@@ -6,6 +6,29 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- Four tools closing the lifecycle gaps, taking the surface to 39. Projects had only
+  list and create; labels and buckets had no update at all.
+
+  - `update_project(project_id, title?, description?, parent_project_id?, is_archived?,
+    hex_color?)`. `is_archived` archives and unarchives. Vikunja exposes no archive
+    endpoint, and an archived project stays in `list_projects` with the flag set while
+    Vikunja refuses writes to anything inside it.
+  - `delete_project(project_id)`. This cascades to sub-projects, every task in all of
+    them, and each task's comments, labels, and assignees. Vikunja retains them for 30
+    days and offers no restore endpoint. Treat it as irreversible.
+  - `update_label(label_id, title?, hex_color?, description?)`. Every task carrying the
+    label shows the change.
+  - `update_bucket(project_id, bucket_id, title?, limit?, view_id?)`. Renames a column
+    or changes its task limit. Column order stays unwritable: Vikunja exposes no
+    ordering call.
+
+  Each takes at least one field and changes only the fields passed. Three of the four
+  endpoints reset fields a partial body omits. Those writes read the resource first and
+  merge, the way `update_task` already does. On v1 a title-only project write
+  un-archived an archived project and cleared its colour; a title-only label write
+  cleared its colour and description; and a bucket write reset its limit to 0 on both
+  versions.
+
 - `altiplano-http`, a second entry point serving the existing tools and prompt over
   Streamable HTTP from one always-on host. `altiplano` keeps speaking stdio,
   unchanged.
@@ -49,15 +72,17 @@ All notable changes to this project are documented here.
 - `scripts/acceptance.py`, which checks a deployed endpoint from a client machine: the
   401 for an anonymous caller, that no `mcp-session-id` is issued, and the tool set.
 
-  `--write` calls all 35 tools once per account, with a per-run nonce in every payload
+  `--write` calls all 39 tools once per account, with a per-run nonce in every payload
   that traces an object back to the account that made it. The tour runs twice, both
   accounts concurrently and then one after the other, and a check at the end names any
   tool no account reached. Between the two runs it confirms that a search for the other
   account's nonce returns nothing, that direct reads of the other account's task,
   comments, and project are all refused, and that `created_by` on a freshly created
-  task names the expected Vikunja user. Everything is deleted afterwards. Projects are
-  the exception. Altiplano exposes no `delete_project`, and each one is reported by id
-  and title for removal in Vikunja.
+  task names the expected Vikunja user.
+
+  It writes only into projects it creates: one project and a sub-project of it per
+  account. Everything is deleted afterwards, and two closing checks confirm that no
+  task and no project carrying the run's nonce survived.
 
   Repository only, and it carries its own dependencies for `uv run --script`.
 

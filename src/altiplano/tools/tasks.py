@@ -256,8 +256,8 @@ async def update_task(
     closed: it reopens regardless.
 
     Two wrinkles in what comes back. On v2 a partial update returns the description
-    as the stored HTML: v2 does not convert on a PATCH, so call `get_task` when you
-    need it as Markdown. And a write that changes nothing returns
+    as the stored HTML. v2 does not convert on a PATCH. Call `get_task` when you need
+    it as Markdown. And a write that changes nothing returns
     `{"ok": true, "unchanged": true}` there, which is Vikunja answering 304.
     """
     payload: dict[str, Any] = {}

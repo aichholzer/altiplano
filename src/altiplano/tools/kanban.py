@@ -117,6 +117,53 @@ async def create_bucket(
 
 
 @mcp.tool()
+async def update_bucket(
+    project_id: int,
+    bucket_id: int,
+    title: str | None = None,
+    limit: int | None = None,
+    view_id: int | None = None,
+) -> dict:
+    """Rename a column, or change how many tasks it accepts.
+
+    `limit` is the most tasks the column takes, and 0 means no limit. Lowering it
+    below the number already there is allowed: Vikunja keeps them and refuses the
+    next move in.
+
+    Neither API version has a partial update for a bucket. This reads the column and
+    writes it back whole, and a body carrying only a title resets `limit` to 0 on both
+    versions. There is also no endpoint for reading one bucket. The read comes from the
+    view's bucket list, and a `bucket_id` absent from that view is refused before
+    anything is written.
+
+    Position is preserved. To move a column, use the Vikunja web interface: this API
+    exposes no ordering call.
+    """
+    payload: dict[str, Any] = {}
+    if title is not None:
+        payload["title"] = title
+    if limit is not None:
+        payload["limit"] = limit
+    if not payload:
+        raise ValueError("No fields to update")
+
+    view = await _kanban_view(project_id, view_id)
+    path = f"/projects/{project_id}/views/{view['id']}/buckets"
+    buckets = _items(await _request("GET", path))
+    current = next((b for b in buckets if b.get("id") == bucket_id), None)
+    if current is None:
+        raise ValueError(
+            f"view {view['id']} of project {project_id} has no bucket {bucket_id}. "
+            f"Its buckets are {sorted(b['id'] for b in buckets)}."
+        )
+    # `count` is derived from the tasks in the column, and `$schema` is v2 metadata.
+    # Neither belongs in a write.
+    body = {k: v for k, v in current.items() if k not in ("$schema", "count")}
+    body.update(payload)
+    return await _request(_verb("replace"), f"{path}/{bucket_id}", json=body)
+
+
+@mcp.tool()
 async def delete_bucket(project_id: int, bucket_id: int, view_id: int | None = None) -> dict:
     """Delete a column from a project's kanban view.
 

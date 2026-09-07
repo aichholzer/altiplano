@@ -69,8 +69,31 @@ KANBAN_VIEW = [
 ]
 
 
+# What the fake hands back to the project and label tools that read before writing.
+# Same shape as READ_BACK above, for the resources with their own replace path.
+PROJECT_READ_BACK = {"id": 3, "title": "Existing"}
+LABEL_READ_BACK = {"id": 1, "title": "Existing"}
+
+# A bucket write makes two reads: the view, then that view's bucket list. One
+# response answers both, the way the move_task_to_bucket case below does. `_items`
+# unwraps the envelope, `_kanban_view` picks the entry with a kanban `view_kind`, and
+# the bucket lookup picks the one whose id it was given.
+BUCKET_IN_VIEW = {"id": 41, "title": "Existing", "limit": 0, "position": 100, "count": 7}
+VIEW_AND_ITS_BUCKETS = {"items": [*KANBAN_VIEW, BUCKET_IN_VIEW]}
+
+
 ROUTES = [
     route("list_projects", lambda: projects.list_projects(), READ, "/projects", {}),
+    route(
+        "update_project",
+        lambda: projects.update_project(3, title="Renamed"),
+        UPDATE,
+        "/projects/3",
+        # v1 writes the project back whole. v2 sends the change alone.
+        {1: {**PROJECT_READ_BACK, "title": "Renamed"}, 2: {"title": "Renamed"}},
+        response=PROJECT_READ_BACK,
+    ),
+    route("delete_project", lambda: projects.delete_project(3), REMOVE, "/projects/3", {}),
     route("get_task", lambda: tasks.get_task(7), READ, "/tasks/7", {}),
     route("list_tasks", lambda: tasks.list_tasks(3), READ, "/projects/3/tasks", {}),
     route("search_tasks", lambda: tasks.search_tasks(), READ, "/tasks", {}),
@@ -105,6 +128,14 @@ ROUTES = [
         CREATE,
         "/labels",
         {"title": "Doing"},
+    ),
+    route(
+        "update_label",
+        lambda: labels.update_label(1, title="Renamed"),
+        UPDATE,
+        "/labels/1",
+        {1: {**LABEL_READ_BACK, "title": "Renamed"}, 2: {"title": "Renamed"}},
+        response=LABEL_READ_BACK,
     ),
     route("delete_label", lambda: labels.delete_label(1), REMOVE, "/labels/1", {}),
     route("add_label", lambda: labels.add_label(7, 1), CREATE, "/tasks/7/labels", {"label_id": 1}),
@@ -166,6 +197,16 @@ ROUTES = [
         "/projects/3/views/48/buckets",
         {"title": "Doing"},
         response=KANBAN_VIEW,
+    ),
+    route(
+        "update_bucket",
+        lambda: kanban.update_bucket(3, 41, title="Renamed"),
+        # No partial update exists for a bucket on either version. Both write the
+        # column back whole, and `count` is derived and stays out of the body.
+        REPLACE,
+        "/projects/3/views/48/buckets/41",
+        {"id": 41, "title": "Renamed", "limit": 0, "position": 100},
+        response=VIEW_AND_ITS_BUCKETS,
     ),
     route(
         "delete_bucket",
@@ -916,6 +957,204 @@ def test_v1_refuses_to_replace_from_a_read_that_is_not_a_task(api, run):
     with pytest.raises(RuntimeError, match="did not return task 7"):
         run(tasks.update_task(7, done=True))
     assert [r.method for r in api.requests] == ["GET"]
+
+
+# --- projects, labels, and buckets have the same hazard ----------------------
+# Each of these three endpoints resets fields a body omits, and each does it
+# differently. The write path per resource reads first for that reason, and these
+# are the tests that hold it there.
+V1_PROJECT = {
+    "id": 3,
+    "title": "Existing",
+    "description": "<p>keep me</p>",
+    "hex_color": "e11d48",
+    "parent_project_id": 9,
+    "is_archived": True,
+}
+
+
+def test_v1_update_project_merges_into_the_project_it_read_first(api, run):
+    """The field that matters here is `is_archived`.
+
+    On v1 a title-only body un-archives an archived project: Go's zero value for a
+    bool is false, and Vikunja cannot tell an omitted flag from one set to false.
+    `hex_color` clears the same way. Verified against 2.5.0 before this was written.
+    """
+    api.returns(V1_PROJECT)
+    run(projects.update_project(3, title="Renamed"))
+
+    read, write = api.requests
+    assert read.method == "GET"
+    assert write.method == "POST"
+    assert body(write) == {**V1_PROJECT, "title": "Renamed"}
+
+
+def test_v1_update_project_refuses_to_replace_from_a_read_that_is_not_a_project(api, run):
+    api.returns_raw(204)
+    with pytest.raises(RuntimeError, match="did not return project 3"):
+        run(projects.update_project(3, title="Renamed"))
+
+
+def test_v1_update_label_merges_into_the_label_it_read_first(api, run):
+    """A title-only body on v1 clears `hex_color` and `description`. Renaming a label
+    would strip its colour."""
+    api.returns({"id": 1, "title": "Existing", "hex_color": "4287f5", "description": "keep me"})
+    run(labels.update_label(1, title="Renamed"))
+
+    read, write = api.requests
+    assert read.method == "GET"
+    assert write.method == "POST"
+    assert body(write) == {
+        "id": 1,
+        "title": "Renamed",
+        "hex_color": "4287f5",
+        "description": "keep me",
+    }
+
+
+def test_v1_update_label_refuses_to_replace_from_a_read_that_is_not_a_label(api, run):
+    api.returns_raw(204)
+    with pytest.raises(RuntimeError, match="did not return label 1"):
+        run(labels.update_label(1, title="Renamed"))
+
+
+@pytest.mark.parametrize("api_version", [1, 2])
+def test_update_bucket_keeps_the_limit_it_was_not_asked_to_change(api, run, api_version):
+    """Neither version has a partial update for a bucket, and a title-only body
+    resets `limit` to 0 on both. The write is the column read back whole."""
+    api.returns(VIEW_AND_ITS_BUCKETS)
+    run(kanban.update_bucket(3, 41, title="Renamed"))
+    assert body(api.last) == {"id": 41, "title": "Renamed", "limit": 0, "position": 100}
+
+
+@pytest.mark.parametrize("api_version", [1, 2])
+def test_update_bucket_sends_a_new_limit(api, run, api_version):
+    api.returns(VIEW_AND_ITS_BUCKETS)
+    run(kanban.update_bucket(3, 41, limit=5))
+    assert body(api.last) == {"id": 41, "title": "Existing", "limit": 5, "position": 100}
+
+
+def test_update_bucket_refuses_a_bucket_that_is_not_in_the_view(api, run):
+    """Vikunja has no endpoint for reading one bucket. The id is checked against the
+    view's list, and without that the write would address a bucket in another view."""
+    api.returns(VIEW_AND_ITS_BUCKETS)
+    with pytest.raises(ValueError, match="has no bucket 99"):
+        run(kanban.update_bucket(3, 99, title="Renamed"))
+    assert [r.method for r in api.requests] == ["GET", "GET"]
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        pytest.param(lambda: projects.update_project(3), id="update_project"),
+        pytest.param(lambda: labels.update_label(1), id="update_label"),
+        pytest.param(lambda: kanban.update_bucket(3, 41), id="update_bucket"),
+    ],
+)
+def test_an_update_with_no_fields_is_refused_before_any_request(api, run, call):
+    with pytest.raises(ValueError, match="No fields to update"):
+        run(call())
+    assert api.requests == []
+
+
+@pytest.mark.parametrize("api_version", [2])
+def test_update_project_sends_every_supplied_field(api, run, api_version):
+    """v2 without a description is a single partial update, and the body on the wire
+    is exactly the fields that were passed."""
+    run(
+        projects.update_project(
+            3, title="New", parent_project_id=9, is_archived=True, hex_color="e11d48"
+        )
+    )
+    assert [r.method for r in api.requests] == ["PATCH"]
+    assert body(api.last) == {
+        "title": "New",
+        "parent_project_id": 9,
+        "is_archived": True,
+        "hex_color": "e11d48",
+    }
+
+
+@pytest.mark.parametrize("api_version", [2])
+def test_update_project_can_unarchive(api, run, api_version):
+    """`is_archived: false` has to reach the wire. It is the only way back from an
+    archived project, and a falsy value is the easy one to drop while building a
+    payload."""
+    run(projects.update_project(3, is_archived=False))
+    assert body(api.last) == {"is_archived": False}
+
+
+@pytest.mark.parametrize("api_version", [2])
+def test_update_label_sends_every_supplied_field(api, run, api_version):
+    run(labels.update_label(1, title="New", hex_color="4287f5"))
+    assert [r.method for r in api.requests] == ["PATCH"]
+    assert body(api.last) == {"title": "New", "hex_color": "4287f5"}
+
+
+@pytest.mark.parametrize("api_version", [2])
+def test_a_project_description_change_reads_then_replaces_on_v2(api, run, api_version):
+    """Two things make PATCH unusable here. It stores the Markdown verbatim into a
+    field rendered as HTML, and the replace verb that does convert rejects a body
+    with no title. The read supplies the title and the conversion happens."""
+    api.returns({"id": 3, "title": "Existing", "hex_color": "e11d48"})
+    run(projects.update_project(3, description="**bold**"))
+
+    read, write = api.requests
+    assert read.method == "GET"
+    assert write.method == "PUT"
+    assert dict(read.url.params) == {"format": "markdown"}
+    assert dict(write.url.params) == {"format": "markdown"}
+    assert body(write) == {
+        "id": 3,
+        "title": "Existing",
+        "hex_color": "e11d48",
+        "description": "**bold**",
+    }
+
+
+@pytest.mark.parametrize("api_version", [2])
+def test_a_label_description_change_reads_then_replaces_on_v2(api, run, api_version):
+    """PATCH would not convert the Markdown. Same asymmetry as a task description."""
+    api.returns({"id": 1, "title": "Existing", "hex_color": "4287f5"})
+    run(labels.update_label(1, description="**bold**"))
+
+    read, write = api.requests
+    assert read.method == "GET"
+    assert write.method == "PUT"
+    assert body(write) == {"id": 1, "title": "Existing", "hex_color": "4287f5",
+                           "description": "**bold**"}
+
+
+@pytest.mark.parametrize("api_version", [2])
+def test_a_label_replace_sends_if_match_when_the_read_offered_an_etag(api, run, api_version):
+    api.returns_in_order(
+        httpx.Response(200, json={"id": 1, "title": "Existing"}, headers={"ETag": '"abc"'}),
+        httpx.Response(200, json={"id": 1, "title": "Existing", "description": "x"}),
+    )
+    run(labels.update_label(1, description="x"))
+    assert api.last.headers.get("If-Match") == '"abc"'
+
+
+@pytest.mark.parametrize("api_version", [2])
+def test_a_label_that_changed_underneath_reports_the_conflict(api, run, api_version):
+    """412 means the label moved between the read and the write. Nothing was written,
+    and the message says that in words the caller can act on."""
+    api.returns_in_order(
+        httpx.Response(200, json={"id": 1, "title": "Existing"}, headers={"ETag": '"abc"'}),
+        httpx.Response(412, json={"detail": "precondition failed"}),
+    )
+    with pytest.raises(RuntimeError, match="label 1 changed while this update"):
+        run(labels.update_label(1, description="x"))
+
+
+@pytest.mark.parametrize("api_version", [2])
+def test_a_label_replace_that_fails_for_another_reason_keeps_the_real_error(api, run, api_version):
+    api.returns_in_order(
+        httpx.Response(200, json={"id": 1, "title": "Existing"}),
+        httpx.Response(500, json={"detail": "database is on fire"}),
+    )
+    with pytest.raises(httpx.HTTPStatusError, match="database is on fire"):
+        run(labels.update_label(1, description="x"))
 
 
 # --- query parameters -------------------------------------------------------

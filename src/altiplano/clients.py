@@ -354,9 +354,9 @@ def _add(label: str, vikunja_token: str) -> str:
 def _set_vikunja_token(label: str, vikunja_token: str) -> bool:
     """Replace the Vikunja token `label` acts with. False when there is no such label.
 
-    The client's own token is untouched, and it keeps working. That is the whole point:
-    repairing a record carried over from a v1 store, or moving a client to a new Vikunja
-    token, costs nobody a redistributed client token.
+    The client's own token is untouched and keeps working. Repairing a record carried
+    over from a v1 store, or moving a client to a new Vikunja token, needs no client
+    token redistributed and no client reconfigured.
     """
     if not _VIKUNJA_TOKEN.fullmatch(vikunja_token):
         raise ValueError(

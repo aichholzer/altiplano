@@ -146,8 +146,12 @@ Keep the client token private. It grants access to the service and every tool it
 <details>
 <summary>Projects</summary>
 
-- `list_projects()`: includes `parent_project_id` for sub-projects.
+- `list_projects()`: includes `parent_project_id` for sub-projects and `is_archived`.
 - `create_project(title, parent_project_id?, description?)`: pass `parent_project_id` to create a sub-project.
+- `update_project(project_id, title?, description?, parent_project_id?, is_archived?, hex_color?)`: changes only the supplied fields and requires at least one. `is_archived` archives and unarchives, and Vikunja has no separate archive endpoint. `hex_color` is six hexadecimal digits without `#`.
+- `delete_project(project_id)`: deletes the project, its sub-projects, and every task in all of them, along with each task's comments, labels, and assignees. Vikunja retains them for 30 days and provides no restore endpoint. Treat deletion as irreversible, and prefer `update_project(project_id, is_archived=True)` to set a project aside.
+
+> An archived project stays visible to `list_projects` with `is_archived` set. Vikunja refuses writes to anything inside it.
 
 </details>
 
@@ -174,6 +178,7 @@ Keep the client token private. It grants access to the service and every tool it
 - `list_kanban_views(project_id)`: includes the default and done bucket IDs.
 - `list_buckets(project_id, view_id?)`: returns columns in board order and marks the default and done columns.
 - `create_bucket(project_id, title, view_id?, limit?)`: adds a column at the right. Omit `limit`, or pass `0`, for no limit.
+- `update_bucket(project_id, bucket_id, title?, limit?, view_id?)`: renames a column or changes its limit, and requires at least one field. Neither API version offers a partial update here. The call reads the column and writes it back whole. Column order is not writable.
 - `delete_bucket(project_id, bucket_id, view_id?)`: moves the column's tasks to the default column. Vikunja will not remove the last column.
 - `list_bucket_tasks(project_id, view_id?, filter?)`: returns columns and their tasks. `task_count` remains the full count when Vikunja caps the returned task list.
 - `list_task_buckets(task_id)`: returns one bucket for each kanban view.
@@ -205,9 +210,9 @@ Bucket behaviour:
 <details>
 <summary>Labels</summary>
 
-`list_labels()`, `create_label(title, hex_color?, description?)`, `delete_label(label_id)`, `add_label(task_id, label_id)`, `remove_label(task_id, label_id)`.
+`list_labels()`, `create_label(title, hex_color?, description?)`, `update_label(label_id, title?, hex_color?, description?)`, `delete_label(label_id)`, `add_label(task_id, label_id)`, `remove_label(task_id, label_id)`.
 
-> `hex_color` is six hexadecimal digits without `#`. Deleting a label removes it from every task.
+> `hex_color` is six hexadecimal digits without `#`. `update_label` changes only the supplied fields and requires at least one; every task carrying the label shows the change. Deleting a label removes it from every task.
 
 </details>
 

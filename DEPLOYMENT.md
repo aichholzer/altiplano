@@ -417,9 +417,12 @@ serial pass alone would miss it.
 Three isolation checks follow each run. A search for the other account's nonce sweeps
 every project that token can see and must come back empty. Direct reads of the other
 account's task, its comments, and its project must all be refused. And `created_by` on a
-task each client has just created must name the expected Vikunja user. Everything is
-deleted afterwards, whatever failed along the way, and the projects the tour created are
-reported by id and title for removal in Vikunja.
+task each client has just created must name the expected Vikunja user.
+
+The tour writes only into projects it creates: one project and a sub-project of it per
+account. Everything is deleted afterwards whatever failed along the way, and two closing
+checks confirm that no task and no project carrying the run's nonce survived. Anything
+that does survive is named by id.
 
 Use test accounts for `--write`. Without it the script reads only, and the strongest
 signal it can offer is that the two clients see different sets of project ids.

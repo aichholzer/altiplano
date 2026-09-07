@@ -33,6 +33,7 @@ import httpx2
 import pytest
 
 from altiplano import clients, config, http_server
+from altiplano.server import mcp
 
 URL = "http://testserver/mcp"
 PROTOCOL = "2025-06-18"
@@ -334,7 +335,10 @@ def test_the_real_client_library_serves_two_users_concurrently(served):
     alice, bob = asyncio.run(scenario())
 
     assert alice["server"] == bob["server"] == "altiplano"
-    assert alice["tools"] == bob["tools"] == 35
+    # Counted off the registry. A literal here goes stale on the next tool added, and
+    # what this asserts is that both clients discovered the whole surface over HTTP.
+    registered = len(asyncio.run(mcp.list_tools()))
+    assert alice["tools"] == bob["tools"] == registered
     assert alice["titles"] == ["PROJECT-OF-alice", "PROJECT-OF-alice"]
     assert bob["titles"] == ["PROJECT-OF-bob", "PROJECT-OF-bob"]
 

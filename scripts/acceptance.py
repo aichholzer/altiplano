@@ -36,9 +36,12 @@ nonce sweeps every project that token can see and must return nothing. Direct re
 the other account's objects by id must be refused. And every object an account created
 must carry its own nonce and no other.
 
-Everything is deleted afterwards, in reverse order, whatever happened. One exception is
-unavoidable and reported. Altiplano exposes no `delete_project`, and the project each
-tour creates is left behind by name.
+Everything is deleted afterwards, in reverse order, whatever happened: comments,
+buckets, labels, tasks, then the projects. Two closing checks confirm it, one for tasks
+and one for projects, and each names what survived.
+
+The tour writes only into projects it created. It reads the account's existing ones to
+confirm it can, and creates a project plus a sub-project of its own for everything else.
 
 Use test accounts for `--write`.
 
@@ -69,12 +72,12 @@ PROTOCOL = "2025-06-18"
 # Every tool the server exposes. The tour asserts it called all of them. A tool added to
 # Altiplano with no step here is named in the coverage check at the end.
 EXPECTED_TOOLS = {
-    "list_projects", "create_project",
+    "list_projects", "create_project", "update_project", "delete_project",
     "list_tasks", "get_task", "create_task", "update_task", "set_reminders", "delete_task",
     "search_tasks", "move_task", "duplicate_task", "bulk_create_tasks", "bulk_update_tasks",
-    "list_labels", "create_label", "delete_label", "add_label", "remove_label",
+    "list_labels", "create_label", "update_label", "delete_label", "add_label", "remove_label",
     "list_comments", "add_comment", "update_comment", "delete_comment",
-    "list_kanban_views", "list_buckets", "create_bucket", "delete_bucket",
+    "list_kanban_views", "list_buckets", "create_bucket", "update_bucket", "delete_bucket",
     "list_bucket_tasks", "list_task_buckets", "move_task_to_bucket",
     "add_relation", "remove_relation",
     "search_users", "list_assignees", "add_assignee", "remove_assignee",
@@ -263,7 +266,11 @@ class Made:
     nonce: str
     project_id: int | None = None
     project_title: str | None = None
-    inbox_id: int | None = None
+    # Sub-projects of the one above, created as somewhere to move a task to. Deleted
+    # before their parent: deleting the parent would take them, and the explicit
+    # delete would then answer 404 and read as a cleanup failure.
+    sub_projects: list[int] = field(default_factory=list)
+    move_target_id: int | None = None
     tasks: list[int] = field(default_factory=list)
     labels: list[int] = field(default_factory=list)
     buckets: list[int] = field(default_factory=list)
@@ -283,6 +290,11 @@ def _writable(projects: list) -> dict | None:
     return None
 
 
+def _find(projects: list, project_id: int | None) -> dict:
+    """One project out of a `list_projects` result, or an empty dict."""
+    return next((p for p in projects if p.get("id") == project_id), {})
+
+
 async def tour(report: Report, client: Client, nonce: str) -> Made:
     """Call every tool once, tagging everything with `nonce`.
 
@@ -298,15 +310,28 @@ async def tour(report: Report, client: Client, nonce: str) -> Made:
     # --- projects
     try:
         existing = await client.call_list("list_projects", {})
-        inbox = _writable(existing)
-        made.inbox_id = inbox["id"] if inbox else None
-        step(bool(inbox), "lists projects and has one that can hold tasks",
-             f"{len(existing)} visible, writable {made.inbox_id}")
+        step(bool(_writable(existing)), "lists projects and has one that can hold tasks",
+             f"{len(existing)} visible")
         project = await client.call(
             "create_project", {"title": f"{tag} acceptance", "description": f"{tag} throwaway"}
         )
         made.project_id, made.project_title = project["id"], project.get("title")
         step(True, "creates a project", f"project {made.project_id}")
+
+        # Somewhere to move a task to. A sub-project of the one above. The tour never
+        # writes into a project the account already had.
+        sub = await client.call(
+            "create_project",
+            {"title": f"{tag} sub", "parent_project_id": made.project_id},
+        )
+        made.sub_projects.append(sub["id"])
+        made.move_target_id = sub["id"]
+        listed = await client.call_list("list_projects", {})
+        step(
+            _find(listed, sub["id"]).get("parent_project_id") == made.project_id,
+            "creates a sub-project and it reports its parent",
+            f"project {sub['id']} under {made.project_id}",
+        )
     except ToolFailed as err:
         step(False, "sets up its projects", str(err))
         return made
@@ -364,10 +389,18 @@ async def tour(report: Report, client: Client, nonce: str) -> Made:
             made.tasks.append(copy_id)
         step(bool(copy_id), "duplicates a task and names the copy", f"copy {copy_id}")
 
-        if made.inbox_id and made.inbox_id != target:
-            await client.call("move_task", {"task_id": second["id"], "project_id": made.inbox_id})
+        if made.move_target_id:
+            await client.call(
+                "move_task", {"task_id": second["id"], "project_id": made.move_target_id}
+            )
+            moved = await client.call("get_task", {"task_id": second["id"]})
+            here = moved.get("project_id") == made.move_target_id
             await client.call("move_task", {"task_id": second["id"], "project_id": target})
-            step(True, "moves a task between projects and back")
+            back = await client.call("get_task", {"task_id": second["id"]})
+            step(
+                here and back.get("project_id") == target,
+                "moves a task into its sub-project and back",
+            )
         else:
             step(False, "has a second project to move a task to")
     except ToolFailed as err:
@@ -395,6 +428,18 @@ async def tour(report: Report, client: Client, nonce: str) -> Made:
         step(bool(labelled.get("labels")), "creates a label and attaches it", f"label {label['id']}")
         all_labels = await client.call_list("list_labels", {})
         step(any(item.get("id") == label["id"] for item in all_labels), "lists its labels")
+
+        # The colour has to survive a title-only update. On v1 that write is a replace,
+        # and a partial body clears hex_color and description.
+        await client.call("update_label", {"label_id": label["id"], "title": f"{tag}-renamed"})
+        all_labels = await client.call_list("list_labels", {})
+        renamed = next((item for item in all_labels if item.get("id") == label["id"]), {})
+        step(
+            renamed.get("title") == f"{tag}-renamed",
+            "renames a label",
+            f"title {renamed.get('title')!r}",
+        )
+
         await client.call("remove_label", {"task_id": made.tasks[0], "label_id": label["id"]})
         step(True, "detaches the label")
 
@@ -434,9 +479,26 @@ async def tour(report: Report, client: Client, nonce: str) -> Made:
         step(bool(views), "lists kanban views", f"{len(views)} view(s)")
         buckets = await client.call_list("list_buckets", {"project_id": target})
         step(bool(buckets), "lists buckets", f"{len(buckets)} bucket(s)")
-        bucket = await client.call("create_bucket", {"project_id": target, "title": f"{tag} column"})
+        bucket = await client.call(
+            "create_bucket", {"project_id": target, "title": f"{tag} column", "limit": 4}
+        )
         made.buckets.append(bucket["id"])
         step(True, "creates a bucket", f"bucket {bucket['id']}")
+
+        # The limit has to survive a title-only update. Neither API version has a
+        # partial update for a column, and a partial body resets the limit to 0.
+        await client.call(
+            "update_bucket",
+            {"project_id": target, "bucket_id": bucket["id"], "title": f"{tag} renamed column"},
+        )
+        columns = await client.call_list("list_buckets", {"project_id": target})
+        mine = next((c for c in columns if c.get("id") == bucket["id"]), {})
+        step(
+            mine.get("title") == f"{tag} renamed column" and mine.get("limit") == 4,
+            "renames a bucket and keeps its limit",
+            f"title {mine.get('title')!r}, limit {mine.get('limit')}",
+        )
+
         await client.call("move_task_to_bucket", {"task_id": made.tasks[0],
                                                  "bucket_id": bucket["id"]})
         placed = await client.call_list("list_task_buckets", {"task_id": made.tasks[0]})
@@ -448,6 +510,35 @@ async def tour(report: Report, client: Client, nonce: str) -> Made:
         step(bool(with_tasks), "lists buckets with their tasks", f"{len(with_tasks)} bucket(s)")
     except ToolFailed as err:
         step(False, "completes the kanban tour", str(err))
+
+    # --- the project itself, last. Vikunja refuses writes inside an archived project,
+    # so the archive round-trip runs once every other write is done.
+    try:
+        renamed = f"{tag} renamed project"
+        await client.call(
+            "update_project",
+            {"project_id": target, "title": renamed, "description": f"{tag} **described**"},
+        )
+        listed = await client.call_list("list_projects", {})
+        step(
+            _find(listed, target).get("title") == renamed,
+            "renames a project",
+            f"title {_find(listed, target).get('title')!r}",
+        )
+        made.project_title = _find(listed, target).get("title") or made.project_title
+
+        await client.call("update_project", {"project_id": target, "is_archived": True})
+        listed = await client.call_list("list_projects", {})
+        archived = _find(listed, target).get("is_archived")
+        await client.call("update_project", {"project_id": target, "is_archived": False})
+        listed = await client.call_list("list_projects", {})
+        step(
+            archived is True and _find(listed, target).get("is_archived") is False,
+            "archives a project and brings it back",
+            f"archived {archived}, now {_find(listed, target).get('is_archived')}",
+        )
+    except ToolFailed as err:
+        step(False, "completes the project lifecycle tour", str(err))
 
     return made
 
@@ -552,6 +643,15 @@ async def clean_up(report: Report, client: Client, made: Made) -> None:
             await client.call("delete_task", {"task_id": task_id})
         except Exception as err:  # noqa: BLE001
             report.record(False, f"{client.name} deletes task {task_id}", str(err))
+    # Sub-projects before their parent. Deleting the parent cascades, and a delete
+    # aimed at an already-cascaded child would answer 404.
+    for project_id in [*reversed(made.sub_projects), made.project_id]:
+        if not project_id:
+            continue
+        try:
+            await client.call("delete_project", {"project_id": project_id})
+        except Exception as err:  # noqa: BLE001
+            report.record(False, f"{client.name} deletes project {project_id}", str(err))
 
 
 async def check_nothing_remains(report: Report, client: Client, made: Made) -> None:
@@ -564,11 +664,19 @@ async def check_nothing_remains(report: Report, client: Client, made: Made) -> N
         f"{client.name} leaves no task behind",
         f"searched {made.nonce}, {len(left)} remaining",
     )
-    if made.project_id:
-        report.note(
-            f"project {made.project_id} ({made.project_title!r}) is left behind: "
-            "Altiplano exposes no delete_project. Remove it in Vikunja."
-        )
+
+    try:
+        projects = await client.call_list("list_projects", {})
+    except ToolFailed:
+        projects = []
+    mine = [p for p in projects if made.nonce in str(p.get("title") or "")]
+    ids = [p["id"] for p in mine]
+    report.record(
+        not mine,
+        f"{client.name} leaves no project behind",
+        f"{len(mine)} remaining"
+        + (f": {ids}. Remove them in Vikunja." if mine else ", the tour's projects included"),
+    )
 
 
 # --- the tours ----------------------------------------------------------------
