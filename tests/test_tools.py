@@ -1004,6 +1004,28 @@ def test_list_assignees_returns_id_and_username(api, run):
     assert run(assignees.list_assignees(7)) == [{"id": 1, "username": "stefan"}]
 
 
+@pytest.mark.parametrize("api_version", [1, 2])
+def test_duplicate_task_returns_the_copy_out_of_its_envelope(api, run, api_version):
+    """Vikunja answers a duplicate with `{"duplicated_task": {...}}` on both versions,
+    and v2 adds a `$schema` sibling. A caller reading `id` off that envelope gets
+    None, and the copy it has just made becomes unreachable."""
+    api.returns(
+        {
+            "$schema": "https://vikunja.test/api/v2/schemas/TaskDuplicate.json",
+            "duplicated_task": {"id": 556, "title": "Task", "project_id": 19},
+        }
+    )
+    assert run(tasks.duplicate_task(7)) == {"id": 556, "title": "Task", "project_id": 19}
+
+
+def test_duplicate_task_passes_through_a_body_without_the_envelope(api, run):
+    """The key belongs to Vikunja. A rename upstream would otherwise turn a
+    successful duplicate into a KeyError. The copy exists by then, and its id is the
+    only way back to it."""
+    api.returns({"id": 556, "title": "Task"})
+    assert run(tasks.duplicate_task(7)) == {"id": 556, "title": "Task"}
+
+
 # Applied to each collection-shape test below. All six listings are held to the
 # same contract.
 every_listing = pytest.mark.parametrize(
