@@ -324,8 +324,15 @@ async def duplicate_task(task_id: int) -> dict:
     The copy lands in the same project as the original and links back to it with a
     `copiedfrom` relation. Vikunja offers no way to duplicate straight into another
     project; call `move_task` on the copy for that.
+
+    Returns the copy, carrying the `id` a caller needs to act on it. Vikunja wraps
+    this one response in a `duplicated_task` envelope on both API versions, and that
+    wrapper is removed here. A body without the key is passed through whole.
     """
-    return await _request(_verb("create"), f"/tasks/{task_id}/duplicate")
+    copy = await _request(_verb("create"), f"/tasks/{task_id}/duplicate")
+    if isinstance(copy, dict) and isinstance(copy.get("duplicated_task"), dict):
+        return copy["duplicated_task"]
+    return copy
 
 
 @mcp.tool()

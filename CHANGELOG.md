@@ -67,6 +67,12 @@ All notable changes to this project are documented here.
 - `ALTIPLANO_HTTP_ALLOW_UNAUTHENTICATED` serves with no token, for local
   development. It is refused on any bind address other than loopback.
 
+### Fixed
+
+- `duplicate_task` returns the copied task, carrying its `id`. Vikunja answers a
+  duplicate with a `duplicated_task` envelope on both API versions, and that envelope
+  was passed through whole. A caller had no way to reach the copy it had just made.
+
 ### Security
 
 - The HTTP transport is stateless and issues no `mcp-session-id`. In the SDK's
