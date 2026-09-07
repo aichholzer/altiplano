@@ -76,14 +76,35 @@ with no restart.
 
 ### What persists
 
-`/var/lib/altiplano`, holding the `clients` store. **Back this one up. Losing it means
-re-registering every client. `clients.lock` and any `.clients-*` beside it are
+`/var/lib/altiplano`, holding the `clients` store. **Back this one up.** Losing it
+means re-registering every client. `clients.lock` and any `.clients-*` beside it are
 disposable.
 
 ```bash
 docker compose down            # keeps the volume
 docker compose down -v         # deletes it, and every client token with it
 ```
+
+### Surviving a reboot
+
+`restart: unless-stopped` brings the container back after a crash, a daemon restart, or
+a reboot of the host. It rests on the Docker daemon starting at boot, which is the
+usual arrangement and takes one command to confirm:
+
+```bash
+rc-update show default | grep docker   # OpenRC, on Alpine
+systemctl is-enabled docker            # systemd
+```
+
+Nothing back from either means the daemon is not enabled, and neither is Altiplano.
+
+`unless-stopped` also means what it says. A container you stopped with
+`docker compose stop` stays stopped through a reboot. Docker records that the stop was
+deliberate. `restart: always` brings it back regardless, at the cost of a stop that
+sticks.
+
+`docker compose down` removes the container, which leaves no restart policy to act on.
+Bringing it back needs another `up -d`.
 
 ### Healthcheck
 
