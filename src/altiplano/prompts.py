@@ -199,13 +199,45 @@ anything else uses v1. Descriptions are written as Markdown on both. What differ
   `{"ok": true, "unchanged": true}`. Vikunja answers such a request with 304, and
   `update_task()` and `set_reminders()` report it that way. The call succeeded and
   the stored value already matched.
+
+## Deploying a shared HTTP service
+
+`altiplano-http` serves these same tools to several clients over Streamable HTTP,
+each acting as its own Vikunja user. This section applies when asked to stand such
+a service up. Connecting to one that already exists needs an endpoint URL and a
+client token and nothing else.
+
+What breaks on a first attempt:
+
+Register a client before the first start. A non-loopback bind with an empty client
+store refuses to come up, and a container set to restart will loop on it.
+`altiplano-clientkey add <label>` writes the store without starting a server.
+
+`ALTIPLANO_HTTP_ALLOWED_HOSTS` replaces its loopback defaults once set. It has to
+name every address clients dial, and a `Host` header outside the list gets a `421`.
+List `host` and `host:*` both: the bare form matches a `Host` with no port and the
+starred form matches one with a port.
+
+Running it through `uv run`, `--env-file` is not read by default. Leaving the flag
+off means every setting falls back to its default.
+
+A registered client with no Vikunja token gets a `403`. The bearer token was
+accepted, and the record holds no Vikunja identity to act as.
+`altiplano-clientkey list` marks that client `MISSING`, and
+`altiplano-clientkey update <label>` repairs it.
+
+`altiplano-http --check` validates what startup validates and opens no socket. Run
+it before the first start.
+
+`DEPLOYMENT.md` in the repository has the Docker and `uv` sequences in full.
 """
 
 
 @mcp.prompt(title="Using Altiplano")
 def altiplano_guide() -> str:
     """How to drive Altiplano's tools: resolving ids, sequencing calls across
-    tools, the calls that cannot be undone, and the v1 and v2 differences. Load
-    this before making changes through the tools.
+    tools, the calls that cannot be undone, the v1 and v2 differences, and what
+    breaks when deploying `altiplano-http` as a shared service. Load this before
+    making changes through the tools.
     """
     return GUIDE

@@ -19,17 +19,33 @@ Ask which shape they want first. `README.md` opens with the choice under
 For a local install, follow `## Use locally with uvx`: `uv`, a Vikunja API token, a
 credentials file, the client's MCP entry, then one `list_projects()` call to confirm.
 
+Three things go wrong there. `VIKUNJA_URL` has to end in `/api/v1` or `/api/v2`,
+and that suffix alone selects the version. The token belongs in the credentials
+file. The MCP entry then holds no secrets. And a terminal run of `uvx altiplano`
+prints nothing and waits. It speaks MCP over stdio.
+
 For a client connecting to an HTTP service, follow `## Use over HTTP`, under
 `### Connect to an existing service`. That needs the endpoint URL and a client token
 from whoever operates it, and installs nothing.
 
 For a shared HTTP deployment on a host, `DEPLOYMENT.md` has the Docker path, the `uv`
-path, and the client token commands.
+path, and the client token commands. What goes wrong there:
 
-Three things go wrong there. `VIKUNJA_URL` has to end in `/api/v1` or `/api/v2`,
-and that suffix alone selects the version. The token belongs in the credentials
-file. The MCP entry then holds no secrets. And a terminal run of `uvx altiplano`
-prints nothing and waits. It speaks MCP over stdio.
+- A client has to be registered before the first start. A non-loopback bind with an
+  empty store refuses to come up, and under `restart: unless-stopped` that is a crash
+  loop. `altiplano-clientkey add` through `docker compose run --rm` writes the store
+  without starting a server.
+- `ALTIPLANO_HTTP_ALLOWED_HOSTS` replaces its loopback defaults once set, and a `Host`
+  outside the list gets a `421`. List `host` and `host:*` both. Neither covers the
+  other.
+- On the `uv` path, `--env-file` is not read by default. Leaving it off means every
+  setting falls back to its default.
+- A registered client with no Vikunja token gets a `403`. The bearer token was
+  accepted, and the record has no Vikunja identity to act as. `clientkey list` marks
+  it `MISSING` and `clientkey update` repairs it.
+
+`altiplano-http --check` validates what startup validates and opens no socket. Run it
+before the first start.
 
 ## Commands
 
@@ -73,7 +89,7 @@ undocumented tool. A new tool reaches both transports with no further work.
 - One concern per commit, and no task tracker references in commit messages.
 - Every change bumps the version across `pyproject.toml`,
   `src/altiplano/__init__.py`, and `uv.lock`, with a `CHANGELOG.md` entry under the
-  matching heading. A new tool is a minor bump.
+  matching heading. A new tool is a minor bump. Documentation-only changes skip both.
 - Australian spelling in prose. No em dashes, and no emoji.
 - Oxford comma in every list.
 - Never describe something by what it is not. Write the mechanism.

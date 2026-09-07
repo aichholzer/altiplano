@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here.
 
+## [2.1.2]
+
+### Added
+
+- `## Deploying a shared HTTP service` in the `altiplano_guide` prompt, naming what
+  breaks on a first attempt: the empty-store refusal on a non-loopback bind,
+  `ALTIPLANO_HTTP_ALLOWED_HOSTS` replacing its loopback defaults, `--env-file` going
+  unread under `uv run`, and the `403` for a registered client with no Vikunja token.
+  The handshake instructions name the section. An agent working from a wheel has no
+  checkout to read `DEPLOYMENT.md` in.
+
 ## [2.1.1]
 
 ### Changed
