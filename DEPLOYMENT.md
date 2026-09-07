@@ -409,11 +409,20 @@ export ALTIPLANO_TOKEN_B=altp_...
 The tokens are read from the environment, or prompted for if unset. Neither is ever an
 argument, where `ps` would show it.
 
-`--write` adds the conclusive check: each client creates one task in its own first
-project, `get_task` reports the `created_by` account the endpoint acted as, each client
-is confirmed unable to read the other's task, and both tasks are deleted. Use test
-accounts. Without `--write` the script reads only, and the strongest signal it can offer
-is that the two clients see different sets of project ids.
+`--write` calls every tool the server exposes, once for each account, with a per-run
+nonce in every payload. The tour runs twice: both accounts concurrently, then one after
+the other. Overlapping traffic is where request-scoped credentials would fail, and the
+serial pass alone would miss it.
+
+Three isolation checks follow each run. A search for the other account's nonce sweeps
+every project that token can see and must come back empty. Direct reads of the other
+account's task, its comments, and its project must all be refused. And `created_by` on a
+task each client has just created must name the expected Vikunja user. Everything is
+deleted afterwards, whatever failed along the way, and the projects the tour created are
+reported by id and title for removal in Vikunja.
+
+Use test accounts for `--write`. Without it the script reads only, and the strongest
+signal it can offer is that the two clients see different sets of project ids.
 
 The script also reports whether the endpoint issues an `mcp-session-id`. It should not,
 and one appearing means the host is running a build from before the transport went
