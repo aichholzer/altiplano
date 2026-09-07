@@ -15,6 +15,8 @@ import json
 from importlib.metadata import entry_points, version
 from pathlib import Path
 
+import pytest
+
 import altiplano
 from altiplano.server import mcp
 
@@ -66,9 +68,12 @@ def test_every_tool_registers():
     assert names == EXPECTED_TOOLS
 
 
-def test_console_script_resolves():
-    scripts = [e for e in entry_points(group="console_scripts") if e.name == "altiplano"]
-    assert len(scripts) == 1, "the altiplano console script is not installed"
+@pytest.mark.parametrize(
+    "name", ["altiplano", "altiplano-http", "altiplano-clientkey"]
+)
+def test_console_script_resolves(name):
+    scripts = [e for e in entry_points(group="console_scripts") if e.name == name]
+    assert len(scripts) == 1, f"the {name} console script is not installed"
     assert callable(scripts[0].load())
 
 

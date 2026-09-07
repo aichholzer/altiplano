@@ -1,9 +1,18 @@
 """Where the credentials come from, and the only module that reads a file.
 
-Resolved without storing secrets in a shared mcp.json:
-  1. Environment variables VIKUNJA_URL / VIKUNJA_API_TOKEN (preferred).
+`VIKUNJA_URL` is resolved without storing secrets in a shared mcp.json:
+  1. The environment variable (preferred).
   2. A per-device file of KEY=VALUE lines (default ~/.config/altiplano/env,
      override with ALTIPLANO_CONFIG). Keep it chmod 600.
+
+The Vikunja API token takes one source ahead of those two: whatever the current
+request is bound to, through `_acting_as`. The HTTP transport binds each request to
+the token of the client that made it. One server therefore serves several Vikunja
+identities from one process. stdio binds nothing and falls through to the environment
+and the file.
+
+The URL has no such override. Every client of one server reaches one Vikunja
+instance, and `api._version()` reads the v1 or v2 choice off that single URL.
 
 Nothing is resolved at import time. Every value is read when a request needs it.
 A rotated token takes effect without a restart.
@@ -11,7 +20,12 @@ A rotated token takes effect without a restart.
 
 import os
 import warnings
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
+
+import httpx
 
 _CONFIG_FILE = Path(
     os.environ.get("ALTIPLANO_CONFIG", Path.home() / ".config" / "altiplano" / "env")
@@ -33,19 +47,22 @@ def _warn_once(key: tuple[Path, str], message: str) -> None:
     warnings.warn(message, stacklevel=3)
 
 
-def _mode_warning(path: Path, mode: int) -> str | None:
-    """The complaint to make when the credentials file is not chmod 600, if any.
+def _mode_warning(path: Path, mode: int, holds: str = "your Vikunja API token") -> str | None:
+    """The complaint to make when a secret-bearing file is not chmod 600, if any.
 
     The module docstring asks for 600; this verifies it. It only warns: the file
     belongs to the user, and refusing to read one that works today would be the
     worse trade. The message names the path and the mode. The contents never appear
     in it.
+
+    `holds` names what is at risk. `clients.py` passes its own: the same check
+    guards the client token store.
     """
     if os.name != "posix" or not mode & 0o077:
         return None
     return (
-        f"{path} is accessible to group or others (mode {mode:04o}) and holds your "
-        f"Vikunja API token. Restrict it with: chmod 600 {path}"
+        f"{path} is accessible to group or others (mode {mode:04o}) and holds "
+        f"{holds}. Restrict it with: chmod 600 {path}"
     )
 
 
@@ -95,14 +112,65 @@ def _conf(key: str) -> str | None:
 
 
 def _base() -> str:
+    """The Vikunja API root, checked for shape as well as presence.
+
+    Parsed with `httpx.URL`, which is the parser the request layer uses. Validating
+    with anything else lets the check and the behaviour disagree: `urlsplit` accepted
+    `https://vikunja.test:abc/api/v2`, which httpx refuses when the request is built,
+    and raised a bare `ValueError` on `https://[::1/api/v2`, which reached the operator
+    as a traceback.
+
+    Three checks sit on top of the parse, one per observed failure. A missing scheme,
+    as in `vikunja.home.arpa/api/v2`, which httpx reads as a relative path. A missing
+    host, as in `https:///api/v2`. And a port outside the usable range, which
+    `httpx.URL` accepts and no listener can answer on.
+    """
     url = _conf("VIKUNJA_URL")
     if not url:
         raise RuntimeError("VIKUNJA_URL is not set (env or ~/.config/altiplano/env)")
+    try:
+        parsed = httpx.URL(url)
+    except (httpx.InvalidURL, ValueError) as err:
+        # `UnicodeError` is a `ValueError`, which covers a hostname IDNA cannot encode.
+        raise RuntimeError(f"VIKUNJA_URL cannot be parsed as a URL (got {url!r}): {err}") from err
+    if parsed.scheme not in ("http", "https"):
+        raise RuntimeError(
+            f"VIKUNJA_URL must begin with http:// or https:// (got {url!r}). It ends in "
+            "/api/v1 or /api/v2, and that suffix selects the API version."
+        )
+    if not parsed.host:
+        raise RuntimeError(f"VIKUNJA_URL names no host (got {url!r})")
+    if parsed.port is not None and not 1 <= parsed.port <= 65535:
+        raise RuntimeError(f"VIKUNJA_URL has a port outside 1 to 65535 (got {url!r})")
     return url.rstrip("/")
 
 
+# The Vikunja token the current request acts with. The HTTP gate binds it once the
+# caller is known; on stdio it stays unset.
+#
+# A ContextVar and not an argument because the alternative is threading an identity
+# through 35 tool signatures and every helper in `api.py`. A ContextVar set in ASGI
+# middleware reaches the tool coroutine and stays isolated per request, including
+# across overlapping calls on one long-lived session. `tests/test_clients.py` holds
+# the test that says so.
+_REQUEST_TOKEN: ContextVar[str | None] = ContextVar("altiplano_vikunja_token", default=None)
+
+
+@contextmanager
+def _acting_as(token: str) -> Iterator[None]:
+    """Bind the Vikunja token for everything called inside this block."""
+    handle = _REQUEST_TOKEN.set(token)
+    try:
+        yield
+    finally:
+        _REQUEST_TOKEN.reset(handle)
+
+
 def _headers() -> dict[str, str]:
-    token = _conf("VIKUNJA_API_TOKEN")
+    # The bound token wins. On the HTTP transport the gate refuses a caller it cannot
+    # bind one for. Falling through to the environment here therefore means stdio, or
+    # the loopback development mode that turns the gate off.
+    token = _REQUEST_TOKEN.get() or _conf("VIKUNJA_API_TOKEN")
     if not token:
         raise RuntimeError("VIKUNJA_API_TOKEN is not set (env or ~/.config/altiplano/env)")
     return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
