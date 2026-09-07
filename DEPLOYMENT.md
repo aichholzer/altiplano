@@ -133,7 +133,7 @@ uv run --no-project --env-file .env --with altiplano altiplano-http
 - Run as a dedicated account. The client store beside `.env` holds every client's
   Vikunja token in plaintext, and Altiplano writes it `chmod 600`.
 - `--with altiplano` resolves the newest release on each run. Pin it,
-  `--with altiplano==2.0.0`, for a service that restarts on its own.
+  `--with altiplano==2.0.1`, for a service that restarts on its own.
 
 To start on boot, wrap the serve line in whatever the host uses for services. On
 systemd that is a unit with `ExecStart` set to the full `uv run` command and
@@ -304,7 +304,7 @@ person's Vikunja token, confirm each reaches its own Vikunja account.
 | Connection refused from another machine | Bound to loopback, or the firewall drops it | Set `ALTIPLANO_HTTP_HOST=0.0.0.0`, check the firewall |
 | Connects, no tools | A stale install | `altiplano-http --version` on the host |
 | `403` naming a Vikunja identity | The client's record has no Vikunja token | `altiplano-clientkey list`, then `update` the client marked `MISSING` |
-| Tool calls fail with a Vikunja `401` | That client's Vikunja token is wrong or was deleted in Vikunja | `altiplano-clientkey update <label>` with a fresh token, and check `VIKUNJA_URL` |
+| Tool calls fail with a Vikunja `401` | Vikunja rejects that client's Vikunja token | Test the token against Vikunja directly, below. Then `altiplano-clientkey update <label>` |
 | A client sees someone else's tasks | Two clients were registered with one Vikunja token | `altiplano-clientkey update <label>` on one of them |
 | `No solution found`, naming Python | The default interpreter is older than 3.10 | Add `--python 3.13` to the `uv run` command |
 | Settings ignored, defaults used | `--env-file` was left off | uv does not read `.env` on its own |
@@ -312,6 +312,27 @@ person's Vikunja token, confirm each reaches its own Vikunja account.
 
 The log names the client label on every accepted request and the source address on
 every rejected one. Tokens never appear in it.
+
+### A Vikunja 401 is not Altiplano's
+
+Altiplano presents a client's Vikunja token and reports what Vikunja says. Take
+Altiplano out of the path before changing anything in it:
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' \
+  -H "Authorization: Bearer tk_THE_VIKUNJA_TOKEN" \
+  "$VIKUNJA_URL/projects"
+```
+
+A `401` there is between that token and Vikunja. Mint a new one under Settings, API
+Tokens, tick the permissions it needs, curl it again, and only then hand it to
+`altiplano-clientkey update`.
+
+Vikunja returns `401` with `code 11` for more than an invalid token. The message reads
+"missing, malformed, expired or otherwise invalid token provided", and a token that is
+none of those gets it too when used on an endpoint its permissions do not cover. Read
+that code as "Vikunja will not accept this token here" and check the token's
+permissions alongside its validity.
 
 ## The client store
 

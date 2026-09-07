@@ -74,8 +74,11 @@ def _update_command(label: str) -> int:
     if not _set_vikunja_token(label, vikunja_token):
         print(f"no client named {label!r} in {_CLIENTS_FILE}", file=sys.stderr)
         return 1
-    print(f"updated {label}. It takes effect on the next request, with no restart.")
-    print(f"Its Altiplano client token is unchanged. {label} needs no reconfiguring.")
+    print(f"replaced the Vikunja API token {label} acts with.")
+    print("It takes effect on the next request, with no restart.")
+    print()
+    print(f"The Altiplano client token {label} presents is untouched. Its MCP")
+    print("configuration needs no change.")
     return 0
 
 

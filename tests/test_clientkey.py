@@ -205,17 +205,26 @@ def test_update_replaces_the_vikunja_token_and_keeps_the_client_token(store, cap
         patch.setattr(clientkey, "_read_vikunja_token", lambda label: fresh)
         assert clientkey.main(["update", "laptop"]) == 0
 
-    assert "updated laptop" in capsys.readouterr().out
+    assert "replaced the Vikunja API token laptop acts with" in capsys.readouterr().out
     resolved = clients._resolve(token)
     assert resolved.label == "laptop", "the client token still authenticates"
     assert resolved.vikunja_token == fresh
 
 
-def test_update_says_the_client_needs_no_reconfiguring(store, capsys):
+def test_update_names_which_token_changed_and_which_did_not(store, capsys):
+    """Both tokens get named. Naming only one read as nothing having happened.
+
+    The message said "Its Altiplano client token is unchanged" without saying the
+    Vikunja token had been replaced, and three consecutive successful updates were
+    read as three refusals.
+    """
     clientkey.main(["add", "laptop"])
     capsys.readouterr()
     clientkey.main(["update", "laptop"])
-    assert "needs no reconfiguring" in capsys.readouterr().out
+
+    out = capsys.readouterr().out
+    assert "replaced the Vikunja API token" in out, "says what changed"
+    assert "Altiplano client token laptop presents is untouched" in out, "and what did not"
 
 
 def test_update_never_prints_the_vikunja_token_back(store, capsys):
