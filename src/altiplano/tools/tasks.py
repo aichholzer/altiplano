@@ -326,7 +326,7 @@ async def duplicate_task(task_id: int) -> dict:
     `copiedfrom` relation. Vikunja offers no way to duplicate straight into another
     project; call `move_task` on the copy for that.
 
-    Returns the copy, carrying the `id` a caller needs to act on it. Vikunja wraps
+    Returns the copy, with the `id` a caller needs to act on it. Vikunja wraps
     this one response in a `duplicated_task` envelope on both API versions, and that
     wrapper is removed here. A body without the key is passed through whole.
     """
@@ -369,10 +369,10 @@ async def _replace_task(task_id: int, changes: dict[str, Any]) -> dict:
     There is a reason per API version to go the long way round.
 
     On v1 there is no partial update at all. `POST /tasks/{id}` is a replace: a body
-    carrying only the changed fields resets every other field to its zero value, so
-    passing `priority` blanks the description and closing a task with `done`
-    discards its description, priority, and dates. Reading first and merging is the
-    only way to change one field while the rest survive.
+    with only the changed fields resets every other field to its zero value. Passing
+    `priority` blanks the description, and closing a task with `done` discards its
+    description, priority, and dates. Reading first and merging is the only way to
+    change one field while the rest survive.
 
     On v2 there is `PATCH`. It silently ignores ?format=markdown: the response is
     200 and the Markdown lands verbatim in a field rendered as HTML. A description

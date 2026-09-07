@@ -2,6 +2,45 @@
 
 All notable changes to this project are documented here.
 
+## [2.1.1]
+
+### Changed
+
+- `DEPLOYMENT.md` drops the service-manager and firewall sections and runs the
+  non-Docker path off PyPI with no clone:
+  `uv run --no-project --env-file .env --with altiplano altiplano-http`. `--env-file`
+  is not read by default, and it covers every setting the transport reads, which the
+  credentials file does not.
+
+- Tool descriptions and command help reworded. No argument, return shape, or
+  behaviour changed.
+
+## [2.1.0]
+
+### Added
+
+- `Dockerfile` and `docker-compose.yml`, for running the HTTP transport with nothing on
+  the host but Docker. Alpine, multi-stage, unprivileged, and both commands on the path:
+  `altiplano-http` serves and `altiplano-clientkey` registers the clients allowed to
+  call it. `ALPINE_VERSION` defaults to `latest` and pins for a reproducible build.
+
+  Settings come from a `.env` file. `ALTIPLANO_HTTP_PORT` drives both sides of the port
+  mapping, and several containers on one host differ by that line alone. No Vikunja
+  token belongs in the file: each client's token goes into the store on the volume.
+
+  Register a client before the first start. A container binds every interface, which
+  counts as reachable, and Altiplano refuses to start with an empty store.
+  `docker compose run --rm altiplano altiplano-clientkey add <label>` writes the volume
+  without starting the server.
+
+  The client store lives on one named volume at `/var/lib/altiplano`. The healthcheck
+  opens a TCP connection to the listener: Altiplano serves no unauthenticated endpoint,
+  and a check that went out to Vikunja would restart the container for an outage
+  elsewhere.
+
+  `DEPLOYMENT.md` opens with the whole sequence, and `.env.example` documents every
+  setting.
+
 ## [2.0.0]
 
 ### Breaking
@@ -35,7 +74,7 @@ All notable changes to this project are documented here.
   - `delete_project(project_id)`. This cascades to sub-projects, every task in all of
     them, and each task's comments, labels, and assignees. Vikunja retains them for 30
     days and offers no restore endpoint. Treat it as irreversible.
-  - `update_label(label_id, title?, hex_color?, description?)`. Every task carrying the
+  - `update_label(label_id, title?, hex_color?, description?)`. Every task with the
     label shows the change.
   - `update_bucket(project_id, bucket_id, title?, limit?, view_id?)`. Renames a column
     or changes its task limit. Column order stays unwritable: Vikunja exposes no
@@ -81,10 +120,10 @@ All notable changes to this project are documented here.
 
 - `uvicorn` as a declared dependency. It was already in the tree through `mcp`.
 
-- `DEPLOYMENT.md`, covering the host side of a shared deployment: installing with
-  `uv` under a service account, every environment variable the transport reads,
-  registering clients, a systemd unit, an OpenRC script, firewalling, and a
-  Cloudflare tunnel. The README covers connecting a client to a service.
+- `DEPLOYMENT.md`, covering the host side of a shared deployment: running it with
+  `uv` and no clone, every environment variable the transport reads, registering
+  clients, encrypting the connection, and the acceptance checks to run from a client
+  machine. The README covers connecting a client to a service.
 
 - `CONTRIBUTING.md` and `CODE_OF_CONDUCT.md`.
 
@@ -101,9 +140,9 @@ All notable changes to this project are documented here.
 
   It writes only into projects it creates: one project and a sub-project of it per
   account. Everything is deleted afterwards, and two closing checks confirm that no
-  task and no project carrying the run's nonce survived.
+  task and no project with the run's nonce survived.
 
-  Repository only, and it carries its own dependencies for `uv run --script`.
+  Repository only, and it declares its own dependencies for `uv run --script`.
 
 - `tests/test_http_integration.py`, which drives the application `altiplano-http`
   serves: the real ASGI app with its lifespan running, requests over
@@ -111,7 +150,7 @@ All notable changes to this project are documented here.
   synthetic. Five of its eight tests fail against a stateful transport.
 
 - `altiplano-http --check` prints the resolved settings, the Vikunja URL, both
-  allowlists, the client count, how many of those clients carry a Vikunja token, and
+  allowlists, the client count, how many of those clients have a Vikunja token, and
   whether authentication is on, then exits without opening a socket. It validates the
   same settings startup validates. A configuration it approves is one the server can
   serve. Both HTTP commands take `--version`.
@@ -130,7 +169,7 @@ All notable changes to this project are documented here.
   text, stored as HTML, and the request omitted `?format=markdown`. A description
   written as Markdown was stored and displayed as literal text.
 
-- `duplicate_task` returns the copied task, carrying its `id`. Vikunja answers a
+- `duplicate_task` returns the copied task, with its `id`. Vikunja answers a
   duplicate with a `duplicated_task` envelope on both API versions, and that envelope
   was passed through whole. A caller had no way to reach the copy it had just made.
 
@@ -174,18 +213,18 @@ All notable changes to this project are documented here.
   refuses to change the store, in place of proceeding unlocked. Reading needs no
   lock and is unaffected.
 - The client store is opened on every read, and the parse is cached against the
-  descriptor's device, inode, size, mtime, and ctime. A cache keyed on `stat` alone
-  kept authorising tokens after the server lost read access to the store, since
-  removing read permission changes neither mtime nor size. The wider key also
-  notices a store replaced by a different file of the same length.
+  descriptor's device, inode, size, mtime, and ctime. Removing read permission
+  changes neither mtime nor size, and a cache keyed on `stat` alone kept authorising
+  tokens after the server lost read access to the store. The wider key also notices
+  a store replaced by a different file of the same length.
 - Label and digest patterns are applied with `fullmatch`. `$` also matches just
   before a final newline, which let a label like `laptop\n` pass validation and
   split its own record across two lines. `add` reported success and handed over a
   token that could never authenticate.
 - A client label is limited to 1 to 64 characters of letters, digits, `.`, `_`, and
-  `-`, starting alphanumeric. A label carrying a line break could previously store
-  a record that read back under a different label, leaving a live token that could
-  not be revoked by name.
+  `-`, starting alphanumeric. A label with a line break could previously store a
+  record that read back under a different label, leaving a live token that could not
+  be revoked by name.
 - A stored digest must be exactly 64 hexadecimal characters. A malformed record is
   skipped with a warning naming the line. One non-ASCII digest previously made
   comparison raise and locked out every client whose record followed it.

@@ -134,7 +134,7 @@ async def update_bucket(
     next move in.
 
     Neither API version has a partial update for a bucket. This reads the column and
-    writes it back whole, and a body carrying only a title resets `limit` to 0 on both
+    writes it back whole, and a body with only a title resets `limit` to 0 on both
     versions. There is also no endpoint for reading one bucket. The read comes from the
     view's bucket list, and a `bucket_id` absent from that view is refused before
     anything is written.

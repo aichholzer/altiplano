@@ -24,7 +24,7 @@ Altiplano runs locally through `uvx`, or as a stand-alone HTTP service that seve
 | Where the Vikunja credentials live | On each computer running Altiplano.                             | On the service host, one token per client.                                        |
 | Setup                              | [Use locally](#use-locally-with-uvx)                            | [Use over HTTP](#use-over-http)                                                   |
 
-Connecting to an existing HTTP service needs its URL and an Altiplano client token. You do not need to install Altiplano, `uv`, or Python on the client.
+> Connecting to an existing HTTP service needs its URL and an Altiplano client token. You do not need to install Altiplano, `uv`, or Python on the client.
 
 The configuration examples below use an `mcpServers` block. Adapt the surrounding structure to your MCP client's configuration format.
 
@@ -97,15 +97,17 @@ Restart or reconnect your MCP client, then call `list_projects()`. Any list, an 
 
 `altiplano-http` serves the same tools over Streamable HTTP from one always-on host. Each client presents its own bearer token, which Altiplano mints, stores as a SHA-256 hash, and revokes one at a time.
 
-The service must already be running and reachable from the computer running your MCP client. Adding its URL to your client configuration connects to the service. It does not start it. [`DEPLOYMENT.md`](./DEPLOYMENT.md) covers standing one up.
+The service must already be running and reachable from the computer running your MCP client. Adding its URL to your client configuration connects to the service. It does not start it. [`DEPLOYMENT.md`](./DEPLOYMENT.md) covers standing one up, and [Docker](./DEPLOYMENT.md#docker) is the shortest path there.
 
 One endpoint serves several people, each as their own Vikunja user. There is no shared Vikunja API token: the host holds one per registered client, and a request is made with the token belonging to the client that sent it. Two people on one service reach their own projects and their own tasks, with Vikunja applying its own permissions to each.
 
-The operator records your Vikunja token when registering your client. Give them one created from your own Vikunja account. A client with no token registered for it is refused.
+> Registering a client is a manual step for whoever operates the host. An unrecognised client token is refused with `401`. A registered client whose record holds no Vikunja token is refused with `403`.
 
 ### Connect to an existing service
 
-Obtain the MCP endpoint URL and a client token from whoever operates the service. Each client should have its own token.
+Obtain the MCP endpoint URL and a client token from whoever operates the host server. If that is you, [Register clients](./DEPLOYMENT.md#register-clients) has the steps.
+
+> Use one client token per client. Sharing one works, at two costs: the clients all act as the same Vikunja user, and revoking it cuts off every one of them.
 
 ```bash
 claude mcp add --transport http altiplano \
@@ -129,11 +131,13 @@ The equivalent in a client's own configuration:
 }
 ```
 
-Replace the URL with the real endpoint, including its port and path where required. The example above assumes HTTPS is configured for the service.
+- **type:** Not part of the MCP protocol, which covers the wire format and leaves the configuration shape to each client. They disagree: some require `type`, some spell the value `streamable-http` and others `http`, some call the key `transport`, and some infer the transport from `url` alone. Use the form your client documents.
 
-Some clients name the transport `streamable-http`, others `http`, and some infer it from the URL. Use the form your client supports. A client that only launches subprocesses cannot reach an HTTP URL at all; keep the stdio entry on those machines.
+- **url:** Replace it with the real endpoint, including its port and path where required. The example assumes HTTPS is configured for the service.
 
-The bearer token here is an **Altiplano client token**, issued by `altiplano-clientkey`, and it says which client is calling. Your **Vikunja API token** is a separate thing: it stays on the service host, registered against your client, and it is the identity your requests act as. Give the operator a token from your own Vikunja account.
+- **headers:** The bearer token here is an **Altiplano client token**, issued by `altiplano-clientkey`, and it says which client is calling. Your **Vikunja API token** is a separate thing: it stays on the service host, registered against your client, and it is the identity your requests act as. Give the operator a token from your own Vikunja account.
+
+A client that only launches subprocesses cannot reach an HTTP URL at all. Keep the stdio entry on those machines.
 
 Restart or reconnect your MCP client, then call `list_projects()`. A successful response confirms the connection, the client token, and access to Vikunja.
 
@@ -212,7 +216,7 @@ Bucket behaviour:
 
 `list_labels()`, `create_label(title, hex_color?, description?)`, `update_label(label_id, title?, hex_color?, description?)`, `delete_label(label_id)`, `add_label(task_id, label_id)`, `remove_label(task_id, label_id)`.
 
-> `hex_color` is six hexadecimal digits without `#`. `update_label` changes only the supplied fields and requires at least one; every task carrying the label shows the change. Deleting a label removes it from every task.
+> `hex_color` is six hexadecimal digits without `#`. `update_label` changes only the supplied fields and requires at least one; every task with the label shows the change. Deleting a label removes it from every task.
 
 </details>
 
@@ -241,7 +245,7 @@ Altiplano documents its own use in four places.
 - The handshake sends usage rules: resolve ids by name, which calls cannot be undone, how to close a task. Clients apply them on connect.
 - The `altiplano_guide` prompt holds the full version, with cross-tool sequencing and the v1 and v2 differences. Clients list it as `Using Altiplano`.
 - [`AGENTS.md`](./AGENTS.md) covers working on this repository, and installing Altiplano for someone else. [`CLAUDE.md`](./CLAUDE.md) imports it, for Claude Code.
-- [`DEPLOYMENT.md`](./DEPLOYMENT.md) covers running the HTTP transport as a service on a host: installing with `uv` under a service account, every environment variable the transport reads, minting client tokens, a systemd unit for Debian and an OpenRC script for Alpine, firewalling the listener, putting it behind a Cloudflare tunnel, and the checks to run before the deployment counts as done.
+- [`DEPLOYMENT.md`](./DEPLOYMENT.md) covers running the HTTP transport as a service on a host: [Docker](./DEPLOYMENT.md#docker) with a `Dockerfile` and a compose file, a two-command `uv` path with no clone, every environment variable the transport reads, minting client tokens, encrypting the connection, four checks that say whether it works, and an FAQ of the ways it fails.
 
 ## Task behaviour
 

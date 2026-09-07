@@ -7,8 +7,8 @@ stub cannot show that a session id is ignored. A stub has no sessions.
 These tests run the application `altiplano-http` serves. `build_app` builds it, the
 ASGI lifespan starts the session manager, and requests arrive over
 `httpx2.ASGITransport`, in process and with no socket. Only Vikunja is synthetic: the
-upstream transport answers with a project named after the token it was called with, so
-a response identifies which Vikunja identity served it.
+upstream transport answers with a project named after the token it was called with.
+A response therefore identifies which Vikunja identity served it.
 
 What these hold in place, all of it reproduced against the stateful transport before
 the fix:

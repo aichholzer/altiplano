@@ -179,7 +179,7 @@ async def _unauthorised(send: Send) -> None:
 
 
 async def _no_vikunja_identity(send: Send) -> None:
-    """Refuse a client Altiplano knows and has no Vikunja token for.
+    """Refuse a registered client with no Vikunja token.
 
     A 403. The client token was accepted, and presenting it again will change nothing.
     The body says what to fix, and the operator is the only person who can fix it. The
@@ -203,9 +203,9 @@ class _RequireClientToken:
     """Identify the caller, bind its Vikunja token, and reject anyone else.
 
     Two refusals, and they mean different things. A bearer token matching no record
-    gets a 401. A record carrying no Vikunja token gets a 403: Altiplano knows the
-    client and has no identity to act as on its behalf. There is no fallback to the
-    server's own token, which would make one misconfigured client act as everybody.
+    gets a 401. A record with no Vikunja token gets a 403: the client is registered
+    and has no identity to act as on its behalf. There is no fallback to the server's
+    own token, which would make one misconfigured client act as everybody.
 
     A resolved client's Vikunja token is bound for the whole downstream call. The
     request layer picks it up with no argument threaded through the tools, and the

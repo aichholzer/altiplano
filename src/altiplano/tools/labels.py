@@ -41,8 +41,8 @@ async def update_label(
     hex_color: str | None = None,
     description: str | None = None,
 ) -> dict:
-    """Update a label. Only the fields you pass change. Every task carrying it sees
-    the change.
+    """Update a label. Only the fields you pass change. Every task with the label
+    sees the change.
 
     `hex_color` is six hex digits with no leading `#`, and an empty string clears it.
     `description` is Markdown.

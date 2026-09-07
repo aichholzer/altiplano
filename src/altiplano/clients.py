@@ -20,15 +20,15 @@ The client token is different: only its SHA-256 is kept, and the plaintext is sh
 once at mint time and never stored. So a reader of this file learns every Vikunja
 identity and no Altiplano token.
 
-Client tokens carry 32 bytes from `secrets`. The digest is therefore a bare SHA-256,
+A client token is 32 bytes from `secrets`. The digest is therefore a bare SHA-256,
 with no salt and no password KDF. There is no dictionary to attack, and a KDF would
 add a third runtime dependency to a package that has two.
 
 ### The version line
 
 `created` is an ISO 8601 timestamp and contains colons, which is why it comes last
-and takes the rest of the line. A v1 store had three fields and no Vikunja token, so
-appending one would have made `2026-09-06T20:41:28Z` parse as a token followed by a
+and takes the rest of the line. A v1 store had three fields and no Vikunja token.
+Appending one would have made `2026-09-06T20:41:28Z` parse as a token followed by a
 mangled timestamp. The version line settles it before any record is read. A store
 without one is v1, every record in it resolves with no Vikunja token, and `_resolve`
 refuses each of them.
@@ -169,8 +169,8 @@ def _parse(text: str) -> tuple[_Client, ...]:
     A record with a field that fails its pattern is skipped with a warning. One
     corrupt line leaves every other client working.
 
-    A store with no version line is v1. Its records are read for their labels, so
-    `altiplano-clientkey list` can still show what needs migrating, and each one
+    A store with no version line is v1. Its records are read for their labels, which
+    keeps `altiplano-clientkey list` able to show what needs migrating, and each one
     resolves with an empty Vikunja token. `_resolve` refuses those.
     """
     lines = text.splitlines()
@@ -276,8 +276,8 @@ def _resolve(token: str | None) -> _Client | None:
     Compared with `hmac.compare_digest` over every record. A handful of clients
     makes the cost irrelevant, and it removes the question entirely.
 
-    A match says who the caller is. It does not say the caller may proceed: a record
-    from a v1 store carries no Vikunja token, and the HTTP gate refuses those.
+    A match says who the caller is. Proceeding is a separate question: a record from
+    a v1 store has no Vikunja token, and the HTTP gate refuses those.
 
     An unreadable store denies. The caller cannot tell that apart from a token
     nobody holds, which is the safe way round.
@@ -381,7 +381,7 @@ def _add(label: str, vikunja_token: str) -> str:
     The returned client token is not recoverable later. `vikunja_token` is stored as
     given: Altiplano presents it to Vikunja on every request this client makes.
     """
-    # `fullmatch`, never `match`. `$` also matches just before a final newline, so
+    # `fullmatch`, never `match`. `$` also matches just before a final newline.
     # `match` accepted "laptop\n", which then split its own record across two lines
     # and minted a token that could never authenticate.
     if not _LABEL.fullmatch(label):

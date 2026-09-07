@@ -28,13 +28,13 @@ Transport and session checks only. Nothing is created.
 
 Every tool the server exposes, once per account, with a nonce in every payload so any
 object can be traced back to the account that made it. The tour runs twice: both
-accounts concurrently, then one after the other. Concurrency is the point, since
-sequential calls cannot show that overlapping traffic keeps its identity apart.
+accounts concurrently, then one after the other. Overlapping traffic is where
+request-scoped credentials break.
 
 After each run, three cross-contamination checks. `search_tasks` for the other account's
 nonce sweeps every project that token can see and must return nothing. Direct reads of
 the other account's objects by id must be refused. And every object an account created
-must carry its own nonce and no other.
+must have its own nonce and no other.
 
 Everything is deleted afterwards, in reverse order, whatever happened: comments,
 buckets, labels, tasks, then the projects. Two closing checks confirm it, one for tasks
@@ -184,7 +184,7 @@ class Client:
         self._stack = []
 
     async def call(self, tool: str, arguments: dict):
-        """A tool result as Python, or a raised ToolFailed carrying the server's text.
+        """A tool result as Python, or a raised ToolFailed with the server's text.
 
         The SDK returns one content block per item in a collection. A decoded result is
         therefore a list when there was more than one block, and `call_list` normalises
@@ -572,7 +572,7 @@ async def cross_checks(report: Report, a: Client, b: Client, made_a: Made, made_
             hits = []
         report.record(
             not hits,
-            f"{reader.name} finds nothing anywhere carrying the other account's nonce",
+            f"{reader.name} finds nothing anywhere with the other account's nonce",
             f"searched {other.nonce}, {len(hits)} hit(s)",
         )
 
@@ -595,7 +595,7 @@ async def cross_checks(report: Report, a: Client, b: Client, made_a: Made, made_
                 f"project {other.project_id}",
             )
 
-    # Every task an account can see must carry its own nonce and no other.
+    # Every task an account can see must have its own nonce and no other.
     for reader, own, other in ((a, made_a, made_b), (b, made_b, made_a)):
         try:
             visible = await reader.call_list("search_tasks", {"query": own.nonce})
@@ -605,7 +605,7 @@ async def cross_checks(report: Report, a: Client, b: Client, made_a: Made, made_
         report.record(
             bool(visible) and not foreign,
             f"everything {reader.name} sees under its own nonce is its own",
-            f"{len(visible)} task(s), {len(foreign)} carrying the other nonce",
+            f"{len(visible)} task(s), {len(foreign)} with the other nonce",
         )
 
 

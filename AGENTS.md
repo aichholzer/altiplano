@@ -23,8 +23,8 @@ For a client connecting to an HTTP service, follow `## Use over HTTP`, under
 `### Connect to an existing service`. That needs the endpoint URL and a client token
 from whoever operates it, and installs nothing.
 
-For a shared HTTP deployment on a host, `DEPLOYMENT.md` has the service account,
-the systemd unit, the OpenRC script, and the client token commands.
+For a shared HTTP deployment on a host, `DEPLOYMENT.md` has the Docker path, the `uv`
+path, and the client token commands.
 
 Three things go wrong there. `VIKUNJA_URL` has to end in `/api/v1` or `/api/v2`,
 and that suffix alone selects the version. The token belongs in the credentials
@@ -100,7 +100,7 @@ one session. A record with no Vikunja token is refused with a 403; the server's 
 `VIKUNJA_API_TOKEN` is not a fallback for an HTTP caller. `VIKUNJA_URL` has no
 per-client override, which keeps `api._version()` reading one API version.
 
-The store carries a version line, `# altiplano clients v2`. A file without one is v1,
+The store opens with a version line, `# altiplano clients v2`. A file without one is v1,
 its records load with an empty Vikunja token so their labels stay visible, and the gate
 refuses each of them. `created` is a timestamp full of colons and stays the last field.
 Appending a fourth field with no version line would have parsed that timestamp as a

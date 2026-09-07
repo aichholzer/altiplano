@@ -41,6 +41,27 @@ enforce the same number.
 `ALTIPLANO_HTTP_ALLOW_UNAUTHENTICATED=1` turns it off for development. Any bind
 address other than loopback refuses that variable.
 
+## Acceptance, against a live endpoint
+
+The suite covers the token store and the gate with a synthetic Vikunja. It cannot cover
+a real hostname, a real Vikunja, or two clients keeping their identities apart under
+concurrent traffic. `scripts/acceptance.py` does, from a client machine:
+
+```bash
+export ALTIPLANO_TOKEN_A=altp_...
+export ALTIPLANO_TOKEN_B=altp_...
+./scripts/acceptance.py https://altiplano.example.com/mcp --write
+```
+
+`--write` calls every tool once per account, twice over: both accounts concurrently,
+then one after the other. Overlapping traffic is where request-scoped credentials
+break. Use test accounts, and read the script's own docstring for the flags, the
+per-run nonce, the isolation checks, and the cleanup.
+
+Run it against a real deployment before a release that touches the transport, the
+client store, or the tool surface. Revocation stays manual: it needs
+`altiplano-clientkey revoke` on the host between two runs.
+
 ## Layout
 
 ```text

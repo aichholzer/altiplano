@@ -1,78 +1,145 @@
 # Deploying Altiplano as a shared HTTP service
 
-How to run `altiplano-http` as a managed service on an always-on host. Every client on
-your network then reaches one Altiplano process, each acting as its own Vikunja user.
+`altiplano-http` on an always-on host. Every client reaches one process, each acting as
+its own Vikunja user.
 
-The transport itself, the environment variables, the client tokens, and how to point
-a client at the endpoint are all in [`README.md`](./README.md) under `Use over HTTP`.
-Read that first. What follows covers the parts a first-time deployment usually gets
-wrong.
+[`README.md`](./README.md) covers the transport, the environment variables, the client
+tokens, and pointing a client at the endpoint, under `Use over HTTP`.
 
-What it assumes you already have:
+You need a Vikunja instance the host can reach, and either Docker or
+[`uv`](https://docs.astral.sh/uv/getting-started/installation/).
 
-- A host that stays on: a NAS, a mini PC, a VM, or a Raspberry Pi.
-- [`uv`](https://docs.astral.sh/uv/getting-started/installation/) installed on it.
-- A Vikunja API token, and a Vikunja instance the host can reach.
+## Docker
 
-## Install with uv
+Alpine image with both commands: `altiplano-http` serves, and `altiplano-clientkey`
+registers the clients allowed to call it.
 
-`uv tool install` builds a virtual environment of its own and puts the commands in a
-bin directory. Four environment variables make every path it touches deterministic:
+### Configure
 
 ```bash
-sudo useradd --system --shell /usr/sbin/nologin altiplano
-sudo install -d -o altiplano -g altiplano \
-  /opt/altiplano /opt/altiplano/cache /etc/altiplano
-
-sudo -u altiplano env \
-  UV_TOOL_DIR=/opt/altiplano/tools \
-  UV_TOOL_BIN_DIR=/opt/altiplano/bin \
-  UV_CACHE_DIR=/opt/altiplano/cache \
-  UV_PYTHON_INSTALL_DIR=/opt/altiplano/python \
-  uv tool install "altiplano==1.3.0"
+git clone https://github.com/aichholzer/altiplano.git
+cd altiplano
+cp .env.example .env
 ```
 
-`UV_TOOL_DIR` and `UV_TOOL_BIN_DIR` place the environment and the commands.
-[`UV_CACHE_DIR`](https://docs.astral.sh/uv/concepts/cache/) is separate and matters
-just as much: uv's cache defaults to `$HOME/.cache/uv`, and an account created
-without a home directory has nowhere writable to put it. The install fails with
-`Failed to initialize cache at ... Permission denied`.
+Edit `.env`:
 
-[`UV_PYTHON_INSTALL_DIR`](https://docs.astral.sh/uv/reference/environment/) covers
-the case where uv downloads an interpreter. With a suitable system Python already
-present, pass `--python /usr/bin/python3.13` and leave that variable out.
+```ini
+VIKUNJA_URL=https://vikunja.example.com/api/v2
+ALTIPLANO_HTTP_PORT=8000
+ALTIPLANO_HTTP_ALLOWED_HOSTS=altiplano.home.arpa,altiplano.home.arpa:*,10.0.0.5,10.0.0.5:*
+```
 
-The commands land at `/opt/altiplano/bin/altiplano-http` and
-`/opt/altiplano/bin/altiplano-clientkey`. Confirm the install with:
+Vikunja API tokens do not belong in `.env`, each client's token goes into the store in the next
+step. `.env` holds no secret at all.
+
+`ALTIPLANO_HTTP_PORT` drives both sides of the port mapping. Altiplano binds it inside
+the container and Docker publishes the same number on the host, and several containers
+on one host differ only by this line. Stay above 1024: the container runs unprivileged.
+
+`ALTIPLANO_HTTP_ALLOWED_HOSTS` has to name every address clients will use, and setting
+it replaces the loopback defaults outright. List both forms of each name: `host:*`
+matches a `Host` header with a port, a bare `host` matches one without, and neither
+covers the other. A missing value produces a `421`.
+
+### Register a client, then start
+
+A container binds every interface, which Altiplano treats as reachable, and it refuses
+to start with an empty store:
 
 ```bash
-sudo -u altiplano /opt/altiplano/bin/altiplano-http --version
+docker compose run --rm altiplano altiplano-clientkey add my-laptop
 ```
 
-Pin the version. An unattended restart should not pick up a release nobody has
-looked at yet. To upgrade, install the new version explicitly and restart the
-service.
+That prompts for the Vikunja API token the client acts as, writes the store to the
+volume, and prints the client token once.
 
-## Configure
+Then start it:
 
-Put the settings in `/etc/altiplano/service.env`, owned by the service account:
+```bash
+docker compose up -d
+docker compose logs -f altiplano
+```
+
+### Day to day operations
+
+```bash
+docker compose run --rm altiplano altiplano-clientkey list
+docker compose exec altiplano altiplano-clientkey add partner-laptop
+docker compose exec altiplano altiplano-clientkey revoke old-laptop
+docker compose exec altiplano altiplano-http --check
+```
+
+`exec` reaches the running container and `run --rm` starts a throwaway one. Either
+writes the same volume, and a client added or revoked takes effect on the next request
+with no restart.
+
+### What persists
+
+`/var/lib/altiplano`, holding the `clients` store. **Back this one up. Losing it means
+re-registering every client. `clients.lock` and any `.clients-*` beside it are
+disposable.
+
+```bash
+docker compose down            # keeps the volume
+docker compose down -v         # deletes it, and every client token with it
+```
+
+### Healthcheck
+
+It opens a TCP connection to the port. Every caller without a registered token gets a
+`401`, which leaves no request a healthcheck could read a `200` from.
+
+Vikunja being unreachable therefore leaves the container healthy and surfaces as a
+failed tool call. A healthcheck that reached Vikunja would restart Altiplano for an
+outage elsewhere.
+
+### Pinning
+
+`ALPINE_VERSION` defaults to `latest`. Pin it in `.env` for a build you can reproduce:
+
+```ini
+ALPINE_VERSION=3.22
+```
+
+## Run with uv
+
+No clone. `--with altiplano` resolves the package from PyPI, and `--env-file` puts
+every setting in the environment before the process starts.
+
+Write `.env` next to where you run the commands:
 
 ```dotenv
 VIKUNJA_URL=https://vikunja.home.arpa/api/v2
-ALTIPLANO_CLIENTS=/etc/altiplano/clients
 ALTIPLANO_HTTP_HOST=0.0.0.0
 ALTIPLANO_HTTP_PORT=8000
-ALTIPLANO_HTTP_ALLOWED_HOSTS=altiplano.home.arpa,altiplano.home.arpa:*
+ALTIPLANO_HTTP_ALLOWED_HOSTS=altiplano.home.arpa,altiplano.home.arpa:*,10.0.0.5,10.0.0.5:*
 ```
 
-There is no `VIKUNJA_API_TOKEN` here. Each client's Vikunja token lives in the client
-store, and `Register clients` below puts it there. A token in this file would be read
-by nothing on the HTTP path.
+Register a client, then serve:
 
 ```bash
-sudo chown altiplano:altiplano /etc/altiplano/service.env
-sudo chmod 600 /etc/altiplano/service.env
+uv run --no-project --env-file .env --with altiplano altiplano-clientkey add my-laptop
+uv run --no-project --env-file .env --with altiplano altiplano-http
 ```
+
+- `--env-file` is not read by default. Without it `.env` is ignored and every setting
+  falls back to its default.
+- Altiplano needs Python 3.10 or newer. Add `--python 3.13` when the default
+  interpreter is older, and uv fetches one.
+- The store defaults to `~/.config/altiplano/clients`, under the account running the
+  commands. Set `ALTIPLANO_CLIENTS` in `.env` to put it elsewhere, and both commands
+  then agree on the path.
+- Run as a dedicated account. The client store beside `.env` holds every client's
+  Vikunja token in plaintext, and Altiplano writes it `chmod 600`.
+- `--with altiplano` resolves the newest release on each run. Pin it,
+  `--with altiplano==2.1.1`, for a service that restarts on its own.
+
+To start on boot, wrap the serve line in whatever the host uses for services. On
+systemd that is a unit with `ExecStart` set to the full `uv run` command and
+`WorkingDirectory` set to the directory holding `.env`.
+
+## Configure
 
 Every setting the HTTP transport reads, with its default:
 
@@ -95,29 +162,27 @@ of them.
 `ALTIPLANO_HTTP_ALLOWED_HOSTS` has to contain the `Host` value clients actually
 send. A client using `http://192.168.1.50:8000/mcp` sends `192.168.1.50:8000`, which
 `192.168.1.50:*` covers. A client using `https://altiplano.home.arpa/mcp` sends a
-bare `altiplano.home.arpa`, with HTTPS on its default port. Listing both forms costs
-nothing.
+bare `altiplano.home.arpa`, with HTTPS on its default port.
 
-`0.0.0.0` is a bind address and not a `Host` value. No client connects to it, and it
-does not belong in the allowlist.
+`0.0.0.0` is a bind address. The allowlist matches the `Host` header a client sends,
+and a client sends the hostname it dialled. `0.0.0.0` never appears there.
 
 Test the allowlist from a client machine. A check pointed at `127.0.0.1` on the host
-exercises a `Host` value the allowlist accepts by default. A misconfigured allowlist
-then goes unnoticed until a real client tries.
+exercises a `Host` value the allowlist accepts by default, and a misconfigured
+allowlist goes unnoticed until a real client tries.
 
-> `ALLOWED_HOSTS` and `ALLOWED_ORIGINS` prevent DNS rebinding. They are not
-> authentication. A device can send any `Host` header it likes. The client tokens are
-> the access control.
+> `ALLOWED_HOSTS` and `ALLOWED_ORIGINS` prevent DNS rebinding. A device can send any
+> `Host` header it likes, and the client tokens are the access control.
 
 ## Register clients
 
-Every client needs two tokens, and they do different jobs.
+Every client needs two tokens.
 
-An **Altiplano client token** says which client is calling. Altiplano mints it, stores
+- An **Altiplano client token** says which client is calling. Altiplano mints it, stores
 only its SHA-256, and it goes in that client's MCP configuration as the
 `Authorization` header.
 
-A **Vikunja API token** is the identity the client acts with. It is created in Vikunja
+- A **Vikunja API token** is the identity the client acts with. It is created in Vikunja
 by the person who owns the account, it lives on this host, and Altiplano presents it
 to Vikunja on every request that client makes. Give each person their own, created
 from their own Vikunja account. Two clients belonging to one person can share one.
@@ -126,46 +191,36 @@ There is no server-wide Vikunja token for HTTP clients. A registered client with
 Vikunja token on its record is refused with a 403. A forgotten token therefore cannot
 put somebody on the operator's account.
 
-Run `altiplano-clientkey` as the service account. The store then belongs to the user
-that reads it:
+Run `altiplano-clientkey` as the account that serves. The store then belongs to the
+user that reads it. Under Docker, prefix these with
+`docker compose exec altiplano`; under uv, with
+`uv run --no-project --env-file .env --with altiplano`.
 
 ```bash
-sudo -u altiplano env ALTIPLANO_CLIENTS=/etc/altiplano/clients \
-  /opt/altiplano/bin/altiplano-clientkey add stefan-laptop
+altiplano-clientkey add my-laptop
+altiplano-clientkey list
+altiplano-clientkey revoke my-laptop
 ```
 
-It asks for the Vikunja API token at a hidden prompt. To script it, pipe the token in:
+`add` asks for the Vikunja API token at a hidden prompt. To script it, pipe the token
+in:
 
 ```bash
-printf '%s\n' "$VIKUNJA_TOKEN_FOR_STEFAN" | sudo -u altiplano env \
-  ALTIPLANO_CLIENTS=/etc/altiplano/clients \
-  /opt/altiplano/bin/altiplano-clientkey add stefan-laptop
+printf '%s\n' "$VIKUNJA_TOKEN" | altiplano-clientkey add my-laptop
 ```
 
 Never pass a Vikunja token as an argument. `ps` shows a command line to every user on
 the host.
 
 The client token prints once. Give it to that one client and mint a separate one for
-the next. Revoking is per client:
-
-```bash
-sudo -u altiplano env ALTIPLANO_CLIENTS=/etc/altiplano/clients \
-  /opt/altiplano/bin/altiplano-clientkey list
-
-sudo -u altiplano env ALTIPLANO_CLIENTS=/etc/altiplano/clients \
-  /opt/altiplano/bin/altiplano-clientkey revoke stefan-laptop
-```
-
-A revocation applies to the next request. The service keeps running.
+the next. A revocation applies to the next request, and the service keeps running.
 
 `list` shows a VIKUNJA column. A client marked `MISSING` has no Vikunja token and is
 refused on every request. Give it one with `update`, which leaves its Altiplano client
 token alone:
 
 ```bash
-printf '%s\n' "$VIKUNJA_TOKEN_FOR_STEFAN" | sudo -u altiplano env \
-  ALTIPLANO_CLIENTS=/etc/altiplano/clients \
-  /opt/altiplano/bin/altiplano-clientkey update stefan-laptop
+printf '%s\n' "$VIKUNJA_TOKEN" | altiplano-clientkey update my-laptop
 ```
 
 `update` is also how a client moves to a different Vikunja token. The client needs no
@@ -176,141 +231,30 @@ Revoking a client removes its Vikunja token from the store, and it does nothing 
 token in Vikunja itself. To stop a token working everywhere, delete it in Vikunja under
 Settings, API Tokens.
 
-Register at least one client before starting the service on a non-loopback address.
-Altiplano refuses to start otherwise. The missing key surfaces at startup. The same
-applies when no registered client has a Vikunja token. Every request would be refused,
-and the service reports that at startup.
+Altiplano refuses to start on a non-loopback address with an empty store, or when no
+registered client has a Vikunja token.
 
-Sessions are stateless. Altiplano issues no `mcp-session-id`, and every request stands
-on the bearer token it carries. A restart therefore costs a client nothing, and there is
-no session state on the host to grow or expire.
+Sessions are stateless. Altiplano issues no `mcp-session-id`, and every request is
+authorised by the bearer token in it. A restart therefore costs a client nothing, and
+there is no session state on the host to grow or expire.
 
-Authentication is on either way: an empty store denies every request, and an
-unreadable store refuses to start. The policy never follows from whether any keys
-happen to exist: "nobody is authorised" and "authorise everybody" are different
-answers.
+Authentication is always on. An empty store denies every request, and an unreadable
+store refuses to start.
 
 Check the whole configuration without opening a socket:
 
 ```bash
-sudo -u altiplano sh -eu -c '
-  set -a
-  . /etc/altiplano/service.env
-  set +a
-  exec /opt/altiplano/bin/altiplano-http --check
-'
+uv run --no-project --env-file .env --with altiplano altiplano-http --check
 ```
 
 That prints the bind address, the Host allowlist, the store path, the client count, how
-many of those clients carry a Vikunja token, and whether authentication is on.
+many of those clients have a Vikunja token, and whether authentication is on. It
+validates what startup validates. A configuration it approves is one the server can
+serve.
 
-The file is sourced inside the service account's own shell because it is `chmod 600`
-and owned by that account, and an administrator's shell cannot read it before `sudo`
-runs. This form needs `service.env` to hold shell-compatible `KEY=VALUE` lines.
-Systemd's `EnvironmentFile` accepts the same format.
-
-> `ALTIPLANO_HTTP_ALLOW_UNAUTHENTICATED` has no place in a service unit. It is
+> `ALTIPLANO_HTTP_ALLOW_UNAUTHENTICATED` has no place in a service definition. It is
 > refused on any bind address other than loopback, and behind a proxy or a tunnel a
 > loopback bind says nothing about who is calling.
-
-## systemd, for Debian and its derivatives
-
-`/etc/systemd/system/altiplano.service`:
-
-```ini
-[Unit]
-Description=Altiplano MCP server over HTTP
-Wants=network-online.target
-After=network-online.target
-
-[Service]
-Type=simple
-User=altiplano
-Group=altiplano
-EnvironmentFile=/etc/altiplano/service.env
-ExecStart=/opt/altiplano/bin/altiplano-http
-Restart=on-failure
-RestartSec=3
-UMask=0077
-NoNewPrivileges=true
-PrivateTmp=true
-ProtectSystem=strict
-ProtectHome=true
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now altiplano
-sudo systemctl status altiplano
-journalctl -u altiplano -f
-```
-
-`ProtectSystem=strict` mounts the filesystem read-only for this unit. The running
-server only ever reads its configuration and its client store. No `ReadWritePaths`
-exception is needed. `altiplano-clientkey` writes the store from your shell, outside
-the unit's sandbox.
-
-## OpenRC, for Alpine
-
-`/etc/init.d/altiplano`, `chmod 755`:
-
-```sh
-#!/sbin/openrc-run
-
-name="altiplano"
-description="Altiplano MCP server over HTTP"
-
-supervisor="supervise-daemon"
-command="/opt/altiplano/bin/altiplano-http"
-command_user="altiplano:altiplano"
-output_log="/var/log/altiplano/altiplano.log"
-error_log="/var/log/altiplano/altiplano.log"
-
-depend() {
-    need net
-}
-
-start_pre() {
-    checkpath --directory --owner altiplano:altiplano --mode 0755 /var/log/altiplano
-}
-```
-
-`supervise-daemon` restarts the process on failure with no further configuration.
-Its defaults are a 2 second delay and at most 5 restarts in 30 minutes, so
-`supervise_daemon_args` is left out.
-
-OpenRC sources `/etc/conf.d/altiplano` on its own. Variables there need exporting to
-reach the daemon:
-
-```sh
-export VIKUNJA_URL="https://vikunja.home.arpa/api/v2"
-export ALTIPLANO_CLIENTS="/etc/altiplano/clients"
-export ALTIPLANO_HTTP_HOST="0.0.0.0"
-export ALTIPLANO_HTTP_PORT="8000"
-export ALTIPLANO_HTTP_ALLOWED_HOSTS="altiplano.home.arpa,altiplano.home.arpa:*"
-```
-
-```bash
-sudo chmod 600 /etc/conf.d/altiplano
-sudo rc-update add altiplano default
-sudo rc-service altiplano start
-sudo rc-service altiplano status
-```
-
-Alpine's `useradd` comes from the `shadow` package. With busybox alone, create the
-group first:
-
-```bash
-sudo addgroup -S altiplano
-sudo adduser -S -D -G altiplano altiplano
-```
-
-BusyBox `adduser` puts a system user in `nogroup` when `-G` is left out, and both the
-`chown altiplano:altiplano` commands above and the OpenRC script's
-`command_group` need an `altiplano` group to exist.
 
 ## Encrypt the connection
 
@@ -318,129 +262,37 @@ A client token is a bearer credential. It goes in a header on every request, it 
 reusable, and it grants that person's Vikunja permissions including writes and
 deletions. Anyone who can observe the traffic can copy one and use it.
 [RFC 6750](https://www.rfc-editor.org/rfc/rfc6750#section-5.3) requires TLS for bearer
-tokens, and a home network is not an exception: a phone, a television, a guest laptop,
-or anything else on the same segment can watch plain HTTP.
+tokens, and a home network is no exception: a phone, a television, a guest laptop, or
+anything else on the same segment can watch plain HTTP.
 
-So do not serve this over plain HTTP across any network. Two ways to avoid it:
+Two ways to avoid plain HTTP across a network:
 
-- Put a reverse proxy in front with a certificate, and bind Altiplano to loopback.
-  Caddy or nginx with an internal certificate authority both work on a LAN.
-- Run the Cloudflare tunnel described below, which terminates TLS and reaches
-  Altiplano over loopback. This works for a LAN as readily as for the internet.
+- A reverse proxy in front with a certificate, and Altiplano bound to loopback. Caddy
+  or nginx with an internal certificate authority both work on a LAN.
+- A tunnel terminating TLS and reaching Altiplano over loopback. Set
+  `ALTIPLANO_HTTP_ALLOWED_HOSTS` to the public hostname it presents.
 
 Plain HTTP on `127.0.0.1` is fine. Nothing observes loopback.
 
-## Firewall the listener
-
-Binding `0.0.0.0` means the process accepts connections on every interface. The client
-tokens decide who gets a reply, and a firewall decides who gets to ask. This narrows
-who can reach the port; it does nothing about what a listener on the path can read, so
-it comes on top of TLS and never in place of it.
-
-```bash
-# Debian, with ufw
-sudo ufw allow from 192.168.1.0/24 to any port 8000 proto tcp
-
-# Alpine, with awall or plain iptables
-sudo iptables -A INPUT -p tcp --dport 8000 -s 192.168.1.0/24 -j ACCEPT
-sudo iptables -A INPUT -p tcp --dport 8000 -j DROP
-```
-
-Adapt the subnet. With the proxy or the tunnel in front, bind Altiplano to `127.0.0.1`
-and the rule becomes unnecessary.
-
-## Behind a Cloudflare tunnel
-
-The tunnel authenticates the connection and Altiplano authenticates the client, and
-the two are worth keeping separate: revoking one client stays a local operation, and
-it survives a change of transport.
-
-Two things change when the tunnel goes up. `ALTIPLANO_HTTP_ALLOWED_HOSTS` needs the
-public hostname, which is the `Host` the tunnel presents. And Cloudflare Access
-authenticates browsers through SSO, while an MCP client posting a bearer token is
-not a browser: non-interactive clients need a Cloudflare service token, sent as
-`CF-Access-Client-Id` and `CF-Access-Client-Secret` alongside their Altiplano
-bearer.
-
-Bind to loopback once the tunnel reaches the server, and let `cloudflared` be the
-only thing that connects:
-
-```dotenv
-ALTIPLANO_HTTP_HOST=127.0.0.1
-ALTIPLANO_HTTP_ALLOWED_HOSTS=altiplano.example.com,altiplano.example.com:*
-```
-
-The listener is then unreachable from the network, and the firewall rule above
-becomes unnecessary.
-
 ## Is it working?
 
-Verification runs from a client machine, against the endpoint's real hostname, with a
-token minted for that machine.
-
-### Acceptance, before the deployment counts as done
-
-The test suite covers the token store and the gate. It cannot cover your hostname,
-your firewall, or your tunnel. Five checks close that gap, and each one has to run
-against the endpoint clients will actually use, never against `127.0.0.1` on the
-server:
+Four checks, run from a client machine against the hostname clients will actually use:
 
 1. `altiplano-http --check` on the host reports the store you configured, a non-zero
    client count, `with a token` matching that count, and `authenticated: yes`.
-2. From a client machine, a token-bearing `initialize` and `tools/list` succeed
-   through the public hostname. The full tool set comes back.
+2. A token-bearing `initialize` and `tools/list` succeed through that hostname, and the
+   full tool set comes back.
 3. The same request with the `Authorization` header removed gets a `401`.
-4. Revoke that client's token on the host, then repeat check 2. It gets a `401`
-   with no restart. Mint a fresh token afterwards.
-5. With two clients registered under two people's Vikunja tokens, each reaches its own
-   Vikunja account. This is the check that proves the identities are separate, and no
-   test can do it for you.
+4. Revoke that client's token on the host, then repeat check 2. It gets a `401` with no
+   restart. Mint a fresh token afterwards.
 
-`scripts/acceptance.py` in the repository automates checks 1 to 3 and 5. It runs from a
-client machine with `uv`, carries its own dependencies, and needs no checkout of
-Altiplano on the host:
+Run them again once a proxy or a tunnel goes in front. The `Host` value changes at that
+point, and `ALTIPLANO_HTTP_ALLOWED_HOSTS` has to name the public hostname.
 
-```bash
-export ALTIPLANO_TOKEN_A=altp_...
-export ALTIPLANO_TOKEN_B=altp_...
-./scripts/acceptance.py https://altiplano.example.com/mcp --write
-```
+Serving two people is worth one more check: with a client registered under each
+person's Vikunja token, confirm each reaches its own Vikunja account.
 
-The tokens are read from the environment, or prompted for if unset. Neither is ever an
-argument, where `ps` would show it.
-
-`--write` calls every tool the server exposes, once for each account, with a per-run
-nonce in every payload. The tour runs twice: both accounts concurrently, then one after
-the other. Overlapping traffic is where request-scoped credentials would fail, and the
-serial pass alone would miss it.
-
-Three isolation checks follow each run. A search for the other account's nonce sweeps
-every project that token can see and must come back empty. Direct reads of the other
-account's task, its comments, and its project must all be refused. And `created_by` on a
-task each client has just created must name the expected Vikunja user.
-
-The tour writes only into projects it creates: one project and a sub-project of it per
-account. Everything is deleted afterwards whatever failed along the way, and two closing
-checks confirm that no task and no project carrying the run's nonce survived. Anything
-that does survive is named by id.
-
-Use test accounts for `--write`. Without it the script reads only, and the strongest
-signal it can offer is that the two clients see different sets of project ids.
-
-The script also reports whether the endpoint issues an `mcp-session-id`. It should not,
-and one appearing means the host is running a build from before the transport went
-stateless.
-
-Check 4, revocation, stays manual. It needs `altiplano-clientkey revoke` on the host
-between two runs.
-
-Run all four again after the tunnel goes up. The `Host` value changes at that point,
-`ALTIPLANO_HTTP_ALLOWED_HOSTS` has to name the public hostname, and a
-non-interactive client needs its Cloudflare service token alongside its Altiplano
-bearer. Check 4 is the one worth repeating most: it proves revocation still reaches
-the running service through the proxy in front of it.
-
-Common failures, and where to look first:
+## FAQ
 
 | Symptom | Cause | Fix |
 |---|---|---|
@@ -454,41 +306,30 @@ Common failures, and where to look first:
 | `403` naming a Vikunja identity | The client's record has no Vikunja token | `altiplano-clientkey list`, then `update` the client marked `MISSING` |
 | Tool calls fail with a Vikunja `401` | That client's Vikunja token is wrong or was deleted in Vikunja | `altiplano-clientkey update <label>` with a fresh token, and check `VIKUNJA_URL` |
 | A client sees someone else's tasks | Two clients were registered with one Vikunja token | `altiplano-clientkey update <label>` on one of them |
-| Install fails on a cache path | `UV_CACHE_DIR` is unset and `$HOME` is not writable | Set `UV_CACHE_DIR` under `/opt/altiplano` |
+| `No solution found`, naming Python | The default interpreter is older than 3.10 | Add `--python 3.13` to the `uv run` command |
+| Settings ignored, defaults used | `--env-file` was left off | uv does not read `.env` on its own |
 | A client is missing from `list` | Its record failed validation on read | The log names the skipped line number |
 
 The log names the client label on every accepted request and the source address on
 every rejected one. Tokens never appear in it.
 
-## What a shared deployment does not give you
+## The client store
 
-A client acts as one Vikunja user, and the store decides which. Two clients registered
-with the same Vikunja token are the same user in Vikunja, and Altiplano tells them
-apart only in its own log.
+Every Vikunja token in the store is readable by whoever can read the file. There is no
+encryption at rest. Altiplano presents each token to Vikunja on every request and needs
+the plaintext to do it, and a key kept on the same host would be read by the same
+reader. The file is `chmod 600` and owned by the account that serves, and the host is
+trusted to stay that way. `systemd-creds` can hold it encrypted and decrypt it at
+service start.
 
 Vikunja does the authorising. A client reaches exactly what its Vikunja token reaches,
 and narrowing a token's scopes in Vikunja to the tools you expose narrows what a leak
 costs. Altiplano adds no permissions of its own and takes none away.
 
-Every Vikunja token in the store is readable by whoever can read the file. There is no
-encryption at rest. Altiplano presents each token to Vikunja on every request and needs
-the plaintext to do it, and a key kept on the same host would be read by the same
-reader.
-The file is `chmod 600` and owned by the service account, and the host is trusted to
-stay that way. On systemd, `systemd-creds` can hold the store encrypted and hand it to
-the unit at start.
-
-A store change survives a crash. The write goes to a temporary file in the same
-directory, and Altiplano syncs that file, renames it over the store, then syncs the
-directory. A revocation that reported success has reached the disk before the command
-returns. Power loss during the write leaves the previous store and no half-written one.
-
-A crash between the temporary file and the rename leaves that file behind, holding
-every Vikunja token in it. The next store change deletes any it finds. To clear them
-without waiting for one, remove `.clients-*` beside the store while the service is not
-mid-write.
+A crash mid-write can leave a `.clients-*` file beside the store, holding every Vikunja
+token in it. The next store change deletes any it finds. To clear them sooner, remove
+them while the service is idle.
 
 Altiplano stores nothing of its own, and Vikunja stays the system of record. Back up
-Vikunja, the service definition, and the client store. If the host goes down, the
-local `uvx altiplano` stdio configuration is the fallback on any machine that needs
-one.
+Vikunja, the service definition, and the client store. If the host goes down, a local
+`uvx altiplano` stdio configuration is the fallback on any machine that needs one.

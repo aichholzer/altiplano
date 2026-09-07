@@ -197,7 +197,7 @@ def test_the_patterns_are_anchored_at_both_ends():
 
 
 def test_an_embedded_newline_cannot_smuggle_a_second_record(store):
-    """A label carrying a newline used to store a record that parsed back under a
+    """A label with a newline used to store a record that parsed back under a
     different label, leaving a live token nobody could revoke by name."""
     with pytest.raises(ValueError):
         clients._add("work\nlaptop", VIKUNJA)

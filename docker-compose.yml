@@ -1,0 +1,46 @@
+name: altiplano
+
+services:
+  altiplano:
+    build:
+      context: .
+      args:
+        ALPINE_VERSION: ${ALPINE_VERSION:-latest}
+    image: altiplano:${ALTIPLANO_TAG:-local}
+    restart: unless-stopped
+    # Reaps the zombies a PID 1 would otherwise collect.
+    init: true
+
+    # Every setting comes from here. Copy .env.example to .env first: Compose fails
+    # when this file is absent, which is the better failure.
+    env_file: .env
+
+    environment:
+      # Fixed inside the container, whatever .env says. The listener has to answer on
+      # every interface or the published port reaches nothing, and the two paths below
+      # are where the volume is mounted.
+      ALTIPLANO_HTTP_HOST: 0.0.0.0
+      ALTIPLANO_CONFIG: /var/lib/altiplano/env
+      ALTIPLANO_CLIENTS: /var/lib/altiplano/clients
+
+    # Bridge networking with a published port, which is the default and needs no
+    # setting here. The service answers on the host's own address at this port.
+    #
+    # `network_mode: host` would put the container in the host's network namespace.
+    # Every container on the box would then need its own internal port, and this image
+    # would stop being reusable. Publishing keeps one image, one internal port, and a
+    # different host port per container.
+    #
+    # One variable drives both sides. Altiplano binds it and Docker publishes the same
+    # number, which leaves nothing to keep in step. Ports below 1024 will not bind: the
+    # container runs unprivileged.
+    ports:
+      - "${ALTIPLANO_HTTP_PORT:-8000}:${ALTIPLANO_HTTP_PORT:-8000}"
+
+    # The client store, its lock, and the temporary file each write passes through.
+    # Only `clients` matters, and losing it means re-registering every client.
+    volumes:
+      - store:/var/lib/altiplano
+
+volumes:
+  store:

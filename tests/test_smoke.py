@@ -6,8 +6,8 @@ console script resolves, and the two places the version lives agree with each
 other.
 
 Two constraints shape these tests. They never call `main()`, which starts the
-server and never returns. And they need no Vikunja credentials, because
-`server.py` reads config inside the request helpers, well after import time.
+server and never returns. And they need no Vikunja credentials: `server.py` reads
+config inside the request helpers, well after import time.
 """
 
 import asyncio

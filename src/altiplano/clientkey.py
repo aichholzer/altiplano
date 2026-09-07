@@ -121,7 +121,7 @@ def _parser() -> argparse.ArgumentParser:
             "when the input is piped."
         ),
     )
-    add.add_argument("label", help="a name for the client, for example stefan-laptop")
+    add.add_argument("label", help="a name for the client, for example my-laptop")
 
     update = commands.add_parser(
         "update",

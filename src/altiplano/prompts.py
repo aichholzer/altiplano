@@ -3,7 +3,7 @@
 `GUIDE` covers what a single tool description cannot: which tool to reach for, the
 order calls happen in, and the calls that do more than they appear to.
 
-Tool references carry parentheses, `list_buckets()`. `tests/test_guidance.py`
+Tool references are written with parentheses, `list_buckets()`. `tests/test_guidance.py`
 extracts them and checks each against the registry. Parameter names never take
 parentheses.
 """
@@ -141,7 +141,7 @@ column. A view always keeps one column, and the last one cannot be deleted.
 
 ## Labels
 
-`update_label()` changes the label itself. Every task carrying it shows the new
+`update_label()` changes the label itself. Every task with the label shows the new
 title, colour, or description.
 
 `remove_label()` takes a label off one task. `delete_label()` destroys the label

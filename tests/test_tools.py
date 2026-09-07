@@ -901,7 +901,7 @@ def test_set_reminders_accepts_an_empty_list_to_clear(api, run, api_version):
 
 
 # --- v1 has no partial update -----------------------------------------------
-# POST /tasks/{id} replaces the task on v1, and a body carrying only the changed
+# POST /tasks/{id} replaces the task on v1, and a body with only the changed
 # fields resets everything else. That was documented and left armed in 0.8.1,
 # having already destroyed one task's description by then. These are the regression
 # tests for both tools that send through that endpoint.

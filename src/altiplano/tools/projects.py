@@ -104,8 +104,8 @@ async def _replace_project(project_id: int, changes: dict[str, Any]) -> dict:
 
     On v2 there is `PATCH`, which silently ignores ?format=markdown and stores the
     Markdown verbatim into a field rendered as HTML. A description therefore goes
-    through `PUT` there, which converts. That verb wants a title too, answering 422
-    without one.
+    through `PUT` there, which converts. That verb requires a title too, answering
+    422 without one.
 
     The read supplies the title in both cases, and merging keeps every field the
     caller did not name.
