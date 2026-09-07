@@ -101,7 +101,7 @@ def _revoke_command(label: str) -> int:
     if not _remove(label):
         print(f"No client named {label!r} in {_CLIENTS_FILE}", file=sys.stderr)
         return 1
-    print(f"revoked {label}. It takes effect on the next request, with no restart.")
+    print(f"Revoked {label}. It takes effect on the next request, with no restart.")
     return 0
 
 
@@ -128,10 +128,10 @@ def _parser() -> argparse.ArgumentParser:
         "update",
         help="replace the Vikunja token a client acts with",
         description=(
-            "Replace the Vikunja API token an existing client acts with. Its Altiplano "
-            "client token is unchanged and the client needs no reconfiguring. The "
-            "Vikunja token is read from a hidden prompt, or from stdin when the input "
-            "is piped."
+            "Replace the Vikunja API token an existing client acts with. The Altiplano "
+            "client token it presents is untouched, and its MCP configuration needs no "
+            "change. The Vikunja token is read from a hidden prompt, or from stdin "
+            "when the input is piped."
         ),
     )
     update.add_argument("label", help="the client to update")

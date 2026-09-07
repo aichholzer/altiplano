@@ -9,7 +9,8 @@ All notable changes to this project are documented here.
 - `altiplano-clientkey update` names the token it replaced. It reported only that
   "Its Altiplano client token is unchanged", without saying the Vikunja token had
   been written, and a successful update read as a refusal. It now says which token
-  changed first, and which one was left alone second.
+  changed first, and which one was left alone second. `update --help` carried the
+  same ambiguity and reads the same way now.
 
 - `DEPLOYMENT.md` sends a Vikunja `401` to Vikunja before Altiplano, with the `curl`
   that takes Altiplano out of the path. Vikunja answers `401` with `code 11` for a
