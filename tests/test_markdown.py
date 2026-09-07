@@ -13,6 +13,7 @@ import pytest
 
 from altiplano.tools import (
     comments,
+    labels,
     projects,
     tasks,
 )
@@ -30,6 +31,9 @@ RICH_TEXT_CALLS = [
     pytest.param(lambda: comments.list_comments(7), id="list_comments"),
     pytest.param(lambda: tasks.create_task(3, "T", description=MD), id="create_task"),
     pytest.param(lambda: projects.create_project("P", description=MD), id="create_project"),
+    # A label description is rich text too. This one shipped without the parameter,
+    # storing Markdown verbatim into a field Vikunja renders as HTML.
+    pytest.param(lambda: labels.create_label("L", description=MD), id="create_label"),
     pytest.param(lambda: comments.add_comment(7, MD), id="add_comment"),
     pytest.param(lambda: comments.update_comment(7, 21, MD), id="update_comment"),
 ]

@@ -82,6 +82,10 @@ All notable changes to this project are documented here.
   `set_reminders` raised when a field already held the value being written. Both now
   return `{"ok": true, "unchanged": true}`.
 
+- `create_label` converts a Markdown description on v2. A label description is rich
+  text, stored as HTML, and the request omitted `?format=markdown`. A description
+  written as Markdown was stored and displayed as literal text.
+
 - `duplicate_task` returns the copied task, carrying its `id`. Vikunja answers a
   duplicate with a `duplicated_task` envelope on both API versions, and that envelope
   was passed through whole. A caller had no way to reach the copy it had just made.

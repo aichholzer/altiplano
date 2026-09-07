@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from altiplano.api import _items, _request, _verb
+from altiplano.api import _items, _md_params, _request, _verb
 from altiplano.app import mcp
 
 
@@ -20,13 +20,16 @@ async def create_label(
     """Create a label, which `add_label` can then attach to tasks.
 
     `hex_color` is six hex digits with no leading `#`, as `list_labels` reports them.
+
+    `description` is rich text, written as Markdown. Vikunja stores it as HTML and
+    v2 converts on the way in.
     """
     payload: dict[str, Any] = {"title": title}
     if hex_color is not None:
         payload["hex_color"] = hex_color
     if description is not None:
         payload["description"] = description
-    return await _request(_verb("create"), "/labels", json=payload)
+    return await _request(_verb("create"), "/labels", params=_md_params(), json=payload)
 
 
 @mcp.tool()
