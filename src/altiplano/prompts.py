@@ -97,8 +97,20 @@ refuses the entire request, and nothing changes.
 
 ## Kanban
 
+Four tools read a board, and they answer four different questions:
+
+| The question                                 | The tool                 |
+| -------------------------------------------- | ------------------------ |
+| The whole board, columns and their cards     | `list_board()`           |
+| The columns alone                            | `list_buckets()`         |
+| Where one task sits                          | `list_task_placements()` |
+| Which views exist, and their special columns | `list_kanban_views()`    |
+
+`list_board()` and `list_buckets()` take the same arguments and differ in what comes
+back: the second omits the tasks, and it omits the task counts with them.
+
 A task holds a position in every kanban view of its project. A project with two
-boards puts that task in two columns, and `list_task_buckets()` reports them all.
+boards puts that task in two columns, and `list_task_placements()` reports them all.
 Read any other way, a task's `bucket_id` is `0`. The field only means something
 inside a view.
 
@@ -116,9 +128,9 @@ Read `bucket_configuration_mode` from `list_kanban_views()` first. In `filter`
 mode Vikunja derives each column from its filters, and moving a task between
 columns is unavailable.
 
-`list_bucket_tasks()` reports `task_count` as the column's true size, which can
-exceed the tasks returned. Vikunja caps how many it sends per column. Pass
-`filter` to narrow the result.
+`list_board()` reports `task_count` as the column's true size, which can exceed the
+tasks returned. Vikunja caps how many it sends per column. Pass `filter` to narrow
+the result.
 
 `update_bucket()` renames a column or changes its task limit, where `0` means no
 limit. Lowering a limit below the number of tasks already in the column keeps them

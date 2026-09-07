@@ -530,8 +530,8 @@ def test_two_callers_are_bound_to_their_own_tokens(store):
 def test_overlapping_calls_do_not_cross_identities(store):
     """The isolation guarantee, with the two requests genuinely interleaved.
 
-    A `ContextVar` set in ASGI middleware is what carries the identity, and this is
-    the test that says two concurrent callers each keep their own.
+    The middleware sets a `ContextVar` per request and `config._headers()` reads it.
+    Each of two concurrent callers keeps its own value across the interleaving.
     """
     mine = clients._add("mine", "tk_" + "1" * 32)
     yours = clients._add("yours", "tk_" + "2" * 32)

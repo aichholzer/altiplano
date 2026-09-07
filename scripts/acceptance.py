@@ -6,7 +6,7 @@
 """Check a deployed Altiplano HTTP endpoint from a client machine.
 
 Two people sharing one endpoint have to reach their own Vikunja data and nobody else's.
-The test suite covers the token store, the gate and the transport, and it cannot cover a
+The test suite covers the token store, the gate, and the transport, and it cannot cover a
 hostname, a tunnel, or two real Vikunja accounts. This does.
 
 Run it from a machine that is not the host, against the endpoint clients actually use.
@@ -78,7 +78,7 @@ EXPECTED_TOOLS = {
     "list_labels", "create_label", "update_label", "delete_label", "add_label", "remove_label",
     "list_comments", "add_comment", "update_comment", "delete_comment",
     "list_kanban_views", "list_buckets", "create_bucket", "update_bucket", "delete_bucket",
-    "list_bucket_tasks", "list_task_buckets", "move_task_to_bucket",
+    "list_board", "list_task_placements", "move_task_to_bucket",
     "add_relation", "remove_relation",
     "search_users", "list_assignees", "add_assignee", "remove_assignee",
 }  # fmt: skip
@@ -501,13 +501,13 @@ async def tour(report: Report, client: Client, nonce: str) -> Made:
 
         await client.call("move_task_to_bucket", {"task_id": made.tasks[0],
                                                  "bucket_id": bucket["id"]})
-        placed = await client.call_list("list_task_buckets", {"task_id": made.tasks[0]})
+        placed = await client.call_list("list_task_placements", {"task_id": made.tasks[0]})
         step(
             any(entry.get("bucket_id") == bucket["id"] for entry in placed),
             "moves a task into its bucket and reads its placement back",
         )
-        with_tasks = await client.call_list("list_bucket_tasks", {"project_id": target})
-        step(bool(with_tasks), "lists buckets with their tasks", f"{len(with_tasks)} bucket(s)")
+        board = await client.call_list("list_board", {"project_id": target})
+        step(bool(board), "reads the whole board", f"{len(board)} column(s)")
     except ToolFailed as err:
         step(False, "completes the kanban tour", str(err))
 
@@ -641,7 +641,7 @@ async def clean_up(report: Report, client: Client, made: Made) -> None:
             await client.call(
                 "delete_bucket", {"project_id": made.project_id, "bucket_id": bucket_id}
             )
-        except Exception as err:  # noqa: BLE001 - a cleanup failure is a result, not a crash
+        except Exception as err:  # noqa: BLE001 - a cleanup failure is recorded and reported
             report.record(False, f"{client.name} deletes bucket {bucket_id}", str(err))
     for label_id in reversed(made.labels):
         try:

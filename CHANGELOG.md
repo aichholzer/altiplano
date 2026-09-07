@@ -2,7 +2,21 @@
 
 All notable changes to this project are documented here.
 
-## [1.3.0]
+## [2.0.0]
+
+### Breaking
+
+- Two kanban tools are renamed. `list_bucket_tasks` is now `list_board`, and
+  `list_task_buckets` is now `list_task_placements`. Their arguments, return shapes,
+  and behaviour are unchanged, and the old names are gone with no alias.
+
+  The two differed only by word order, which left an agent choosing between them with
+  nothing to discriminate on. `list_board` also separates that tool from
+  `list_buckets`, which takes the same arguments and answers the narrower question of
+  the columns alone.
+
+  Update any client or script that calls either name. Nothing else in the surface
+  moved.
 
 ### Added
 

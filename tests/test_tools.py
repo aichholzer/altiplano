@@ -1,4 +1,4 @@
-"""Every tool's wire contract: verb, path, query and body.
+"""Every tool's wire contract: verb, path, query, and body.
 
 Vikunja inverts the usual REST convention, using PUT to create and POST to update.
 The verb assertions here are load bearing.
@@ -217,8 +217,8 @@ ROUTES = [
         response=KANBAN_VIEW,
     ),
     route(
-        "list_bucket_tasks",
-        lambda: kanban.list_bucket_tasks(3),
+        "list_board",
+        lambda: kanban.list_board(3),
         READ,
         # v1 groups on the view's task endpoint; v2 answers that one flat and has a
         # separate route for the grouped form.
@@ -227,8 +227,8 @@ ROUTES = [
         response=KANBAN_VIEW,
     ),
     route(
-        "list_task_buckets",
-        lambda: kanban.list_task_buckets(7),
+        "list_task_placements",
+        lambda: kanban.list_task_placements(7),
         READ,
         "/tasks/7",
         {},
@@ -612,7 +612,7 @@ def test_list_buckets_survives_a_view_with_no_buckets(api, run):
     assert run(kanban.list_buckets(3)) == []
 
 
-def test_list_bucket_tasks_reports_the_true_size_beside_the_tasks(api, run):
+def test_list_board_reports_the_true_size_beside_the_tasks(api, run):
     """Vikunja caps the tasks it sends per bucket. `task_count` and the length of
     `tasks` are different questions."""
     api.returns_in_order(
@@ -629,7 +629,7 @@ def test_list_bucket_tasks_reports_the_true_size_beside_the_tasks(api, run):
             ],
         ),
     )
-    assert run(kanban.list_bucket_tasks(3)) == [
+    assert run(kanban.list_board(3)) == [
         {
             "id": 43,
             "title": "Done",
@@ -641,9 +641,9 @@ def test_list_bucket_tasks_reports_the_true_size_beside_the_tasks(api, run):
     ]
 
 
-def test_list_bucket_tasks_passes_a_filter_to_the_server(api, run):
+def test_list_board_passes_a_filter_to_the_server(api, run):
     api.returns(KANBAN_VIEW)
-    run(kanban.list_bucket_tasks(3, filter="done = false"))
+    run(kanban.list_board(3, filter="done = false"))
     assert dict(api.last.url.params) == {"filter": "done = false"}
 
 
@@ -657,7 +657,7 @@ def test_a_401_on_the_v2_board_explains_itself(api, run, api_version):
         httpx.Response(401, json={"detail": "invalid token provided", "code": 11}),
     )
     with pytest.raises(RuntimeError, match="created with full permissions"):
-        run(kanban.list_bucket_tasks(3))
+        run(kanban.list_board(3))
 
 
 @pytest.mark.parametrize("api_version", [1])
@@ -668,7 +668,7 @@ def test_a_401_elsewhere_is_left_alone(api, run, api_version):
         httpx.Response(401, json={"message": "invalid token provided"}),
     )
     with pytest.raises(httpx.HTTPStatusError, match="401"):
-        run(kanban.list_bucket_tasks(3))
+        run(kanban.list_board(3))
 
 
 def test_moving_to_a_bucket_takes_the_project_from_the_task(api, run):
@@ -848,7 +848,7 @@ def test_create_label_includes_the_optional_fields(api, run):
     }
 
 
-def test_list_task_buckets_returns_one_entry_per_kanban_view(api, run):
+def test_list_task_placements_returns_one_entry_per_kanban_view(api, run):
     api.returns(
         {
             "id": 7,
@@ -858,16 +858,16 @@ def test_list_task_buckets_returns_one_entry_per_kanban_view(api, run):
             ],
         }
     )
-    assert run(kanban.list_task_buckets(7)) == [
+    assert run(kanban.list_task_placements(7)) == [
         {"bucket_id": 43, "bucket_title": "Done", "project_view_id": 48},
         {"bucket_id": 51, "bucket_title": "Later", "project_view_id": 49},
     ]
 
 
-def test_list_task_buckets_asks_for_the_buckets_to_be_expanded(api, run):
+def test_list_task_placements_asks_for_the_buckets_to_be_expanded(api, run):
     """Without `expand`, a task's `bucket_id` is 0 and the buckets are absent."""
     api.returns({"id": 7, "buckets": []})
-    assert run(kanban.list_task_buckets(7)) == []
+    assert run(kanban.list_task_placements(7)) == []
     assert dict(api.last.url.params) == {"expand": "buckets"}
 
 

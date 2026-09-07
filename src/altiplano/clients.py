@@ -81,8 +81,8 @@ _CLIENTS_FILE = Path(os.environ.get("ALTIPLANO_CLIENTS", _CONFIG_FILE.parent / "
 # crash left behind.
 _TEMP_PREFIX = ".clients-"
 
-# Prefixed so the value is recognisable in a client config, and so a secret scanner
-# has something to match on.
+# Prefixed to make the value recognisable in a client config and to give a secret
+# scanner something to match on.
 _TOKEN_PREFIX = "altp_"
 
 # The line `_write` puts at the top, and `_parse` looks for before reading records.

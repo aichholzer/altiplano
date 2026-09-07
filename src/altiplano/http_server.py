@@ -181,9 +181,9 @@ async def _unauthorised(send: Send) -> None:
 async def _no_vikunja_identity(send: Send) -> None:
     """Refuse a client Altiplano knows and has no Vikunja token for.
 
-    A 403 and not a 401: the client token was accepted, and presenting it again will
-    not help. The body says what to fix, and the operator is the only person who can
-    fix it. The server log names the label; this does not.
+    A 403. The client token was accepted, and presenting it again will change nothing.
+    The body says what to fix, and the operator is the only person who can fix it. The
+    server log names the label; this does not.
     """
     body = b'{"error":"no Vikunja identity registered for this client"}'
     await send(

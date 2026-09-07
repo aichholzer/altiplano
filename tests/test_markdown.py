@@ -102,7 +102,7 @@ def test_v2_replace_preserves_fields_it_was_not_given(api, run, api_version):
 
 @pytest.mark.parametrize("api_version", [2])
 def test_v2_replace_drops_the_schema_key_it_read_back(api, run, api_version):
-    """`$schema` is v2 response metadata, not a writable field."""
+    """`$schema` is v2 response metadata. The replace strips it from the body it builds."""
     api.returns({"$schema": "https://example.test/schema.json", "id": 7, "description": "old"})
     run(tasks.update_task(7, description=MD))
 

@@ -180,8 +180,8 @@ Keep the client token private. It grants access to the service and every tool it
 - `create_bucket(project_id, title, view_id?, limit?)`: adds a column at the right. Omit `limit`, or pass `0`, for no limit.
 - `update_bucket(project_id, bucket_id, title?, limit?, view_id?)`: renames a column or changes its limit, and requires at least one field. Neither API version offers a partial update here. The call reads the column and writes it back whole. Column order is not writable.
 - `delete_bucket(project_id, bucket_id, view_id?)`: moves the column's tasks to the default column. Vikunja will not remove the last column.
-- `list_bucket_tasks(project_id, view_id?, filter?)`: returns columns and their tasks. `task_count` remains the full count when Vikunja caps the returned task list.
-- `list_task_buckets(task_id)`: returns one bucket for each kanban view.
+- `list_board(project_id, view_id?, filter?)`: returns columns and their tasks. `task_count` remains the full count when Vikunja caps the returned task list. Takes the same arguments as `list_buckets` and adds the tasks and their counts.
+- `list_task_placements(task_id)`: returns the column holding the task, one entry for each kanban view.
 - `move_task_to_bucket(task_id, bucket_id, view_id?)`: reads the project ID from the task.
 
 Bucket behaviour:
@@ -300,7 +300,7 @@ Tested with Vikunja 2.5.0 against `/api/v1` and `/api/v2`.
 
 Identified issues:
 
-- On Vikunja 2.5.0, the v2 grouped-bucket route used by `list_bucket_tasks` may return HTTP 401 when the token works elsewhere. Try a new full-permission token or `/api/v1`. The same diagnosis is returned for every v2 HTTP 401 from that route. Verify the token itself too.
+- On Vikunja 2.5.0, the v2 grouped-bucket route used by `list_board` may return HTTP 401 when the token works elsewhere. Try a new full-permission token or `/api/v1`. The same diagnosis is returned for every v2 HTTP 401 from that route. Verify the token itself too. `list_buckets` reads a different route and is unaffected.
 - On Vikunja 2.3.0, `list_assignees` returns HTTP 500. The endpoint worked on 2.5.0.
 
 ## Contributing

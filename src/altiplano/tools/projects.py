@@ -61,8 +61,8 @@ async def update_project(
     the tasks in it, with a 412 naming the archive. Unarchive it before changing
     anything else on it.
 
-    `parent_project_id` re-parents the project, making it a sub-project of the id
-    given. `hex_color` is six hex digits with no leading `#`, and an empty string
+    `parent_project_id` re-parents the project. Pass the id of the project it should
+    sit under. `hex_color` is six hex digits with no leading `#`, and an empty string
     clears it. `description` is Markdown.
 
     v1 has no partial update, and neither does a description change on v2. Both read

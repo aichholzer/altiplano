@@ -76,9 +76,12 @@ async def list_kanban_views(project_id: int) -> list[dict]:
 async def list_buckets(project_id: int, view_id: int | None = None) -> list[dict]:
     """List the columns of a project's kanban view, in board order.
 
+    The columns alone, with no tasks in them. `list_board` takes the same arguments and
+    returns each column with its tasks.
+
     `limit` is the most tasks the bucket accepts, where 0 means no limit; a move into
-    a full bucket is refused. Vikunja does not populate task counts on this endpoint.
-    `list_bucket_tasks` reports them.
+    a full bucket is refused. Vikunja does not populate task counts on this endpoint,
+    and `list_board` reports them.
     """
     view = await _kanban_view(project_id, view_id)
     buckets = _items(await _request("GET", f"/projects/{project_id}/views/{view['id']}/buckets"))
@@ -177,13 +180,17 @@ async def delete_bucket(project_id: int, bucket_id: int, view_id: int | None = N
 
 
 @mcp.tool()
-async def list_bucket_tasks(
+async def list_board(
     project_id: int, view_id: int | None = None, filter: str | None = None
 ) -> list[dict]:
-    """List a kanban view's buckets with the tasks in them.
+    """The whole board: a kanban view's columns with the tasks sitting in each.
 
-    `task_count` is the bucket's true size, which can exceed the tasks returned:
-    Vikunja caps how many it sends per bucket. To reach the rest, narrow with
+    `list_buckets` answers the thinner question, the columns alone, and takes the same
+    arguments. Reach for that one when the tasks are of no interest, and for this one
+    when they are.
+
+    `task_count` is the column's true size, which can exceed the tasks returned:
+    Vikunja caps how many it sends per column. To reach the rest, narrow with
     `filter`, the same server-side syntax `list_tasks` takes.
     """
     view = await _kanban_view(project_id, view_id)
@@ -213,11 +220,11 @@ async def list_bucket_tasks(
 
 
 @mcp.tool()
-async def list_task_buckets(task_id: int) -> list[dict]:
-    """Report which bucket a task sits in, one entry per kanban view.
+async def list_task_placements(task_id: int) -> list[dict]:
+    """Where one task sits: the column holding it, one entry per kanban view.
 
     A task holds a position in every kanban view of its project. A project with two
-    boards puts the task in two buckets. Usually there is one.
+    boards puts the task in two columns. Usually there is one.
 
     The `bucket_id` on a task read any other way is 0. That field only means
     something inside a view.

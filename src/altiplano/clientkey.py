@@ -22,7 +22,7 @@ The Vikunja token is read from a hidden prompt, or from stdin when the input is
 piped. It never appears as an argument, where `ps` would show it to every user on the
 host.
 
-Three reasons this is a console script and not a shell script. The config directory
+Three reasons a console script beats a shell script here. The config directory
 resolution lives in `config.py`, and a shell copy would drift from it. `sha256sum`
 and `shasum` take different arguments on Linux and macOS. And a Python entry point
 arrives with the package, on whichever host runs the server.

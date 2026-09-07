@@ -148,11 +148,10 @@ def _base() -> str:
 # The Vikunja token the current request acts with. The HTTP gate binds it once the
 # caller is known; on stdio it stays unset.
 #
-# A ContextVar and not an argument because the alternative is threading an identity
-# through every tool signature and every helper in `api.py`. A ContextVar set in ASGI
-# middleware reaches the tool coroutine and stays isolated per request, including
-# across overlapping calls on one long-lived session. `tests/test_clients.py` holds
-# the test that says so.
+# A ContextVar. The alternative was an argument threaded through every tool signature
+# and every helper in `api.py`. A ContextVar set in ASGI middleware reaches the tool
+# coroutine and stays isolated per request, including across overlapping calls on one
+# long-lived session. `tests/test_clients.py` holds the test that says so.
 _REQUEST_TOKEN: ContextVar[str | None] = ContextVar("altiplano_vikunja_token", default=None)
 
 
