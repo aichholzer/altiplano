@@ -881,6 +881,33 @@ def test_remove_relation_puts_the_kind_in_the_path(api, run):
     assert api.last.url.path.endswith("/tasks/7/relations/subtask/9")
 
 
+@pytest.mark.parametrize(
+    "kind",
+    ["../../../projects", "subtask/../..", "sub/task", "sub task", "sub.task", ""],
+)
+def test_remove_relation_refuses_a_kind_that_would_move_the_request(api, run, kind):
+    """httpx resolves dot segments while merging, so the request would land elsewhere.
+
+    `../../../projects` under `/tasks/7/relations/{kind}/9` normalises to
+    `/projects`, and the DELETE reaches a project with the caller's token.
+    """
+    with pytest.raises(ValueError, match="relation_kind takes one word"):
+        run(relations.remove_relation(7, 9, kind))
+    assert api.requests == []
+
+
+def test_add_relation_holds_the_kind_to_the_same_rule(api, run):
+    with pytest.raises(ValueError, match="relation_kind takes one word"):
+        run(relations.add_relation(7, 9, "../../../projects"))
+    assert api.requests == []
+
+
+def test_an_unrecognised_kind_still_reaches_vikunja(api, run):
+    """Vikunja owns the vocabulary, and one bare word is all this check asks for."""
+    run(relations.add_relation(7, 9, "somethingnew"))
+    assert body(api.last) == {"other_task_id": 9, "relation_kind": "somethingnew"}
+
+
 @pytest.mark.parametrize("api_version", [2])
 def test_update_task_keeps_done_false(api, run, api_version):
     """`done=False` is falsy. A truthiness check here would silently lose it."""
