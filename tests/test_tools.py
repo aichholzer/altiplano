@@ -9,7 +9,7 @@ import json
 import httpx
 import pytest
 
-from altiplano.api import _version
+from altiplano.api import _request, _version
 from altiplano.server import mcp
 from altiplano.tools import (
     assignees,
@@ -1346,3 +1346,21 @@ def test_listings_reject_a_response_that_is_not_a_collection(api, run, listing):
     api.returns_raw(204)
     with pytest.raises(RuntimeError, match="expected a list from the API, got dict"):
         run(listing())
+
+
+# --- request paths ----------------------------------------------------------
+@pytest.mark.parametrize(
+    "path",
+    ["/tasks/7/relations/../../../projects/9", "/tasks/./7", "/tasks/7/.."],
+)
+def test_a_dot_segment_in_a_request_path_is_refused(api, run, path):
+    """The guard covers the class a relation kind once belonged to.
+
+    Every path built here is a literal joined with ints and with values a tool has
+    already checked. A dot segment arriving means one of those checks was bypassed.
+    httpx would resolve the segments while merging and send the request to the
+    endpoint they name, under the same base URL and the same token.
+    """
+    with pytest.raises(ValueError, match="dot segment"):
+        run(_request("DELETE", path))
+    assert api.requests == []
