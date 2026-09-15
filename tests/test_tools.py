@@ -116,10 +116,11 @@ ROUTES = [
     ),
     route(
         "bulk_update_tasks",
-        lambda: tasks.bulk_update_tasks([7, 9], done=True),
-        REPLACE,
-        "/tasks/bulk",
-        {"task_ids": [7, 9], "fields": ["done"], "values": {"done": True}},
+        lambda: tasks.bulk_update_tasks([7], done=True),
+        UPDATE,
+        "/tasks/7",
+        {1: {**READ_BACK, "done": True}, 2: {"done": True}},
+        response=READ_BACK,
     ),
     route("list_labels", lambda: labels.list_labels(), READ, "/labels", {}),
     route(
@@ -728,24 +729,38 @@ def test_search_tasks_passes_a_filter_and_sort_through(api, run):
     }
 
 
-def test_bulk_update_names_the_fields_separately_from_the_values(api, run):
-    """This endpoint writes only the fields it is told to. That makes it a real
-    partial update on v1 too."""
-    run(tasks.bulk_update_tasks([7, 9], done=True, priority=4))
-    assert body(api.last) == {
-        "task_ids": [7, 9],
-        "fields": ["done", "priority"],
-        "values": {"done": True, "priority": 4},
-    }
+@pytest.mark.parametrize("api_version", [2])
+def test_bulk_update_writes_each_task_on_its_own(api, run, api_version):
+    """`/tasks/bulk` clears assignees, reminders, and the favourite flag.
+
+    Vikunja scopes its `fields` list to the columns it writes and then runs three
+    side effects outside that scope, from the one `values` task shared across every
+    id. Going through the per-task write path keeps all three.
+    """
+    api.returns(READ_BACK)
+    result = run(tasks.bulk_update_tasks([7, 9], done=True, priority=4))
+    assert [r.url.path for r in api.requests] == ["/api/v2/tasks/7", "/api/v2/tasks/9"]
+    assert [body(r) for r in api.requests] == [{"done": True, "priority": 4}] * 2
+    assert result == {"updated": 2, "tasks": [READ_BACK, READ_BACK]}
 
 
-def test_bulk_update_keeps_done_false(api, run):
+@pytest.mark.parametrize("api_version", [2])
+def test_bulk_update_keeps_done_false(api, run, api_version):
+    api.returns(READ_BACK)
     run(tasks.bulk_update_tasks([7], done=False))
-    assert body(api.last) == {
-        "task_ids": [7],
-        "fields": ["done"],
-        "values": {"done": False},
-    }
+    assert body(api.last) == {"done": False}
+
+
+@pytest.mark.parametrize("api_version", [2])
+def test_bulk_update_names_the_task_that_stopped_it(api, run, api_version):
+    """An agent needs to know how far a partial run got before it failed."""
+    api.returns_in_order(
+        httpx.Response(200, json=READ_BACK),
+        httpx.Response(403, json={"message": "no write access"}),
+    )
+    with pytest.raises(RuntimeError, match="task 9 was not updated") as caught:
+        run(tasks.bulk_update_tasks([7, 9], done=True))
+    assert "1 of 2 tasks were written before it" in str(caught.value)
 
 
 def test_bulk_update_rejects_an_empty_payload(api, run):

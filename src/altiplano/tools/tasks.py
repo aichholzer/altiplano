@@ -340,14 +340,13 @@ async def duplicate_task(task_id: int) -> dict:
 async def bulk_update_tasks(
     task_ids: list[int], done: bool | None = None, priority: int | None = None
 ) -> dict:
-    """Set `done` or `priority` on many tasks in one request.
+    """Set `done` or `priority` on many tasks, one write per task.
 
-    Only the fields you pass are written, on either API version. This endpoint takes
-    the field names separately from the values. That makes it a genuine partial
-    update on v1 too, where updating a single task is a replace.
+    Only the fields you pass are written, and every other field on each task
+    survives. Tasks are written in the order they are given.
 
-    You need write access to every project involved. If it is missing on even one,
-    the whole request is refused and nothing changes.
+    A task Vikunja refuses ends the run. The error names that task and counts the
+    writes that already landed. Those stand.
     """
     values: dict[str, Any] = {}
     if done is not None:
@@ -356,11 +355,26 @@ async def bulk_update_tasks(
         values["priority"] = priority
     if not values:
         raise ValueError("No fields to update")
-    return await _request(
-        _verb("replace"),
-        "/tasks/bulk",
-        json={"task_ids": task_ids, "fields": sorted(values), "values": values},
-    )
+    # `/tasks/bulk` writes the fields it is told to and then runs three side effects
+    # outside that scope, each driven by the one `values` task shared across every
+    # id: `updateTaskAssignees` with an empty list clears every assignee,
+    # `updateReminders` rewrites the reminder rows from an empty list, and an
+    # `is_favorite` of false drops the task from favourites. The `fields` list may
+    # name only columns, `assignees` among them is refused, and one `values` covers
+    # every id, so no shape of that call keeps the three. That holds through Vikunja
+    # 2.7.0, `pkg/models/tasks.go`, `updateSingleTask`. Vikunja 2.7.1 scopes all
+    # three to `fields`, and Altiplano reads no server version to tell them apart.
+    written: list[dict] = []
+    for task_id in task_ids:
+        try:
+            written.append(await _write_task(task_id, dict(values)))
+        except httpx.HTTPStatusError as err:
+            raise RuntimeError(
+                f"task {task_id} was not updated: {err}. "
+                f"{len(written)} of {len(task_ids)} tasks were written before it, "
+                "and those writes stand."
+            ) from err
+    return {"updated": len(written), "tasks": written}
 
 
 async def _replace_task(task_id: int, changes: dict[str, Any]) -> dict:
