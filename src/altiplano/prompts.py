@@ -91,9 +91,10 @@ numbered. A loop of `create_task()` calls races, and can come back shuffled with
 a failure halfway leaving the rest uncreated. This tool needs the v2 API and
 refuses on v1. Vikunja caps a batch at 100.
 
-`bulk_update_tasks()` sets `done` or `priority` across many tasks in one request,
-writing only the fields passed. Missing write access on any one project involved
-refuses the entire request, and nothing changes.
+`bulk_update_tasks()` sets `done` or `priority` across many tasks, one write per
+task, in the order given. Only the fields passed are written, and every other
+field on each task survives. A task Vikunja refuses ends the run, and the error
+names it and counts the writes that already landed.
 
 ## Kanban
 
