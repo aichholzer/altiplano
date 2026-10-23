@@ -96,6 +96,21 @@ def _error_detail(r: httpx.Response) -> str:
     return f"{where}: {detail}" + (f" (code {code})" if code else "")
 
 
+def _checked_path(path: str) -> str:
+    """Refuse a path holding a `.` or `..` segment.
+
+    httpx resolves dot segments while it merges a relative path onto the base URL,
+    and the request then leaves for whatever endpoint the resolved path names. Every
+    path this module builds is a literal joined with ints and values a tool has
+    already checked, so reaching this raise means a caller-supplied string escaped
+    one of those checks. Query values travel in `params`, which keeps this rule to
+    the path alone.
+    """
+    if any(segment in (".", "..") for segment in path.split("/")):
+        raise ValueError(f"request path holds a dot segment: {path!r}")
+    return path
+
+
 async def _send(method: str, path: str, **kwargs: Any) -> httpx.Response:
     """One request. Raises on any non-2xx, with the server's own explanation attached.
 
@@ -103,6 +118,7 @@ async def _send(method: str, path: str, **kwargs: Any) -> httpx.Response:
     decoding its body as a result would hide that. 304 is the one status outside 2xx
     that passes, and the comment on `_NOT_MODIFIED` says why.
     """
+    path = _checked_path(path)
     async with httpx.AsyncClient(base_url=_base(), headers=_headers(), timeout=30) as client:
         r = await client.request(method, path, **kwargs)
         if not r.is_success and r.status_code != _NOT_MODIFIED:
