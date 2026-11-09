@@ -62,6 +62,9 @@ The coverage floor lives in `pyproject.toml` as `--cov-fail-under`. A local run
 and CI enforce the same number. Enable the pre-commit hook once per clone with
 `git config core.hooksPath hooks`; it runs the lint and the tests above.
 
+`pyproject.toml` also sets the uv floor, 0.13 or later, under `tool.uv`. An older
+uv stops with an error on every command, and `uv self update` moves past it.
+
 ## Layout
 
 ```text

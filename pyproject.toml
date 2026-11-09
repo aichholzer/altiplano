@@ -34,6 +34,14 @@ dev = [
   "pytest-cov==7.1.0",
 ]
 
+[tool.uv]
+# The lock is written as revision 5, the format uv 0.13.0 introduced. An older uv
+# reads it, re-locks it into an older revision on the next dependency change, and
+# a newer uv then churns it back. Below this floor uv exits with an error on every
+# command. 0.5.x ignores the setting; 0.6.0 and later enforce it. CI pins a uv in
+# the same family.
+required-version = ">=0.13"
+
 [tool.ruff]
 # Matches the width the code is already written to. Ruff's linter does not
 # enforce line length by default; this is here so `ruff format` would agree with
