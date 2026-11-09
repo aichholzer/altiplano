@@ -4,7 +4,8 @@ Pull requests are always welcome. Taking part means agreeing to the
 [code of conduct](./CODE_OF_CONDUCT.md).
 
 Requires Python 3.10 or later and
-[`uv`](https://docs.astral.sh/uv/getting-started/installation/).
+[`uv`](https://docs.astral.sh/uv/getting-started/installation/) 0.13 or later. An
+older uv stops with an error naming the floor, and `uv self update` moves past it.
 
 ## Setup
 
