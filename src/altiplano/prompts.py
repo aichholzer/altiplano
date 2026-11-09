@@ -93,7 +93,10 @@ refuses on v1. Vikunja caps a batch at 100.
 
 `bulk_update_tasks()` sets `done` or `priority` across many tasks in one request,
 writing only the fields passed. Missing write access on any one project involved
-refuses the entire request, and nothing changes.
+refuses the entire request, and nothing changes. It needs Vikunja 2.7.1 or later:
+up to 2.7.0 the bulk endpoint also cleared every assignee and reminder and unset
+the favourite flag on each task, and the tool refuses there. Use `update_task()`
+per task on an older server.
 
 ## Kanban
 

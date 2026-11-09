@@ -170,7 +170,7 @@ Keep the client token private. It grants access to the service and every tool it
 - `move_task(task_id, project_id)`: moves labels, assignees, comments, relations, and dates with the task. The destination project assigns a new local `identifier`.
 - `duplicate_task(task_id)`: copies the task, labels, assignees, attachments, and reminders into the same project. The copy receives a `copiedfrom` relation to the original.
 - `bulk_create_tasks(project_id, tasks)`: creates a batch of tasks in one request, atomically and in the given order. Requires `/api/v2`. Each entry takes the same fields as `create_task`, `title` included, anything else is refused. Vikunja caps a batch at 100 and names the entry that fails. Returns one summary per created task.
-- `bulk_update_tasks(task_ids, done?, priority?)`: requires at least one field. The request fails as a unit if the token lacks write access to any affected project.
+- `bulk_update_tasks(task_ids, done?, priority?)`: requires at least one field and Vikunja 2.7.1 or later. The request fails as a unit if the token lacks write access to any affected project. Up to Vikunja 2.7.0 the bulk endpoint also cleared assignees, reminders, and the favourite flag on each task, and the tool refuses there.
 - `set_reminders(task_id, reminders)`: replaces all reminders with the supplied ISO 8601 datetimes. Pass an empty list to clear them.
 - `delete_task(task_id)`: soft-deletes the task and removes its comments, labels, and assignees. Vikunja retains the task for 30 days and provides no restore endpoint. Treat deletion as irreversible.
 
@@ -300,10 +300,11 @@ Vikunja resolves `@mentions` during Markdown conversion and notifies the named u
 
 ## Compatibility
 
-Tested with Vikunja 2.5.0 against `/api/v1` and `/api/v2`.
+Tested with Vikunja 2.5.0 against `/api/v1` and `/api/v2`, and with 2.8.0 against `/api/v2`.
 
 Identified issues:
 
+- Up to Vikunja 2.7.0, `/tasks/bulk` cleared every assignee and reminder and unset the favourite flag on each task it touched, on top of the fields it was asked to write. Vikunja 2.7.1 fixed it. `bulk_update_tasks` reads the server's release once from `/info` and refuses below 2.7.1.
 - On Vikunja 2.5.0, the v2 grouped-bucket route used by `list_board` may return HTTP 401 when the token works elsewhere. Try a new full-permission token or `/api/v1`. The same diagnosis is returned for every v2 HTTP 401 from that route. Verify the token itself too. `list_buckets` reads a different route and is unaffected.
 - On Vikunja 2.3.0, `list_assignees` returns HTTP 500. The endpoint worked on 2.5.0.
 

@@ -754,6 +754,53 @@ def test_bulk_update_rejects_an_empty_payload(api, run):
     assert api.requests == []
 
 
+@pytest.mark.parametrize("api_version", [1, 2])
+def test_bulk_update_reads_the_server_release_once(api, run, api_version):
+    """A running server does not change its release. One `/info` per process."""
+    run(tasks.bulk_update_tasks([7], done=True))
+    run(tasks.bulk_update_tasks([9], priority=2))
+    assert [(r.method, r.url.path) for r in api.requests] == [
+        ("GET", f"/api/v{api_version}/info"),
+        (REPLACE[api_version], f"/api/v{api_version}/tasks/bulk"),
+        (REPLACE[api_version], f"/api/v{api_version}/tasks/bulk"),
+    ]
+
+
+@pytest.mark.parametrize("reported", ["v2.7.1", "v2.8.0", "v2.8.0-3-gabcdef", "3.0.0"])
+def test_bulk_update_accepts_the_floor_and_anything_past_it(api, run, reported):
+    """A build past a release reports that release with a suffix. The suffix is dropped."""
+    api.server_version = reported
+    run(tasks.bulk_update_tasks([7], done=True))
+    assert api.last.url.path.endswith("/tasks/bulk")
+
+
+@pytest.mark.parametrize("reported", ["v2.7.0", "v2.6.0", "v1.24.6"])
+def test_bulk_update_refuses_a_server_below_the_floor(api, run, reported):
+    """Up to 2.7.0 the bulk endpoint cleared assignees, reminders, and favourites.
+
+    Nothing reaches it. The error names the release, the floor, and the way out.
+    """
+    api.server_version = reported
+    with pytest.raises(RuntimeError, match=f"refused on Vikunja {reported[1:]}") as caught:
+        run(tasks.bulk_update_tasks([7, 9], done=True))
+    assert "2.7.1" in str(caught.value)
+    assert "update_task" in str(caught.value)
+    assert [r.url.path for r in api.requests] == ["/api/v1/info"]
+
+
+@pytest.mark.parametrize(
+    "info",
+    [{"version": "dev"}, {"version": ""}, {"version": 2}, {"frontend_url": "https://x"}, []],
+)
+def test_bulk_update_refuses_a_server_whose_release_it_cannot_read(api, run, info):
+    """A server that cannot be placed against the floor does not get the bulk endpoint."""
+    api.server_version = None
+    api.returns(info)
+    with pytest.raises(RuntimeError, match="could not read a Vikunja release"):
+        run(tasks.bulk_update_tasks([7], done=True))
+    assert [r.url.path for r in api.requests] == ["/api/v1/info"]
+
+
 # --- bulk create ------------------------------------------------------------
 # v2 only. Every case here runs there, and the routing table covers the v1 refusal.
 @pytest.mark.parametrize("api_version", [2])
