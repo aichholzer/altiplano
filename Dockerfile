@@ -14,9 +14,12 @@ ARG ALPINE_VERSION=latest
 # --- build the virtual environment -------------------------------------------
 FROM alpine:${ALPINE_VERSION} AS build
 
-# `uv` resolves and installs. It is in Alpine's community repository, which keeps
-# this stage to one `apk` call and pulls no installer script over the network.
-RUN apk add --no-cache python3 uv
+# `uv` resolves and installs. The binary comes from uv's own image, pinned by tag and
+# digest. It is static musl and runs on Alpine as it is. Alpine's own `uv` package
+# sits below the floor `pyproject.toml` sets under `tool.uv`, and
+# `tests/test_uv_floor.py` checks this pin against that floor.
+RUN apk add --no-cache python3
+COPY --from=ghcr.io/astral-sh/uv:0.13.7@sha256:96f40d3904aad8d0bd010539001d36c8e2188b981e1334471a90c4a1d93bb490 /uv /usr/local/bin/uv
 
 WORKDIR /src
 
