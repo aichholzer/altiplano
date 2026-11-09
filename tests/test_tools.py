@@ -886,7 +886,7 @@ def test_remove_relation_puts_the_kind_in_the_path(api, run):
     ["../../../projects", "subtask/../..", "sub/task", "sub task", "sub.task", ""],
 )
 def test_remove_relation_refuses_a_kind_that_would_move_the_request(api, run, kind):
-    """httpx resolves dot segments while merging, so the request would land elsewhere.
+    """httpx resolves dot segments while merging, and the request lands elsewhere.
 
     `../../../projects` under `/tasks/7/relations/{kind}/9` normalises to
     `/projects`, and the DELETE reaches a project with the caller's token.

@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented here.
 
+## [2.0.2]
+
+### Fixed
+
+- `remove_relation` put `relation_kind` straight into the request path. httpx
+  resolves dot segments while it merges a path onto the base URL, and a kind of
+  `../../../projects` sent `DELETE /projects/{other_task_id}` with the caller's
+  token. Both relation tools now accept one bare word as the kind: letters, digits,
+  hyphens, and underscores. Which words Vikunja accepts is still Vikunja's to say.
+  As a second guard, a request path holding a `.` or `..` segment is refused before
+  anything is sent.
+
 ## [2.0.1]
 
 ### Fixed

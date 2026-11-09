@@ -102,9 +102,8 @@ def _checked_path(path: str) -> str:
     httpx resolves dot segments while it merges a relative path onto the base URL,
     and the request then leaves for whatever endpoint the resolved path names. Every
     path this module builds is a literal joined with ints and values a tool has
-    already checked, so reaching this raise means a caller-supplied string escaped
-    one of those checks. Query values travel in `params`, which keeps this rule to
-    the path alone.
+    already checked. Reaching this raise means a caller-supplied string escaped one
+    of those checks. Query values travel in `params`. This rule covers the path alone.
     """
     if any(segment in (".", "..") for segment in path.split("/")):
         raise ValueError(f"request path holds a dot segment: {path!r}")

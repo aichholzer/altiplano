@@ -6,10 +6,10 @@ from altiplano.api import _request, _verb
 from altiplano.app import mcp
 
 # `remove_relation` puts the kind in the request path. A kind carrying a slash or
-# a dot segment addresses a different endpoint under the API root, and httpx
-# resolves the dot segments itself while it merges the path onto the base URL, so
-# the request leaves as a clean URL somewhere else entirely. This pattern holds
-# the value to one bare word. Which words Vikunja accepts stays Vikunja's to say.
+# a dot segment addresses a different endpoint under the API root. httpx resolves
+# the dot segments itself while it merges the path onto the base URL, and the
+# request leaves as a clean URL somewhere else entirely. This pattern holds the
+# value to one bare word. Which words Vikunja accepts stays Vikunja's to say.
 _BARE_WORD = re.compile(r"\A[A-Za-z0-9_-]+\Z")
 
 
