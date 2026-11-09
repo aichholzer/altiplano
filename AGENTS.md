@@ -63,7 +63,9 @@ and CI enforce the same number. Enable the pre-commit hook once per clone with
 `git config core.hooksPath hooks`; it runs the lint and the tests above.
 
 `pyproject.toml` also sets the uv floor, 0.13 or later, under `tool.uv`. An older
-uv stops with an error on every command, and `uv self update` moves past it.
+uv stops with an error on every command, and `uv self update` moves past it. The two
+workflows and the Dockerfile each pin a uv of their own, and `tests/test_uv_floor.py`
+fails when one of those pins sits below the floor.
 
 ## Layout
 

@@ -5,7 +5,9 @@ Pull requests are always welcome. Taking part means agreeing to the
 
 Requires Python 3.10 or later and
 [`uv`](https://docs.astral.sh/uv/getting-started/installation/) 0.13 or later. An
-older uv stops with an error naming the floor, and `uv self update` moves past it.
+older uv stops with an error naming the floor, and `uv self update` moves past it. The
+two workflows and the Dockerfile each pin a uv of their own, and `tests/test_uv_floor.py`
+fails when one of those pins sits below the floor.
 
 ## Setup
 
