@@ -16,6 +16,7 @@ from altiplano.api import (
     _md_params,
     _request,
     _send,
+    _server_version,
     _task_summary,
     _verb,
     _version,
@@ -336,11 +337,20 @@ async def duplicate_task(task_id: int) -> dict:
     return copy
 
 
+# Up to Vikunja 2.7.0, `/tasks/bulk` wrote the named fields and then ran three side
+# effects from the one `values` task shared across every id: the assignees were
+# replaced with its empty list, the reminders were rewritten from its empty list,
+# and a favourite was dropped wherever its `is_favorite` was false. `fields` scoped
+# only the column write. 2.7.1 scopes all three to `fields` as well. Below it this
+# tool refuses, and `update_task` per task is the safe path.
+_BULK_SAFE_FROM = (2, 7, 1)
+
+
 @mcp.tool()
 async def bulk_update_tasks(
     task_ids: list[int], done: bool | None = None, priority: int | None = None
 ) -> dict:
-    """Set `done` or `priority` on many tasks in one request.
+    """Set `done` or `priority` on many tasks in one request. Needs Vikunja 2.7.1 or later.
 
     Only the fields you pass are written, on either API version. This endpoint takes
     the field names separately from the values. That makes it a genuine partial
@@ -348,6 +358,11 @@ async def bulk_update_tasks(
 
     You need write access to every project involved. If it is missing on even one,
     the whole request is refused and nothing changes.
+
+    Up to Vikunja 2.7.0 the same endpoint also cleared every assignee and reminder
+    and unset the favourite flag on each task it touched. The server's release is
+    read once from `/info`, and below 2.7.1 this tool refuses and writes nothing.
+    `update_task` per task is the safe path there.
     """
     values: dict[str, Any] = {}
     if done is not None:
@@ -356,6 +371,14 @@ async def bulk_update_tasks(
         values["priority"] = priority
     if not values:
         raise ValueError("No fields to update")
+    release = await _server_version()
+    if release < _BULK_SAFE_FROM:
+        raise RuntimeError(
+            f"bulk_update_tasks is refused on Vikunja {'.'.join(map(str, release))}. Up to 2.7.0 "
+            "the bulk endpoint cleared every assignee and reminder and unset the favourite flag "
+            "on each task it touched. Nothing was written. Upgrade Vikunja to 2.7.1 or later, "
+            "or call update_task once per task."
+        )
     return await _request(
         _verb("replace"),
         "/tasks/bulk",

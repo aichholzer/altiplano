@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here.
 
+## [2.0.3]
+
+### Changed
+
+- `bulk_update_tasks` needs Vikunja 2.7.1 or later and refuses older servers. Up to
+  2.7.0, `/tasks/bulk` wrote the named fields and then cleared every assignee and
+  reminder and unset the favourite flag on each task it touched, silently. Vikunja
+  2.7.1 scopes those to the fields named. The server's release is read once from
+  `/info` and cached for the life of the process. On 2.7.1 and later the single
+  request and its response are unchanged.
+
 ## [2.0.2]
 
 ### Fixed

@@ -8,6 +8,7 @@ The leading underscores mark these as package-private. The tool modules import t
 freely, and nothing outside `altiplano` should.
 """
 
+import re
 from typing import Any
 
 import httpx
@@ -135,6 +136,36 @@ def _decode(r: httpx.Response) -> Any:
 
 async def _request(method: str, path: str, **kwargs: Any) -> Any:
     return _decode(await _send(method, path, **kwargs))
+
+
+# Vikunja reports its release on `GET /info` as `version`: `v2.8.0` for a release,
+# and `v2.8.0-3-gabcdef` for a build past one. The leading release number is what a
+# floor comparison needs, and the rest is dropped.
+_RELEASE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)")
+
+# One read per base URL for the life of the process. A running server does not
+# change its release, and the tools that compare against a floor would otherwise
+# pay a request on every call.
+_server_versions: dict[str, tuple[int, ...]] = {}
+
+
+async def _server_version() -> tuple[int, ...]:
+    """The Vikunja release behind the configured URL, as `(major, minor, patch)`.
+
+    Read once from `GET /info`, which answers without authentication, and cached per
+    base URL. A `version` that does not open with a release number raises. The
+    callers compare against a floor, and a server that cannot be placed against it
+    fails that comparison.
+    """
+    base = _base()
+    if base not in _server_versions:
+        info = await _request("GET", "/info")
+        reported = info.get("version") if isinstance(info, dict) else None
+        match = _RELEASE.match(reported) if isinstance(reported, str) else None
+        if match is None:
+            raise RuntimeError(f"could not read a Vikunja release from GET /info: version is {reported!r}")
+        _server_versions[base] = tuple(int(n) for n in match.groups())
+    return _server_versions[base]
 
 
 def _items(data: Any) -> list:

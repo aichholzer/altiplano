@@ -11,6 +11,7 @@ from typing import Any
 import httpx
 import pytest
 
+from altiplano import api as altiplano_api
 from altiplano import config
 
 HOST = "https://vikunja.test"
@@ -46,6 +47,10 @@ class RecordingAPI:
         # An empty collection. Tests that only assert on the outbound request
         # still need a response the listing tools will accept.
         self._responses = [httpx.Response(200, json=[])]
+        # What `GET /info` reports as the server's release. `bulk_update_tasks` reads
+        # it before writing, and most tests want a server past its floor. None hands
+        # `/info` to the queue like any other request.
+        self.server_version: str | None = "v2.8.0"
 
     def returns(self, payload: Any, status: int = 200) -> None:
         self._responses = [httpx.Response(status, json=payload)]
@@ -66,6 +71,8 @@ class RecordingAPI:
 
     def _handle(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
+        if self.server_version is not None and request.url.path.endswith("/info"):
+            return httpx.Response(200, json={"version": self.server_version})
         # The last response is reused once the queue reaches it. Tests that only
         # assert on the outbound request need not enumerate every reply.
         return self._responses.pop(0) if len(self._responses) > 1 else self._responses[0]
@@ -101,6 +108,10 @@ def api(api_version: int, monkeypatch: pytest.MonkeyPatch) -> RecordingAPI:
     # Patched on httpx itself. It holds wherever the client is built, whichever
     # module does the building.
     monkeypatch.setattr(httpx, "AsyncClient", with_mock_transport)
+    # The release read from /info is cached per base URL for the life of the process.
+    # Every test starts with that cache empty, and a fake reporting a different
+    # release is believed.
+    monkeypatch.setattr(altiplano_api, "_server_versions", {})
     return recorder
 
 
