@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented here.
 
+## [2.0.6]
+
+### Changed
+
+- CI ends with a gate job, reported as `ci`, that fails unless `lint`, both `test`
+  legs, and `docker` succeeded. It runs when an upstream job fails. The main branch
+  ruleset requires `ci` alone, and a CI job can be renamed, added, or removed with no
+  change to it. `tests/test_ci_gate.py` fails when a job is missing from the gate's
+  `needs`, and PyYAML 6.0.3 joins the dev dependencies to parse the workflow.
+
 ## [2.0.5]
 
 ### Changed

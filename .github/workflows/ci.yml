@@ -124,3 +124,27 @@ jobs:
       - name: Server log
         if: always()
         run: docker logs altiplano-ci || true
+
+  # The one check the main branch ruleset requires. Every other job goes in `needs`,
+  # and `tests/test_ci_gate.py` fails when one is missing. A job renamed, added, or
+  # removed here then needs no change to the ruleset.
+  #
+  # `if: always()` keeps the gate running when an upstream job fails. A skipped
+  # required check never reports, and the pull request would wait forever.
+  gate:
+    name: ci
+    if: always()
+    needs: [lint, test, docker]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every upstream job to have succeeded
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "upstream results: $RESULTS"
+          for result in $RESULTS; do
+            if [[ "$result" != "success" ]]; then
+              echo "::error::an upstream job reported $result"
+              exit 1
+            fi
+          done

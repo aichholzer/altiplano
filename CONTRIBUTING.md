@@ -24,6 +24,10 @@ job and pytest on Python 3.10 and 3.13. A third job builds the Docker image, sta
 loopback, and waits for its healthcheck and a `401` to a request with no token. The hook
 does not build the image.
 
+A last job, `ci`, passes only when every other job passed, and it is the one check `main`
+requires. Add a new CI job to its `needs`. `tests/test_ci_gate.py` fails until it is
+there.
+
 ## Commands
 
 ```bash

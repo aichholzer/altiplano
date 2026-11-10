@@ -1,6 +1,6 @@
 [project]
 name = "altiplano"
-version = "2.0.5"
+version = "2.0.6"
 description = "Minimal MCP server for Vikunja (server-side filtering, no fluff)"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -32,6 +32,7 @@ dependencies = [
 dev = [
   "pytest==9.1.1",
   "pytest-cov==7.1.0",
+  "pyyaml==6.0.3",
 ]
 
 [tool.uv]
