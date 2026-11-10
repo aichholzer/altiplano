@@ -62,3 +62,65 @@ jobs:
           slug: aichholzer/altiplano
           files: coverage.xml
           fail_ci_if_error: false
+
+  docker:
+    name: docker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # No ALPINE_VERSION argument. Compose builds with the Dockerfile's default,
+      # `latest`, and this is the image a deploy would build today.
+      - name: Build
+        run: docker build --tag altiplano:ci .
+
+      - name: Check the version and both entry points
+        run: |
+          expected=$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+          actual=$(docker run --rm --entrypoint python3 altiplano:ci -c 'import altiplano; print(altiplano.__version__)')
+          if [[ "$actual" != "$expected" ]]; then
+            echo "::error::the image reports $actual and pyproject.toml says $expected"
+            exit 1
+          fi
+          docker run --rm --entrypoint altiplano-http altiplano:ci --version
+          docker run --rm --entrypoint altiplano-clientkey altiplano:ci --version
+
+      # A loopback bind starts with an empty client store. VIKUNJA_URL has to parse,
+      # and nothing connects to it. The image's healthcheck waits 30 seconds before
+      # its first probe; two seconds is enough here.
+      - name: Start the server and wait for the healthcheck
+        run: |
+          docker run --detach --name altiplano-ci \
+            --env ALTIPLANO_HTTP_HOST=127.0.0.1 \
+            --env VIKUNJA_URL=https://vikunja.invalid/api/v2 \
+            --health-interval=2s \
+            altiplano:ci
+          for _ in $(seq 30); do
+            state=$(docker inspect --format '{{.State.Status}} {{.State.Health.Status}}' altiplano-ci)
+            echo "$state"
+            case "$state" in
+              "running healthy") exit 0 ;;
+              exited*|dead*|*unhealthy) echo "::error::the container reported $state"; exit 1 ;;
+            esac
+            sleep 2
+          done
+          echo "::error::the container was not healthy after 60 seconds"
+          exit 1
+
+      # The healthcheck is a TCP connect. A request with no token reaching the gate
+      # and coming back 401 shows the application itself answers.
+      - name: Expect a 401 without a token
+        run: |
+          docker exec altiplano-ci python3 -c '
+          import urllib.error, urllib.request
+          request = urllib.request.Request("http://127.0.0.1:8000/mcp", data=b"{}", method="POST")
+          try:
+              urllib.request.urlopen(request, timeout=5)
+          except urllib.error.HTTPError as err:
+              raise SystemExit(0 if err.code == 401 else f"expected 401, got {err.code}")
+          raise SystemExit("expected 401, got a success")
+          '
+
+      - name: Server log
+        if: always()
+        run: docker logs altiplano-ci || true
