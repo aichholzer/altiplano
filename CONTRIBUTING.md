@@ -20,7 +20,9 @@ git config core.hooksPath hooks
 
 That last line enables the pre-commit hook, once per clone. It runs Ruff 0.16.4 over
 `src` and `tests`, then pytest with a 90 percent coverage minimum. CI runs Ruff in one
-job and pytest on Python 3.10 and 3.13.
+job and pytest on Python 3.10 and 3.13. A third job builds the Docker image, starts it on
+loopback, and waits for its healthcheck and a `401` to a request with no token. The hook
+does not build the image.
 
 ## Commands
 

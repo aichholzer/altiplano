@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here.
 
+## [2.0.5]
+
+### Changed
+
+- CI builds the Docker image on every pull request and every push to main, with the
+  Dockerfile's default Alpine. A `docker` job checks that the image reports the version
+  in `pyproject.toml` and that `altiplano-http` and `altiplano-clientkey` run, starts
+  the server on loopback, and fails unless the healthcheck passes within 60 seconds and
+  a request with no token gets a `401`. The publish workflow runs the same job before a
+  release.
+
 ## [2.0.4]
 
 ### Fixed

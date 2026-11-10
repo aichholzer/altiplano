@@ -62,6 +62,11 @@ The coverage floor lives in `pyproject.toml` as `--cov-fail-under`. A local run
 and CI enforce the same number. Enable the pre-commit hook once per clone with
 `git config core.hooksPath hooks`; it runs the lint and the tests above.
 
+CI also runs a `docker` job. It builds the image with the Dockerfile's default Alpine,
+starts it on loopback, and fails unless the healthcheck passes and a request with no
+token gets a `401`. The hook does not build the image. A broken Dockerfile fails on the
+pull request.
+
 `pyproject.toml` also sets the uv floor, 0.13 or later, under `tool.uv`. An older
 uv stops with an error on every command, and `uv self update` moves past it. The two
 workflows and the Dockerfile each pin a uv of their own, and `tests/test_uv_floor.py`
