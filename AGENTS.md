@@ -67,6 +67,11 @@ starts it on loopback, and fails unless the healthcheck passes and a request wit
 token gets a `401`. The hook does not build the image. A broken Dockerfile fails on the
 pull request.
 
+The main branch ruleset requires one check, `ci`. That is the `gate` job in `ci.yml`,
+and it fails unless every job in its `needs` succeeded. A new CI job goes in that list,
+and `tests/test_ci_gate.py` fails while one is missing. Renaming, adding, or removing a
+job needs no change to the ruleset.
+
 `pyproject.toml` also sets the uv floor, 0.13 or later, under `tool.uv`. An older
 uv stops with an error on every command, and `uv self update` moves past it. The two
 workflows and the Dockerfile each pin a uv of their own, and `tests/test_uv_floor.py`
