@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here.
 
+## [2.0.4]
+
+### Fixed
+
+- The Docker image builds again. 2.0.3 set a uv floor of 0.13 under `tool.uv` in
+  `pyproject.toml`, and the build stage still installed Alpine's `uv` package. Alpine
+  3.24 ships uv 0.11.19. It exits before its first command, and the build stopped at
+  `uv pip install`. The build stage now copies uv 0.13.7 from
+  `ghcr.io/astral-sh/uv`, pinned by tag and digest. `tests/test_uv_floor.py` fails
+  when the uv pinned in the Dockerfile or in either workflow sits below the floor.
+
 ## [2.0.3]
 
 ### Changed
