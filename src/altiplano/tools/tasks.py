@@ -10,6 +10,7 @@ from typing import Any
 import httpx
 
 from altiplano.api import (
+    _compact_result,
     _date,
     _decode,
     _items,
@@ -147,6 +148,9 @@ async def create_task(
     `repeat_after`, or 2 to count from the day it was completed. Give a repeating
     task a `due_date`. It reopens whether or not there is a date to advance, and one
     with no dates can never be closed.
+
+    Returns the created task, or, with `ALTIPLANO_COMPACT_WRITES=1`, the task
+    summary: `id`, `identifier`, `title`, `done`, `priority`.
     """
     payload = _new_task(
         title,
@@ -162,9 +166,10 @@ async def create_task(
             "repeat_mode": repeat_mode,
         },
     )
-    return await _request(
+    result = await _request(
         _verb("create"), f"/projects/{project_id}/tasks", params=_md_params(), json=payload
     )
+    return _compact_result(result)
 
 
 def _bulk_entry(index: int, entry: Any) -> dict[str, Any]:
@@ -260,6 +265,10 @@ async def update_task(
     as the stored HTML. v2 does not convert on a PATCH. Call `get_task` when you need
     it as Markdown. And a write that changes nothing returns
     `{"ok": true, "unchanged": true}` there, which is Vikunja answering 304.
+
+    Returns the updated task, or, with `ALTIPLANO_COMPACT_WRITES=1`, the task
+    summary: `id`, `identifier`, `title`, `done`, `priority`. Any other answer,
+    such as the `unchanged` marker, passes through unchanged.
     """
     payload: dict[str, Any] = {}
     if title is not None:
@@ -286,7 +295,8 @@ async def update_task(
         payload["repeat_mode"] = repeat_mode
     if not payload:
         raise ValueError("No fields to update")
-    return await _write_task(task_id, payload)
+    result = await _write_task(task_id, payload)
+    return _compact_result(result)
 
 
 async def _write_task(task_id: int, payload: dict[str, Any]) -> dict:

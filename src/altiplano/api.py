@@ -8,6 +8,7 @@ The leading underscores mark these as package-private. The tool modules import t
 freely, and nothing outside `altiplano` should.
 """
 
+import os
 import re
 from typing import Any
 
@@ -196,3 +197,24 @@ def _task_summary(t: dict) -> dict:
         "done": t.get("done"),
         "priority": t.get("priority"),
     }
+
+
+def _compact_writes() -> bool:
+    """True when ALTIPLANO_COMPACT_WRITES asks the write tools for a short acknowledgement.
+
+    `1`, `true`, `yes` and `on` count as on, case-insensitively, with surrounding
+    spaces ignored. Anything else, and an unset variable, keeps the full objects.
+    """
+    return os.environ.get("ALTIPLANO_COMPACT_WRITES", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _compact_result(result: Any) -> Any:
+    """Apply compact mode to a write result.
+
+    A dict carrying an `"id"` key is a task, so it is reduced to the summary.
+    Anything else (a special answer such as an `unchanged` marker) passes through
+    unchanged.
+    """
+    if _compact_writes() and isinstance(result, dict) and "id" in result:
+        return _task_summary(result)
+    return result

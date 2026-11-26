@@ -1,6 +1,6 @@
 """Comment tools."""
 
-from altiplano.api import _items, _md_params, _request, _verb
+from altiplano.api import _compact_writes, _items, _md_params, _request, _verb
 from altiplano.app import mcp
 
 
@@ -16,10 +16,17 @@ async def list_comments(task_id: int) -> list[dict]:
 
 @mcp.tool()
 async def add_comment(task_id: int, comment: str) -> dict:
-    """Add a comment to a task."""
-    return await _request(
+    """Add a comment to a task.
+
+    Returns the created comment, or, with `ALTIPLANO_COMPACT_WRITES=1`, just
+    `{"id": <comment id>, "task_id": <task id>}`.
+    """
+    result = await _request(
         _verb("create"), f"/tasks/{task_id}/comments", params=_md_params(), json={"comment": comment}
     )
+    if _compact_writes() and isinstance(result, dict) and "id" in result:
+        return {"id": result["id"], "task_id": task_id}
+    return result
 
 
 @mcp.tool()

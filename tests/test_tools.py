@@ -1411,3 +1411,90 @@ def test_a_dot_segment_in_a_request_path_is_refused(api, run, path):
     with pytest.raises(ValueError, match="dot segment"):
         run(_request("DELETE", path))
     assert api.requests == []
+
+
+# --- compact writes ---------------------------------------------------------
+FULL_TASK = {
+    "id": 7,
+    "identifier": "#2",
+    "title": "Task",
+    "done": False,
+    "priority": 3,
+    "description": "the long text we do not want to pay for twice",
+}
+
+
+def test_create_task_returns_the_full_object_by_default(api, run, monkeypatch):
+    """No ALTIPLANO_COMPACT_WRITES means the whole task, description included."""
+    monkeypatch.delenv("ALTIPLANO_COMPACT_WRITES", raising=False)
+    api.returns(FULL_TASK)
+    assert run(tasks.create_task(3, "Task", description="why")) == FULL_TASK
+
+
+def test_create_task_compact_returns_the_summary(api, run, monkeypatch):
+    monkeypatch.setenv("ALTIPLANO_COMPACT_WRITES", "1")
+    api.returns(FULL_TASK)
+    assert run(tasks.create_task(3, "Task", description="why")) == {
+        "id": 7,
+        "identifier": "#2",
+        "title": "Task",
+        "done": False,
+        "priority": 3,
+    }
+
+
+@pytest.mark.parametrize("api_version", [1, 2])
+def test_update_task_compact_returns_the_summary(api, run, api_version, monkeypatch):
+    """Both write paths (partial update and full replace) go through the wrapper."""
+    monkeypatch.setenv("ALTIPLANO_COMPACT_WRITES", "1")
+    api.returns(FULL_TASK | {"done": True})
+    assert run(tasks.update_task(7, done=True)) == {
+        "id": 7,
+        "identifier": "#2",
+        "title": "Task",
+        "done": True,
+        "priority": 3,
+    }
+
+
+@pytest.mark.parametrize("api_version", [1, 2])
+def test_update_task_compact_passes_a_result_without_an_id_through(api, run, api_version, monkeypatch):
+    """A special answer, such as an "unchanged" marker, must not be summarised.
+
+    On v1 the read returns the task and the write returns the marker; the marker is
+    the write answer and is what `_compact_result` sees. On v2 the PATCH answer is
+    the marker directly.
+    """
+    monkeypatch.setenv("ALTIPLANO_COMPACT_WRITES", "1")
+    marker = {"status": "unchanged"}
+    if api_version == 1:
+        api.returns_in_order(httpx.Response(200, json=FULL_TASK), httpx.Response(200, json=marker))
+    else:
+        api.returns(marker)
+    assert run(tasks.update_task(7, done=True)) == marker
+
+
+@pytest.mark.parametrize("value", ["0", "", "no", "off"])
+def test_create_task_compact_flag_off_or_blank_keeps_the_full_object(
+    api, run, monkeypatch, value
+):
+    monkeypatch.setenv("ALTIPLANO_COMPACT_WRITES", value)
+    api.returns(FULL_TASK)
+    assert run(tasks.create_task(3, "Task", description="why")) == FULL_TASK
+
+
+def test_add_comment_compact_returns_id_and_task_id(api, run, monkeypatch):
+    monkeypatch.setenv("ALTIPLANO_COMPACT_WRITES", "1")
+    api.returns({"id": 21, "comment": "hello", "author": {"username": "stefan"}})
+    assert run(comments.add_comment(7, "hello")) == {"id": 21, "task_id": 7}
+
+
+def test_add_comment_returns_the_full_comment_by_default(api, run, monkeypatch):
+    """The compact path is the exception, so the default is pinned too."""
+    monkeypatch.delenv("ALTIPLANO_COMPACT_WRITES", raising=False)
+    api.returns({"id": 21, "comment": "hello", "author": {"username": "stefan"}})
+    assert run(comments.add_comment(7, "hello")) == {
+        "id": 21,
+        "comment": "hello",
+        "author": {"username": "stefan"},
+    }
