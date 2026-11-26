@@ -298,6 +298,10 @@ V2 partial updates through `update_task`, `move_task`, and `set_reminders` retur
 
 Vikunja resolves `@mentions` during Markdown conversion and notifies the named user.
 
+### Compact write responses (opt-in)
+
+Write tools return full objects by default. Set `ALTIPLANO_COMPACT_WRITES` to `1`, `true`, `yes`, or `on` to reduce three of them. `create_task` and `update_task` then return the task summary (`id`, `identifier`, `title`, `done`, `priority`), and `add_comment` returns `{"id": <comment id>, "task_id": <task id>}`. Any other value, and an unset variable, keeps the full responses.
+
 ## Compatibility
 
 Tested with Vikunja 2.5.0 against `/api/v1` and `/api/v2`, and with 2.8.0 against `/api/v2`.

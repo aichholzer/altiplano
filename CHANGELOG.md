@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here.
 
+## [2.1.0]
+
+### Added
+
+- `ALTIPLANO_COMPACT_WRITES`, an opt-in environment variable. Set to `1`, `true`,
+  `yes`, or `on`, it makes `create_task` and `update_task` return the task summary
+  (`id`, `identifier`, `title`, `done`, `priority`) and `add_comment` return just the
+  comment id and task id, instead of the full objects. An agent that writes a long
+  description no longer reads it straight back. Unset, or any other value, keeps the
+  full responses.
+
 ## [2.0.6]
 
 ### Changed

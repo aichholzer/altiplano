@@ -173,6 +173,7 @@ Every setting the HTTP transport reads, with its default:
 | `ALTIPLANO_HTTP_ALLOWED_ORIGINS` | localhost origins | Accepted browser `Origin` values, comma separated. |
 | `ALTIPLANO_CLIENTS` | `~/.config/altiplano/clients` | Client token store. Altiplano creates it mode 600. |
 | `ALTIPLANO_HTTP_ALLOW_UNAUTHENTICATED` | unset | Serves with no token. Loopback only. |
+| `ALTIPLANO_COMPACT_WRITES` | unset | `1`, `true`, `yes`, or `on` reduces the responses of `create_task`, `update_task`, and `add_comment` to a summary. |
 
 `VIKUNJA_URL` is read the same way here as for a local install, and
 [`README.md`](./README.md) covers the resolution order and the file permissions
